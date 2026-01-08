@@ -471,6 +471,18 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
             raise HTTPException(status_code=400, detail="Username already taken")
         updates["username"] = data.username
     
+    # Handle password change
+    if data.new_password:
+        if not data.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required to change password")
+        
+        # Verify current password
+        if not verify_password(data.current_password, user["hashed_password"]):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        
+        # Hash and set new password
+        updates["hashed_password"] = hash_password(data.new_password)
+    
     if updates:
         await db.users.update_one({"id": user["id"]}, {"$set": updates})
         user.update(updates)
@@ -478,7 +490,7 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
     return UserResponse(
         id=user["id"],
         email=user["email"],
-        name=user["name"],
+        name=user.get("name", user["email"]),
         username=user.get("username"),
         created_at=user["created_at"],
         subscription_tier=user.get("subscription_tier", "scout"),
