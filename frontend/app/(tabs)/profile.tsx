@@ -6,24 +6,20 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   User,
   Crown,
-  Settings,
   HardDrive,
-  LogOut,
   ChevronRight,
   Edit2,
   CreditCard,
   Shield,
   Info,
+  Trash2,
 } from 'lucide-react-native';
-import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
@@ -36,19 +32,20 @@ export default function ProfileScreen() {
   const { images, clearAllImages, getStorageSize } = useImageStore();
   const [upgradeLoading, setUpgradeLoading] = useState(false);
 
+  const isPremium = user?.subscription_tier === 'master_stag';
+
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return '0 B';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
     try {
       const response = await subscriptionAPI.createCheckout();
-      // In a real app, this would open the Stripe checkout URL
       Alert.alert(
         'Upgrade to Master Stag',
         'Stripe checkout would open here. Session ID: ' + response.data.session_id
@@ -60,10 +57,17 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleManageSubscription = () => {
+    Alert.alert(
+      'Manage Subscription',
+      'Subscription management portal would open here.'
+    );
+  };
+
   const handleClearStorage = () => {
     Alert.alert(
       'Clear Local Images',
-      'This will delete all locally stored deer images. Your scan history will be preserved, but images will no longer be viewable. Continue?',
+      'This will delete all locally stored deer images. Your scan history will be preserved.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -96,6 +100,23 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Account Deletion', 'Please contact support@ironstag.com to delete your account.');
+          },
+        },
+      ]
+    );
+  };
+
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -105,45 +126,47 @@ export default function ProfileScreen() {
           <Text style={styles.authText}>
             Sign in to manage your profile and subscription.
           </Text>
-          <Button
-            title="Sign In"
+          <TouchableOpacity 
+            style={styles.signInButton}
             onPress={() => router.push('/(auth)/login')}
-          />
+          >
+            <Text style={styles.signInButtonText}>Sign In</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // Menu items - flat list, no sections
   const menuItems = [
     {
       icon: Edit2,
       title: 'Edit Profile',
-      subtitle: 'Update your name and username',
+      subtitle: 'Name and username',
       onPress: () => Alert.alert('Coming Soon', 'Profile editing will be available soon.'),
     },
     {
       icon: CreditCard,
       title: 'Subscription',
-      subtitle: user?.subscription_tier === 'master_stag' ? 'Master Stag (Premium)' : 'Scout (Free)',
-      onPress: handleUpgrade,
-      badge: user?.subscription_tier !== 'master_stag' ? 'Upgrade' : null,
+      subtitle: isPremium ? 'Master Stag Active' : 'Scout (Free)',
+      onPress: isPremium ? handleManageSubscription : handleUpgrade,
     },
     {
       icon: HardDrive,
       title: 'Storage',
-      subtitle: `${Object.keys(images).length} images (${formatBytes(getStorageSize())})`,
+      subtitle: `${Object.keys(images).length} images • ${formatBytes(getStorageSize())}`,
       onPress: handleClearStorage,
     },
     {
       icon: Shield,
       title: 'Privacy Policy',
-      subtitle: 'How we protect your data',
+      subtitle: 'Data protection info',
       onPress: () => Alert.alert('Privacy', 'Your images are stored locally and never uploaded to our servers.'),
     },
     {
       icon: Info,
       title: 'About Iron Stag',
-      subtitle: 'Version 1.0.0',
+      subtitle: 'v1.0.0',
       onPress: () => Alert.alert('Iron Stag', 'Hunt Smarter. Harvest Responsibly.\n\nForged in Asgard, Tested in the Field.'),
     },
   ];
@@ -154,99 +177,101 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Header */}
+        {/* Compact Profile Header */}
         <View style={styles.header}>
-          <View style={styles.avatarContainer}>
+          <View style={styles.headerRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
               </Text>
             </View>
-            {user?.subscription_tier === 'master_stag' && (
-              <View style={styles.crownBadge}>
-                <Crown size={16} color={colors.primary} />
-              </View>
-            )}
+            <View style={styles.headerInfo}>
+              <Text style={styles.userName}>{user?.name}</Text>
+              <Text style={styles.userEmail}>{user?.email}</Text>
+            </View>
+            <View style={[styles.tierBadge, isPremium && styles.premiumBadge]}>
+              {isPremium && <Crown size={12} color={colors.primary} />}
+              <Text style={[styles.tierText, isPremium && styles.premiumText]}>
+                {isPremium ? 'Master Stag' : 'Scout'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.userName}>{user?.name}</Text>
-          <Text style={styles.userEmail}>{user?.email}</Text>
-          <Badge
-            text={user?.subscription_tier === 'master_stag' ? 'Master Stag' : 'Scout'}
-            variant={user?.subscription_tier === 'master_stag' ? 'harvest' : 'info'}
-            style={styles.tierBadge}
-          />
         </View>
 
-        {/* Stats Card */}
-        <Card style={styles.statsCard}>
-          <View style={styles.statRow}>
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{user?.scans_remaining || 0}</Text>
-              <Text style={styles.statLabel}>Scans Left Today</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statValue}>{Object.keys(images).length}</Text>
-              <Text style={styles.statLabel}>Saved Images</Text>
+        {/* Primary CTA: Subscription Card */}
+        <View style={[styles.subscriptionCard, isPremium && styles.subscriptionCardPremium]}>
+          <View style={styles.subscriptionHeader}>
+            <Crown size={28} color={isPremium ? colors.primary : colors.textMuted} />
+            <View style={styles.subscriptionInfo}>
+              <Text style={styles.subscriptionTitle}>
+                {isPremium ? 'Master Stag Active' : 'Upgrade to Master Stag'}
+              </Text>
+              <Text style={styles.subscriptionSubtitle}>
+                {isPremium ? 'Unlimited scans • Premium features' : 'Unlimited scans • No daily limits'}
+              </Text>
             </View>
           </View>
-        </Card>
+          <TouchableOpacity
+            style={[styles.subscriptionButton, isPremium && styles.subscriptionButtonSecondary]}
+            onPress={isPremium ? handleManageSubscription : handleUpgrade}
+            disabled={upgradeLoading}
+          >
+            <Text style={[styles.subscriptionButtonText, isPremium && styles.subscriptionButtonTextSecondary]}>
+              {upgradeLoading ? 'Loading...' : isPremium ? 'Manage Subscription' : '$9.99/month'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Upgrade Card (for free users) */}
-        {user?.subscription_tier !== 'master_stag' && (
-          <Card style={styles.upgradeCard}>
-            <View style={styles.upgradeContent}>
-              <Crown size={32} color={colors.primary} />
-              <View style={styles.upgradeText}>
-                <Text style={styles.upgradeTitle}>Upgrade to Master Stag</Text>
-                <Text style={styles.upgradeSubtitle}>
-                  Unlimited scans • Premium features
-                </Text>
-              </View>
-            </View>
-            <Button
-              title="$9.99/month"
-              onPress={handleUpgrade}
-              loading={upgradeLoading}
-              style={styles.upgradeButton}
-            />
-          </Card>
-        )}
+        {/* Usage Snapshot - Minimal */}
+        <View style={styles.usageRow}>
+          <View style={styles.usageStat}>
+            <Text style={styles.usageValue}>{user?.scans_remaining || 0}</Text>
+            <Text style={styles.usageLabel}>Scans Left Today</Text>
+          </View>
+          <View style={styles.usageDivider} />
+          <View style={styles.usageStat}>
+            <Text style={styles.usageValue}>{Object.keys(images).length}</Text>
+            <Text style={styles.usageLabel}>Saved Images</Text>
+          </View>
+        </View>
 
-        {/* Menu Items */}
+        {/* Single Flat Menu List */}
         <View style={styles.menuContainer}>
           {menuItems.map((item, index) => (
             <TouchableOpacity
               key={index}
-              style={styles.menuItem}
+              style={[
+                styles.menuItem,
+                index === menuItems.length - 1 && styles.menuItemLast
+              ]}
               onPress={item.onPress}
               activeOpacity={0.7}
             >
               <View style={styles.menuIcon}>
-                <item.icon size={20} color={colors.primary} />
+                <item.icon size={18} color={colors.primary} />
               </View>
               <View style={styles.menuContent}>
                 <Text style={styles.menuTitle}>{item.title}</Text>
                 <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
               </View>
-              {item.badge ? (
-                <Badge text={item.badge} variant="harvest" size="small" />
-              ) : (
-                <ChevronRight size={20} color={colors.textMuted} />
-              )}
+              <ChevronRight size={18} color={colors.textMuted} />
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* Sign Out Button */}
-        <TouchableOpacity style={styles.signOutButton} onPress={handleLogout}>
-          <LogOut size={20} color={colors.error} />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
+        {/* Destructive Actions - De-emphasized */}
+        <View style={styles.destructiveActions}>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDeleteAccount}>
+            <Text style={styles.deleteText}>Delete Account</Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Footer */}
+        {/* Minimal Footer */}
         <Text style={styles.footer}>
-          Iron Stag v1.0.0 • Forged in Asgard
+          Iron Stag v1.0 • Forged in Asgard
         </Text>
       </ScrollView>
     </View>
