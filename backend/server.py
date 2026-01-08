@@ -62,6 +62,9 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
