@@ -25,7 +25,7 @@ export default function SplashScreen() {
     const checkAuth = async () => {
       if (isLoading) return;
 
-      // If no token, show splash buttons
+      // If no token or user is null (logged out), show splash buttons
       if (!token) {
         setCheckingAuth(false);
         return;
@@ -43,7 +43,7 @@ export default function SplashScreen() {
     };
 
     checkAuth();
-  }, [token, isLoading]);
+  }, [token, isLoading, isAuthenticated]);
 
   // Show splash with buttons when not authenticated
   if (!token && !isLoading) {
