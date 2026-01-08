@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,26 @@ import {
   Modal,
   ActivityIndicator,
   Image,
-  Platform,
+  ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, ImagePlus, X, Zap, AlertTriangle } from 'lucide-react-native';
+import { 
+  Camera, 
+  ImagePlus, 
+  X, 
+  Zap, 
+  AlertTriangle, 
+  ArrowLeft,
+  Target,
+  Info,
+  Check,
+  XCircle,
+  HelpCircle,
+  FileText,
+} from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuthStore } from '../../stores/authStore';
@@ -22,6 +35,8 @@ import { useImageStore } from '../../stores/imageStore';
 import { scanAPI, subscriptionAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import * as Crypto from 'expo-crypto';
+
+type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -34,11 +49,8 @@ export default function ScanScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [scansRemaining, setScansRemaining] = useState(user?.scans_remaining || 3);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [scanStep, setScanStep] = useState<ScanStep>('main');
   const cameraRef = useRef<CameraView>(null);
-
-  useEffect(() => {
-    checkSubscription();
-  }, [isAuthenticated]);
 
   const checkSubscription = async () => {
     if (!isAuthenticated) return;
@@ -65,7 +77,7 @@ export default function ScanScreen() {
       });
       if (photo?.base64) {
         setCapturedImage(`data:image/jpeg;base64,${photo.base64}`);
-        setShowDisclaimer(true);
+        setScanStep('preview');
       }
     } catch (error) {
       console.error('Failed to take picture:', error);
@@ -82,40 +94,35 @@ export default function ScanScreen() {
 
     if (!result.canceled && result.assets[0].base64) {
       setCapturedImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
-      setShowDisclaimer(true);
+      setScanStep('preview');
     }
   };
 
   const analyzeDeer = async () => {
     if (!capturedImage || !isAuthenticated) return;
 
-    setShowDisclaimer(false);
+    setScanStep('analyzing');
     setAnalyzing(true);
 
     try {
-      // Generate local image ID
       const localImageId = await generateUUID();
-      
-      // Save image locally
       await saveImage(localImageId, capturedImage);
 
-      // Send for analysis
       const response = await scanAPI.analyzeDeer({
         image_base64: capturedImage,
         local_image_id: localImageId,
       });
 
-      // Update remaining scans
       if (user?.subscription_tier !== 'master_stag') {
         setScansRemaining((prev) => Math.max(0, prev - 1));
         updateUser({ scans_remaining: Math.max(0, scansRemaining - 1) });
       }
 
-      // Navigate to result
       router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Analysis failed. Please try again.';
       Alert.alert('Error', message);
+      setScanStep('main');
     } finally {
       setAnalyzing(false);
       setCapturedImage(null);
@@ -124,9 +131,21 @@ export default function ScanScreen() {
 
   const resetCapture = () => {
     setCapturedImage(null);
-    setShowDisclaimer(false);
+    setScanStep('main');
   };
 
+  const openCamera = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        Alert.alert('Permission Required', 'Camera access is needed to scan deer.');
+        return;
+      }
+    }
+    setScanStep('camera');
+  };
+
+  // Auth required screen
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -146,65 +165,19 @@ export default function ScanScreen() {
     );
   }
 
-  if (!permission) {
+  // Camera view
+  if (scanStep === 'camera') {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+      <View style={styles.container}>
+        {user?.subscription_tier !== 'master_stag' && (
+          <View style={[styles.scanLimit, { top: insets.top + spacing.md }]}>
+            <Zap size={16} color={scansRemaining > 0 ? colors.primary : colors.error} />
+            <Text style={[styles.scanLimitText, scansRemaining === 0 && styles.noScansText]}>
+              {scansRemaining} scans remaining today
+            </Text>
+          </View>
+        )}
 
-  if (!permission.granted) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.permissionContainer}>
-          <Camera size={64} color={colors.primary} />
-          <Text style={styles.permissionTitle}>Camera Access Required</Text>
-          <Text style={styles.permissionText}>
-            Iron Stag needs camera access to scan and analyze deer. Your photos are stored
-            locally and never uploaded to our servers.
-          </Text>
-          <Button
-            title="Grant Camera Access"
-            onPress={requestPermission}
-            style={styles.permissionButton}
-          />
-          <Button
-            title="Upload from Gallery Instead"
-            onPress={pickImage}
-            variant="outline"
-            style={styles.galleryButton}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      {/* Scan Limit Indicator */}
-      {user?.subscription_tier !== 'master_stag' && (
-        <View style={[styles.scanLimit, { top: insets.top + spacing.md }]}>
-          <Zap size={16} color={scansRemaining > 0 ? colors.primary : colors.error} />
-          <Text style={[styles.scanLimitText, scansRemaining === 0 && styles.noScansText]}>
-            {scansRemaining} scans remaining today
-          </Text>
-        </View>
-      )}
-
-      {capturedImage ? (
-        // Preview captured image
-        <View style={styles.previewContainer}>
-          <Image source={{ uri: capturedImage }} style={styles.preview} resizeMode="contain" />
-          <TouchableOpacity
-            style={[styles.closeButton, { top: insets.top + spacing.md }]}
-            onPress={resetCapture}
-          >
-            <X size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        // Camera view
         <CameraView
           ref={cameraRef}
           style={styles.camera}
@@ -218,73 +191,270 @@ export default function ScanScreen() {
             <View style={styles.cornerBR} />
           </View>
         </CameraView>
-      )}
 
-      {/* Controls */}
-      <View style={[styles.controls, { paddingBottom: insets.bottom + spacing.lg }]}>
-        {!capturedImage ? (
-          <>
-            <TouchableOpacity style={styles.galleryPickerButton} onPress={pickImage}>
-              <ImagePlus size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
-              onPress={takePicture}
-              disabled={!cameraReady || scansRemaining === 0}
-            >
-              <View style={styles.captureInner} />
-            </TouchableOpacity>
-            <View style={styles.placeholder} />
-          </>
-        ) : (
+        <View style={[styles.cameraControls, { paddingBottom: insets.bottom + spacing.lg }]}>
+          <TouchableOpacity style={styles.controlButton} onPress={() => setScanStep('main')}>
+            <X size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.captureButton, !cameraReady && styles.captureButtonDisabled]}
+            onPress={takePicture}
+            disabled={!cameraReady || scansRemaining === 0}
+          >
+            <View style={styles.captureInner} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.controlButton} onPress={pickImage}>
+            <ImagePlus size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Preview view
+  if (scanStep === 'preview' && capturedImage) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.previewContainer}>
+          <Image source={{ uri: capturedImage }} style={styles.preview} resizeMode="contain" />
+          <TouchableOpacity
+            style={[styles.closeButton, { top: insets.top + spacing.md }]}
+            onPress={resetCapture}
+          >
+            <X size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.previewControls, { paddingBottom: insets.bottom + spacing.lg }]}>
+          <Button
+            title="Retake"
+            onPress={resetCapture}
+            variant="outline"
+            style={styles.previewButton}
+          />
           <Button
             title="Analyze Deer"
-            onPress={() => setShowDisclaimer(true)}
-            size="large"
-            style={styles.analyzeButton}
+            onPress={analyzeDeer}
+            style={styles.previewButton}
             disabled={scansRemaining === 0}
           />
-        )}
+        </View>
+      </View>
+    );
+  }
+
+  // Analyzing view
+  if (scanStep === 'analyzing') {
+    return (
+      <View style={[styles.container, styles.analyzingContainer]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.analyzingText}>Analyzing deer...</Text>
+        <Text style={styles.analyzingSubtext}>This may take a few seconds</Text>
+      </View>
+    );
+  }
+
+  // Main scan screen
+  return (
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <ArrowLeft size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>Iron Stag</Text>
+          <Text style={styles.headerSubtitle}>Precision for Ethical Hunters</Text>
+        </View>
+        <TouchableOpacity style={styles.infoButton} onPress={() => setShowDisclaimer(true)}>
+          <FileText size={20} color={colors.textMuted} />
+        </TouchableOpacity>
       </View>
 
-      {/* Analyzing Overlay */}
-      {analyzing && (
-        <View style={styles.analyzingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.analyzingText}>Analyzing deer...</Text>
-          <Text style={styles.analyzingSubtext}>This may take a few seconds</Text>
+      <ScrollView contentContainerStyle={styles.mainContent}>
+        {/* Target Icon */}
+        <View style={styles.targetContainer}>
+          <View style={styles.targetOuter}>
+            <View style={styles.targetMiddle}>
+              <View style={styles.targetInner}>
+                <View style={styles.targetDot} />
+              </View>
+            </View>
+          </View>
         </View>
-      )}
+
+        {/* Scan Info */}
+        <Text style={styles.scanTitle}>Scan a Deer</Text>
+        <Text style={styles.scanDescription}>
+          Take or upload a clear photo of the deer. Our AI will analyze body characteristics, antler development, and other indicators to provide an age estimation.
+        </Text>
+
+        {/* Scans Remaining */}
+        {user?.subscription_tier !== 'master_stag' && (
+          <View style={styles.scansRemainingCard}>
+            <Zap size={18} color={scansRemaining > 0 ? colors.primary : colors.error} />
+            <Text style={[styles.scansRemainingText, scansRemaining === 0 && styles.noScansText]}>
+              {scansRemaining} scans remaining today
+            </Text>
+          </View>
+        )}
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <Button
+            title="Take Photo"
+            onPress={openCamera}
+            size="large"
+            style={styles.primaryActionButton}
+            disabled={scansRemaining === 0}
+            icon={<Camera size={20} color={colors.background} />}
+          />
+          <Button
+            title="Choose from Library"
+            onPress={pickImage}
+            size="large"
+            variant="secondary"
+            style={styles.secondaryActionButton}
+            disabled={scansRemaining === 0}
+            icon={<ImagePlus size={20} color={colors.textPrimary} />}
+          />
+        </View>
+      </ScrollView>
 
       {/* Disclaimer Modal */}
-      <Modal visible={showDisclaimer} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <Card style={styles.disclaimerCard}>
-            <View style={styles.disclaimerIcon}>
-              <AlertTriangle size={32} color={colors.warning} />
-            </View>
-            <Text style={styles.disclaimerTitle}>Before You Continue</Text>
-            <Text style={styles.disclaimerText}>
-              AI analysis is a tool to assist your judgment, not replace it. Always follow local
-              regulations and practice ethical hunting. The recommendation provided is an estimate
-              based on visible characteristics.
-            </Text>
-            <View style={styles.disclaimerButtons}>
-              <Button
-                title="Cancel"
-                onPress={() => setShowDisclaimer(false)}
-                variant="outline"
-                style={styles.disclaimerButton}
-              />
-              <Button
-                title="I Understand"
-                onPress={analyzeDeer}
-                style={styles.disclaimerButton}
-              />
-            </View>
-          </Card>
-        </View>
+      <Modal visible={showDisclaimer} animationType="slide">
+        <DisclaimerScreen onClose={() => setShowDisclaimer(false)} />
       </Modal>
+    </View>
+  );
+}
+
+// Disclaimer Screen Component
+function DisclaimerScreen({ onClose }: { onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+
+  const mustDoItems = [
+    'Use your own field assessment and professional judgment',
+    'Comply with ALL local hunting laws and regulations',
+    'Follow property rules and safety guidelines',
+    'Verify ALL information before taking action',
+    'Consult wildlife professionals for management advice',
+    'Never rely solely on AI estimations for hunting decisions',
+  ];
+
+  const providesItems = [
+    'AI-generated age estimations',
+    'Body condition observations',
+    'Antler development analysis',
+    'General harvest guidance',
+  ];
+
+  const doesNotProvideItems = [
+    'Professional wildlife advice',
+    'Legal hunting guidance',
+    'Definitive age determinations',
+    'Guaranteed accuracy',
+  ];
+
+  return (
+    <View style={[disclaimerStyles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={disclaimerStyles.header}>
+        <TouchableOpacity style={disclaimerStyles.backButton} onPress={onClose}>
+          <ArrowLeft size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={disclaimerStyles.headerTitle}>Scanning Disclaimer</Text>
+        <View style={disclaimerStyles.placeholder} />
+      </View>
+
+      <ScrollView 
+        contentContainerStyle={disclaimerStyles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Warning Header */}
+        <View style={disclaimerStyles.warningHeader}>
+          <View style={disclaimerStyles.warningIcon}>
+            <AlertTriangle size={24} color="#DC2626" />
+          </View>
+          <Text style={disclaimerStyles.warningTitle}>Critical: Read Before Scanning</Text>
+          <Text style={disclaimerStyles.warningSubtitle}>
+            Important information about AI deer analysis
+          </Text>
+        </View>
+
+        {/* Critical Responsibility Card */}
+        <Card style={disclaimerStyles.criticalCard}>
+          <View style={disclaimerStyles.criticalHeader}>
+            <Info size={18} color="#DC2626" />
+            <Text style={disclaimerStyles.criticalTitle}>CRITICAL: Your Responsibility</Text>
+          </View>
+          <Text style={disclaimerStyles.criticalText}>
+            Iron Stag is an AI estimation tool for informational purposes ONLY. It does NOT provide professional wildlife management advice, legal guidance, or definitive age determinations.
+          </Text>
+          <Text style={disclaimerStyles.responsibilityText}>
+            YOU are solely responsible for ALL hunting decisions.
+          </Text>
+          
+          <Text style={disclaimerStyles.mustTitle}>You MUST:</Text>
+          {mustDoItems.map((item, index) => (
+            <View key={index} style={disclaimerStyles.bulletRow}>
+              <Text style={disclaimerStyles.bullet}>•</Text>
+              <Text style={disclaimerStyles.bulletText}>{item}</Text>
+            </View>
+          ))}
+          
+          <Text style={disclaimerStyles.footerNote}>
+            AI estimations may be inaccurate. This app is a tool to supplement YOUR expertise, NOT replace it.
+          </Text>
+        </Card>
+
+        {/* What This App Provides */}
+        <Card style={disclaimerStyles.infoCard}>
+          <View style={disclaimerStyles.infoHeader}>
+            <Check size={18} color={colors.harvest} />
+            <Text style={disclaimerStyles.infoTitle}>What This App Provides</Text>
+          </View>
+          {providesItems.map((item, index) => (
+            <View key={index} style={disclaimerStyles.bulletRow}>
+              <Check size={14} color={colors.harvest} />
+              <Text style={disclaimerStyles.infoText}>{item}</Text>
+            </View>
+          ))}
+        </Card>
+
+        {/* What This App Does NOT Provide */}
+        <Card style={disclaimerStyles.infoCard}>
+          <View style={disclaimerStyles.infoHeader}>
+            <XCircle size={18} color={colors.error} />
+            <Text style={disclaimerStyles.infoTitleRed}>What This App Does NOT Provide</Text>
+          </View>
+          {doesNotProvideItems.map((item, index) => (
+            <View key={index} style={disclaimerStyles.bulletRow}>
+              <XCircle size={14} color={colors.error} />
+              <Text style={disclaimerStyles.infoText}>{item}</Text>
+            </View>
+          ))}
+        </Card>
+
+        {/* Understanding Your Results */}
+        <Card style={disclaimerStyles.understandingCard}>
+          <View style={disclaimerStyles.infoHeader}>
+            <HelpCircle size={18} color={colors.info} />
+            <Text style={disclaimerStyles.understandingTitle}>Understanding Your Results</Text>
+          </View>
+          <Text style={disclaimerStyles.understandingText}>
+            Results include confidence percentages indicating AI certainty. Lower confidence means more uncertainty. Always combine AI analysis with your own field observations, local knowledge, and applicable regulations before making any decisions.
+          </Text>
+        </Card>
+
+        {/* Continue Button */}
+        <Button
+          title="I Understand"
+          onPress={onClose}
+          size="large"
+          style={disclaimerStyles.continueButton}
+        />
+      </ScrollView>
     </View>
   );
 }
@@ -292,11 +462,127 @@ export default function ScanScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#0E1A14',
   },
-  centered: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundCard,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  infoButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mainContent: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  targetContainer: {
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
+  },
+  targetOuter: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  targetMiddle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  targetInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  targetDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.primary,
+  },
+  scanTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  scanDescription: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  scansRemainingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.backgroundCard,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.xl,
+  },
+  scansRemainingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  noScansText: {
+    color: colors.error,
+  },
+  actionButtons: {
+    width: '100%',
+    gap: spacing.md,
+  },
+  primaryActionButton: {
+    width: '100%',
+  },
+  secondaryActionButton: {
+    width: '100%',
   },
   camera: {
     flex: 1,
@@ -363,27 +649,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  noScansText: {
-    color: colors.error,
-  },
-  previewContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  preview: {
-    flex: 1,
-  },
-  closeButton: {
-    position: 'absolute',
-    right: spacing.md,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  controls: {
+  cameraControls: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
@@ -392,7 +658,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  galleryPickerButton: {
+  controlButton: {
     width: 50,
     height: 50,
     borderRadius: 25,
@@ -421,16 +687,33 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.background,
   },
-  placeholder: {
-    width: 50,
-  },
-  analyzeButton: {
+  previewContainer: {
     flex: 1,
-    marginHorizontal: spacing.lg,
+    backgroundColor: colors.background,
   },
-  analyzingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(14, 26, 20, 0.95)',
+  preview: {
+    flex: 1,
+  },
+  closeButton: {
+    position: 'absolute',
+    right: spacing.md,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewControls: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    padding: spacing.lg,
+    backgroundColor: colors.backgroundCard,
+  },
+  previewButton: {
+    flex: 1,
+  },
+  analyzingContainer: {
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -444,43 +727,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     marginTop: spacing.sm,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  disclaimerCard: {
-    width: '100%',
-    maxWidth: 400,
-    padding: spacing.lg,
-  },
-  disclaimerIcon: {
-    alignSelf: 'center',
-    marginBottom: spacing.md,
-  },
-  disclaimerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  disclaimerText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing.lg,
-  },
-  disclaimerButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  disclaimerButton: {
-    flex: 1,
   },
   authRequired: {
     flex: 1,
@@ -504,31 +750,169 @@ const styles = StyleSheet.create({
   authButton: {
     minWidth: 200,
   },
-  permissionContainer: {
+});
+
+const disclaimerStyles = StyleSheet.create({
+  container: {
     flex: 1,
+    backgroundColor: '#0E1A14',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundCard,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.xl,
   },
-  permissionTitle: {
-    fontSize: 24,
+  headerTitle: {
+    fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
   },
-  permissionText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: spacing.lg,
+  placeholder: {
+    width: 40,
   },
-  permissionButton: {
-    minWidth: 250,
+  scrollContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  warningHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  warningIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: spacing.md,
   },
-  galleryButton: {
-    minWidth: 250,
+  warningTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  warningSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  criticalCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginBottom: spacing.md,
+  },
+  criticalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  criticalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  criticalText: {
+    fontSize: 14,
+    color: '#7F1D1D',
+    lineHeight: 22,
+    marginBottom: spacing.md,
+  },
+  responsibilityText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: spacing.md,
+  },
+  mustTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#7F1D1D',
+    marginBottom: spacing.sm,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  bullet: {
+    fontSize: 14,
+    color: '#7F1D1D',
+    lineHeight: 22,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#7F1D1D',
+    lineHeight: 22,
+  },
+  footerNote: {
+    fontSize: 13,
+    color: '#DC2626',
+    fontStyle: 'italic',
+    marginTop: spacing.md,
+    lineHeight: 20,
+  },
+  infoCard: {
+    backgroundColor: colors.backgroundCard,
+    marginBottom: spacing.md,
+  },
+  infoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.harvest,
+  },
+  infoTitleRed: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.error,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  understandingCard: {
+    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(33, 150, 243, 0.3)',
+    marginBottom: spacing.xl,
+  },
+  understandingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.info,
+  },
+  understandingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+  continueButton: {
+    marginBottom: spacing.xl,
   },
 });
