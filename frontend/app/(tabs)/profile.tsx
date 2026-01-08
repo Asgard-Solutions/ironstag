@@ -137,6 +137,7 @@ export default function ProfileScreen() {
     setEditFirstName(nameParts[0] || '');
     setEditLastName(nameParts.slice(1).join(' ') || '');
     setEditUsername(user?.username || '');
+    setEditEmail(user?.email || '');
     setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
