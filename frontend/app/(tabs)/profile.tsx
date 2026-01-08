@@ -69,10 +69,10 @@ export default function ProfileScreen() {
   // Initialize image store on mount
   useEffect(() => {
     initialize();
-  }, [initialize]);
+  }, []);
 
   // Format date for display
-  const formatDate = (date) => {
+  const formatDate = (date: Date | null): string | null => {
     if (!date) return null;
     return date.toLocaleDateString('en-US', {
       month: '2-digit',
