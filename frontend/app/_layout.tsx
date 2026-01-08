@@ -17,11 +17,11 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const loadToken = useAuthStore((state) => state.loadToken);
-  const loadImages = useImageStore((state) => state.loadImages);
+  const initializeImages = useImageStore((state) => state.initialize);
 
   useEffect(() => {
     loadToken();
-    loadImages();
+    initializeImages();
   }, []);
 
   return (
