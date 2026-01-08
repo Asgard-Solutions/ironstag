@@ -566,7 +566,7 @@ async def check_scan_eligibility(user: dict) -> dict:
     Check if user can perform a scan.
     Returns dict with 'allowed' bool and 'reason' if not allowed.
     
-    Free tier (Scout): 3 lifetime scans total, no daily reset
+    Free tier (Tracker): 3 lifetime scans total, no daily reset
     Premium (Master Stag): Unlimited scans
     """
     # Premium users have unlimited scans
