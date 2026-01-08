@@ -553,55 +553,91 @@ async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_cur
         created_at=user["created_at"],
         subscription_tier=user.get("subscription_tier", "scout"),
         scans_remaining=user.get("scans_remaining", 3),
+        total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user["disclaimer_accepted"]
     )
 
 # ============ SUBSCRIPTION HELPERS ============
 
-async def reset_daily_scans(user: dict) -> dict:
-    """Reset daily scans if it's a new day (for free tier)"""
+async def check_scan_eligibility(user: dict) -> dict:
+    """
+    Check if user can perform a scan.
+    Returns dict with 'allowed' bool and 'reason' if not allowed.
+    
+    Free tier (Scout): 3 lifetime scans total, no daily reset
+    Premium (Master Stag): Unlimited scans
+    """
+    # Premium users have unlimited scans
     if user.get("subscription_tier") == "master_stag":
-        return user
+        return {"allowed": True, "scans_remaining": -1, "is_premium": True}
     
-    today = datetime.utcnow().date().isoformat()
-    last_reset = user.get("scans_reset_date", "")
+    # Free tier: check lifetime limit
+    scans_remaining = user.get("scans_remaining", 3)
+    total_used = user.get("total_scans_used", 0)
     
-    if last_reset != today:
+    if scans_remaining <= 0:
+        return {
+            "allowed": False,
+            "reason": "free_limit_reached",
+            "message": "You've used all your free scans. Upgrade to Master Stag for unlimited scans.",
+            "scans_remaining": 0,
+            "total_scans_used": total_used,
+            "is_premium": False
+        }
+    
+    return {
+        "allowed": True,
+        "scans_remaining": scans_remaining,
+        "total_scans_used": total_used,
+        "is_premium": False
+    }
+
+async def use_scan(user: dict) -> dict:
+    """
+    Decrement scan count and increment total used for free tier users.
+    Should only be called AFTER successful scan completion.
+    Returns updated user counts.
+    """
+    # Premium users don't have limits
+    if user.get("subscription_tier") == "master_stag":
+        # Still track total scans for stats
         await db.users.update_one(
             {"id": user["id"]},
-            {"$set": {"scans_remaining": 3, "scans_reset_date": today}}
+            {"$inc": {"total_scans_used": 1}}
         )
-        user["scans_remaining"] = 3
-        user["scans_reset_date"] = today
+        return {"scans_remaining": -1, "total_scans_used": user.get("total_scans_used", 0) + 1}
     
-    return user
-
-async def decrement_scan(user: dict) -> bool:
-    """Decrement scan count for free tier users"""
-    if user.get("subscription_tier") == "master_stag":
-        return True
-    
-    if user.get("scans_remaining", 0) <= 0:
-        return False
-    
+    # Free tier: decrement remaining, increment used
     await db.users.update_one(
         {"id": user["id"]},
-        {"$inc": {"scans_remaining": -1}}
+        {
+            "$inc": {"scans_remaining": -1, "total_scans_used": 1}
+        }
     )
-    return True
+    
+    new_remaining = max(0, user.get("scans_remaining", 3) - 1)
+    new_total = user.get("total_scans_used", 0) + 1
+    
+    return {"scans_remaining": new_remaining, "total_scans_used": new_total}
 
 # ============ SUBSCRIPTION ROUTES ============
 
 @api_router.get("/subscription/status", response_model=SubscriptionStatus)
 async def get_subscription_status(user: dict = Depends(get_current_user)):
-    user = await reset_daily_scans(user)
+    is_premium = user.get("subscription_tier") == "master_stag"
     
     return SubscriptionStatus(
         tier=user.get("subscription_tier", "scout"),
-        scans_remaining=user.get("scans_remaining", 3),
-        is_premium=user.get("subscription_tier") == "master_stag",
+        scans_remaining=-1 if is_premium else user.get("scans_remaining", 3),
+        total_scans_used=user.get("total_scans_used", 0),
+        is_premium=is_premium,
         expires_at=user.get("subscription_expires_at")
     )
+
+@api_router.get("/subscription/scan-eligibility")
+async def check_scan_eligibility_endpoint(user: dict = Depends(get_current_user)):
+    """Check if user can perform a scan before starting the process"""
+    return await check_scan_eligibility(user)
 
 @api_router.post("/subscription/create-checkout")
 async def create_checkout_session(user: dict = Depends(get_current_user)):
