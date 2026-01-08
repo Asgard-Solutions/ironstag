@@ -142,8 +142,8 @@ export default function ScanScreen() {
     setAnalyzing(true);
 
     try {
-      const localImageId = await generateUUID();
-      await saveImage(localImageId, capturedImage);
+      // Save image to local storage first
+      const localImageId = await saveImageFromBase64(capturedImage);
 
       const response = await scanAPI.analyzeDeer({
         image_base64: capturedImage,
