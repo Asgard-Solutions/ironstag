@@ -1051,4 +1051,59 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.background,
   },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 340,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  intervalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.background,
+  },
+  intervalOptionSelected: {
+    backgroundColor: 'rgba(200, 162, 74, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  intervalOptionText: {
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  intervalOptionTextSelected: {
+    fontWeight: '600',
+    color: colors.primary,
+  },
 });
