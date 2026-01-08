@@ -570,7 +570,7 @@ export default function ProfileScreen() {
             <Text style={styles.statValue}>
               {isPremium ? '∞' : user?.scans_remaining ?? 3}
             </Text>
-            <Text style={styles.statLabel}>Ethical{'\n'}Decisions</Text>
+            <Text style={styles.statLabel}>{isPremium ? 'Unlimited' : 'Free Scans'}{'\n'}{isPremium ? 'Scans' : 'Left'}</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.stat}>
