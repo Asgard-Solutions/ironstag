@@ -734,11 +734,29 @@ async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
 @api_router.post("/subscription/portal")
 async def create_customer_portal(user: dict = Depends(get_current_user)):
     try:
-        if not user.get("stripe_customer_id"):
-            raise HTTPException(status_code=400, detail="No subscription found")
+        customer_id = user.get("stripe_customer_id")
+        
+        # If no customer ID, create one for premium users
+        if not customer_id:
+            if user.get("subscription_tier") != "master_stag":
+                raise HTTPException(status_code=400, detail="No subscription found. Please upgrade first.")
+            
+            # Create Stripe customer for manually upgraded users
+            customer = stripe.Customer.create(
+                email=user["email"],
+                name=user["name"],
+                metadata={"user_id": user["id"]}
+            )
+            customer_id = customer.id
+            
+            # Save the customer ID
+            query = users_table.update().where(
+                users_table.c.id == user["id"]
+            ).values(stripe_customer_id=customer_id)
+            await database.execute(query)
         
         session = stripe.billing_portal.Session.create(
-            customer=user["stripe_customer_id"],
+            customer=customer_id,
             return_url="ironstag://profile"
         )
         
