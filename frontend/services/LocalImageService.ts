@@ -50,6 +50,14 @@ class LocalImageServiceClass {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
+    // On web, we don't need to create directories
+    if (isWeb) {
+      this.initialized = true;
+      console.log('[LocalImageService] Initialized for web');
+      return;
+    }
+
+    // On native, create the scan images directory
     try {
       // Check if directory exists
       const dirInfo = await FileSystem.getInfoAsync(SCAN_IMAGES_DIR);
