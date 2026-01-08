@@ -397,29 +397,60 @@ export default function ScanScreen() {
               You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
             </Text>
             
-            {/* Benefits */}
-            <View style={upgradeModalStyles.benefits}>
-              <View style={upgradeModalStyles.benefitRow}>
-                <Check size={16} color={colors.primary} />
-                <Text style={upgradeModalStyles.benefitText}>Unlimited scans</Text>
-              </View>
-              <View style={upgradeModalStyles.benefitRow}>
-                <Check size={16} color={colors.primary} />
-                <Text style={upgradeModalStyles.benefitText}>Priority AI analysis</Text>
-              </View>
-              <View style={upgradeModalStyles.benefitRow}>
-                <Check size={16} color={colors.primary} />
-                <Text style={upgradeModalStyles.benefitText}>Full scan history</Text>
-              </View>
+            {/* Plan Options */}
+            <View style={upgradeModalStyles.planOptions}>
+              {/* Monthly */}
+              <TouchableOpacity 
+                style={[
+                  upgradeModalStyles.planOption,
+                  selectedPlan === 'monthly' && upgradeModalStyles.planOptionSelected
+                ]}
+                onPress={() => setSelectedPlan('monthly')}
+              >
+                <View style={[
+                  upgradeModalStyles.planRadio,
+                  selectedPlan === 'monthly' && upgradeModalStyles.planRadioSelected
+                ]}>
+                  {selectedPlan === 'monthly' && <View style={upgradeModalStyles.planRadioInner} />}
+                </View>
+                <View style={upgradeModalStyles.planInfo}>
+                  <Text style={upgradeModalStyles.planName}>Monthly</Text>
+                  <Text style={upgradeModalStyles.planPrice}>$9.99/mo</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Annual */}
+              <TouchableOpacity 
+                style={[
+                  upgradeModalStyles.planOption,
+                  selectedPlan === 'annual' && upgradeModalStyles.planOptionSelected
+                ]}
+                onPress={() => setSelectedPlan('annual')}
+              >
+                <View style={upgradeModalStyles.saveBadge}>
+                  <Text style={upgradeModalStyles.saveBadgeText}>SAVE $30</Text>
+                </View>
+                <View style={[
+                  upgradeModalStyles.planRadio,
+                  selectedPlan === 'annual' && upgradeModalStyles.planRadioSelected
+                ]}>
+                  {selectedPlan === 'annual' && <View style={upgradeModalStyles.planRadioInner} />}
+                </View>
+                <View style={upgradeModalStyles.planInfo}>
+                  <Text style={upgradeModalStyles.planName}>Annual</Text>
+                  <Text style={upgradeModalStyles.planPrice}>$89.99/yr</Text>
+                </View>
+              </TouchableOpacity>
             </View>
             
             {/* Buttons */}
             <TouchableOpacity 
               style={upgradeModalStyles.upgradeButton}
+              disabled={checkoutLoading}
               onPress={async () => {
-                setShowUpgradeModal(false);
+                setCheckoutLoading(true);
                 try {
-                  const response = await subscriptionAPI.createCheckout();
+                  const response = await subscriptionAPI.createCheckout(selectedPlan);
                   const checkoutUrl = response.data.checkout_url;
                   if (checkoutUrl) {
                     const canOpen = await Linking.canOpenURL(checkoutUrl);
@@ -427,12 +458,17 @@ export default function ScanScreen() {
                       await Linking.openURL(checkoutUrl);
                     }
                   }
+                  setShowUpgradeModal(false);
                 } catch (error) {
                   Alert.alert('Error', 'Failed to start upgrade process.');
+                } finally {
+                  setCheckoutLoading(false);
                 }
               }}
             >
-              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag - $9.99/mo</Text>
+              <Text style={upgradeModalStyles.upgradeButtonText}>
+                {checkoutLoading ? 'Loading...' : 'Continue to Payment'}
+              </Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
