@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Iron Stag Backend API Testing Suite
-Tests all backend endpoints for the Iron Stag deer aging app
+Iron Stag Backend API Testing Suite - Scan/Analyze Flow Focus
+Tests the complete scan/analyze flow for the Iron Stag deer aging app
 """
 
 import requests
@@ -13,9 +13,12 @@ import time
 
 # Configuration
 BASE_URL = "https://ethical-hunt.preview.emergentagent.com/api"
-TEST_USER_EMAIL = "hunter.test@ironstag.com"
-TEST_USER_PASSWORD = "SecureHunt2025!"
-TEST_USER_NAME = "Hunter TestUser"
+TEST_USER_EMAIL = "testscanner@test.com"
+TEST_USER_PASSWORD = "Test1234"
+TEST_USER_NAME = "Test Scanner"
+
+# Test image - small base64 encoded test image
+TEST_IMAGE_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="
 
 class IronStagAPITester:
     def __init__(self):
