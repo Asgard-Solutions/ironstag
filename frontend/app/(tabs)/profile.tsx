@@ -52,7 +52,16 @@ const CLEANUP_INTERVALS = [
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated, logout } = useAuthStore();
-  const { images, clearAllImages, getStorageSize } = useImageStore();
+  const { 
+    stats, 
+    cleanupInterval, 
+    isLoaded,
+    initialize,
+    cleanupOldImages, 
+    clearAllImages, 
+    setCleanupInterval,
+    refreshStats 
+  } = useImageStore();
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [cleanupInterval, setCleanupInterval] = useState(90);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
