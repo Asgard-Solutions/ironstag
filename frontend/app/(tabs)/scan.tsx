@@ -350,7 +350,7 @@ export default function ScanScreen() {
             onPress={openCamera}
             size="large"
             style={styles.primaryActionButton}
-            disabled={scansRemaining === 0}
+            disabled={!isPremium && scansRemaining === 0}
             icon={<Camera size={20} color={colors.background} />}
           />
           <Button
@@ -359,7 +359,7 @@ export default function ScanScreen() {
             size="large"
             variant="secondary"
             style={styles.secondaryActionButton}
-            disabled={scansRemaining === 0}
+            disabled={!isPremium && scansRemaining === 0}
             icon={<ImagePlus size={20} color={colors.textPrimary} />}
           />
         </View>
