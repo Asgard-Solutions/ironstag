@@ -47,6 +47,7 @@ users_table = Table(
     Column("scans_remaining", Integer, default=3),
     Column("total_scans_used", Integer, default=0),
     Column("disclaimer_accepted", Boolean, default=False),
+    Column("disclaimer_accepted_at", DateTime, nullable=True),
     Column("stripe_customer_id", String(100)),
     Column("stripe_subscription_id", String(100)),
     Column("subscription_cancel_at_period_end", Boolean, default=False),
