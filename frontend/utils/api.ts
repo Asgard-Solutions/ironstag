@@ -46,6 +46,7 @@ export const authAPI = {
   updateProfile: (data: { 
     name?: string; 
     username?: string;
+    email?: string;
     current_password?: string;
     new_password?: string;
   }) => api.put('/auth/profile', data),
