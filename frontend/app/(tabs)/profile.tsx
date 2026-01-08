@@ -484,7 +484,7 @@ export default function ProfileScreen() {
           <ChevronLeft size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.editButton}>
+        <TouchableOpacity style={styles.editButton} onPress={handleOpenEditProfile}>
           <Edit2 size={18} color={colors.primary} />
         </TouchableOpacity>
       </View>
