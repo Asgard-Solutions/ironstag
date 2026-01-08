@@ -472,24 +472,21 @@ export default function ProfileScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* Clear All Button */}
+          {/* Clear All Button - Always Active */}
           <TouchableOpacity 
             style={[
               styles.clearAllButton,
-              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
+              isCleaningUp && styles.buttonDisabled
             ]} 
             onPress={handleClearAllImages}
-            disabled={stats.totalImages === 0 || isCleaningUp}
+            disabled={isCleaningUp}
           >
             {isCleaningUp ? (
               <ActivityIndicator size="small" color={colors.error} />
             ) : (
-              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : colors.error} />
+              <Trash2 size={16} color={colors.error} />
             )}
-            <Text style={[
-              styles.clearAllButtonText,
-              stats.totalImages === 0 && styles.buttonTextDisabled
-            ]}>
+            <Text style={styles.clearAllButtonText}>
               Clear All Local Images
             </Text>
           </TouchableOpacity>
