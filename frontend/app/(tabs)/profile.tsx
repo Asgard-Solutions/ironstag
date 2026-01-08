@@ -548,7 +548,7 @@ export default function ProfileScreen() {
               {isPremium ? 'Master Stag Active' : 'Upgrade to Master Stag'}
             </Text>
             <Text style={styles.subscriptionSubtitle}>
-              {isPremium ? 'Unlimited scans • Premium features' : 'Unlimited scans • No daily limits'}
+              {isPremium ? 'Unlimited scans • Premium features' : 'Unlimited scans • Never run out'}
             </Text>
           </View>
           {!isPremium && (
@@ -567,7 +567,9 @@ export default function ProfileScreen() {
         {/* Stats Row */}
         <View style={styles.statsCard}>
           <View style={styles.stat}>
-            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statValue}>
+              {isPremium ? '∞' : user?.scans_remaining ?? 3}
+            </Text>
             <Text style={styles.statLabel}>Ethical{'\n'}Decisions</Text>
           </View>
           <View style={styles.statDivider} />
