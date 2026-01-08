@@ -556,8 +556,28 @@ export default function ScanScreen() {
 }
 
 // Disclaimer Screen Component
-function DisclaimerScreen({ onClose }: { onClose: () => void }) {
+interface DisclaimerScreenProps {
+  onClose: () => void;
+  onAccept: () => void;
+  isAccepted: boolean;
+  acceptedAt?: string;
+}
+
+function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: DisclaimerScreenProps) {
   const insets = useSafeAreaInsets();
+
+  // Format the acceptance date
+  const formatAcceptedDate = (dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   const mustDoItems = [
     'Use your own field assessment and professional judgment',
