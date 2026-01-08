@@ -504,7 +504,7 @@ export default function ProfileScreen() {
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{user?.name || 'User'}</Text>
             {user?.username && (
-              <Text style={styles.profileUsername}>@{user.username}</Text>
+              <Text style={styles.profileUsername}>{user.username}</Text>
             )}
             <Text style={styles.profileEmail}>{user?.email}</Text>
           </View>
