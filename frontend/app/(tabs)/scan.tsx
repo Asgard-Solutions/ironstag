@@ -1012,3 +1012,84 @@ const disclaimerStyles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
 });
+
+// Upgrade Modal Styles
+const upgradeModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  content: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(200, 162, 74, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+  },
+  benefits: {
+    width: '100%',
+    marginBottom: spacing.lg,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+  },
+  benefitText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginLeft: spacing.sm,
+  },
+  upgradeButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  upgradeButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  laterButton: {
+    paddingVertical: spacing.sm,
+  },
+  laterButtonText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+});
