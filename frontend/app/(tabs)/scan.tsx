@@ -27,6 +27,7 @@ import {
   HelpCircle,
   FileText,
   ArrowLeft,
+  Crown,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -49,17 +50,42 @@ export default function ScanScreen() {
   const [analyzing, setAnalyzing] = useState(false);
   const [scansRemaining, setScansRemaining] = useState(user?.scans_remaining || 3);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [scanStep, setScanStep] = useState<ScanStep>('main');
   const cameraRef = useRef<CameraView>(null);
+
+  const isPremium = user?.subscription_tier === 'master_stag';
 
   const checkSubscription = async () => {
     if (!isAuthenticated) return;
     try {
       const response = await subscriptionAPI.getStatus();
       setScansRemaining(response.data.scans_remaining);
-      updateUser({ scans_remaining: response.data.scans_remaining });
+      updateUser({ 
+        scans_remaining: response.data.scans_remaining,
+        total_scans_used: response.data.total_scans_used 
+      });
     } catch (error) {
       console.error('Failed to check subscription:', error);
+    }
+  };
+
+  // Check if user can scan before starting
+  const checkScanEligibility = async (): Promise<boolean> => {
+    if (isPremium) return true;
+    
+    try {
+      const response = await subscriptionAPI.checkEligibility();
+      if (!response.data.allowed) {
+        setShowUpgradeModal(true);
+        return false;
+      }
+      setScansRemaining(response.data.scans_remaining);
+      return true;
+    } catch (error) {
+      console.error('Failed to check eligibility:', error);
+      // Allow scan attempt - backend will enforce the limit
+      return true;
     }
   };
 
