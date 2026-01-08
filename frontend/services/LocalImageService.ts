@@ -316,13 +316,20 @@ class LocalImageServiceClass {
     
     if (!entry) return false;
 
-    const localPath = `${SCAN_IMAGES_DIR}${entry.fileName}`;
-
     try {
-      // Delete physical file
-      const fileInfo = await FileSystem.getInfoAsync(localPath);
-      if (fileInfo.exists) {
-        await FileSystem.deleteAsync(localPath);
+      if (isWeb) {
+        // On web, remove from AsyncStorage
+        const webImages = await AsyncStorage.getItem(WEB_IMAGE_STORAGE_KEY);
+        const images = webImages ? JSON.parse(webImages) : {};
+        delete images[localImageId];
+        await AsyncStorage.setItem(WEB_IMAGE_STORAGE_KEY, JSON.stringify(images));
+      } else {
+        // On native, delete physical file
+        const localPath = `${SCAN_IMAGES_DIR}${entry.fileName}`;
+        const fileInfo = await FileSystem.getInfoAsync(localPath);
+        if (fileInfo.exists) {
+          await FileSystem.deleteAsync(localPath);
+        }
       }
 
       // Remove from metadata
