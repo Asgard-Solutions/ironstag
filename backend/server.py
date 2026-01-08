@@ -756,6 +756,34 @@ async def create_customer_portal(user: dict = Depends(get_current_user)):
         logger.error(f"Stripe portal error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.post("/subscription/cancel")
+async def cancel_subscription(user: dict = Depends(get_current_user)):
+    """Cancel user's Stripe subscription"""
+    try:
+        if not user.get("stripe_subscription_id"):
+            raise HTTPException(status_code=400, detail="No active subscription found.")
+        
+        # Cancel the subscription at period end (user keeps access until end of billing period)
+        subscription = stripe.Subscription.modify(
+            user["stripe_subscription_id"],
+            cancel_at_period_end=True
+        )
+        
+        # Update user record to indicate pending cancellation
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"subscription_cancel_at_period_end": True}}
+        )
+        
+        return {
+            "status": "canceled",
+            "cancel_at": subscription.cancel_at,
+            "current_period_end": subscription.current_period_end
+        }
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe cancel error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @api_router.post("/subscription/verify-revenuecat")
 async def verify_revenuecat(user: dict = Depends(get_current_user)):
     """Verify subscription status with RevenueCat"""
