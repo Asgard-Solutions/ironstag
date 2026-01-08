@@ -215,7 +215,7 @@ class LocalImageServiceClass {
 
     // 4. Get file size
     const fileInfo = await FileSystem.getInfoAsync(localPath);
-    const sizeBytes = fileInfo.size || 0;
+    const sizeBytes = (fileInfo.exists && 'size' in fileInfo) ? fileInfo.size || 0 : 0;
 
     // 5. Save metadata
     const metadata = await this.getAllMetadata();
