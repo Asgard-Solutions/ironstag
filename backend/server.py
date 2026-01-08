@@ -142,6 +142,7 @@ class UserResponse(BaseModel):
     scans_remaining: int = 3
     total_scans_used: int = 0
     disclaimer_accepted: bool = False
+    disclaimer_accepted_at: Optional[datetime] = None
 
 class TokenResponse(BaseModel):
     access_token: str
