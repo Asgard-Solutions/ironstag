@@ -888,15 +888,18 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
 
-                {/* Email (Read-only) */}
+                {/* Email */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Email</Text>
-                  <View style={styles.inputDisabled}>
-                    <Text style={styles.inputDisabledText}>{user?.email}</Text>
-                  </View>
-                  <Text style={styles.inputHint}>
-                    Email cannot be changed
-                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editEmail}
+                    onChangeText={setEditEmail}
+                    placeholder="email@example.com"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
                 </View>
               </View>
 
