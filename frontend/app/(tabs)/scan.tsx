@@ -371,6 +371,65 @@ export default function ScanScreen() {
       <Modal visible={showDisclaimer} animationType="slide">
         <DisclaimerScreen onClose={() => setShowDisclaimer(false)} />
       </Modal>
+
+      {/* Upgrade Modal - Free Scans Used */}
+      <Modal
+        visible={showUpgradeModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUpgradeModal(false)}
+      >
+        <View style={upgradeModalStyles.overlay}>
+          <View style={upgradeModalStyles.content}>
+            {/* Icon */}
+            <View style={upgradeModalStyles.iconContainer}>
+              <Crown size={40} color={colors.primary} />
+            </View>
+            
+            {/* Title */}
+            <Text style={upgradeModalStyles.title}>Free Scans Used</Text>
+            
+            {/* Message */}
+            <Text style={upgradeModalStyles.message}>
+              You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
+            </Text>
+            
+            {/* Benefits */}
+            <View style={upgradeModalStyles.benefits}>
+              <View style={upgradeModalStyles.benefitRow}>
+                <Check size={16} color={colors.primary} />
+                <Text style={upgradeModalStyles.benefitText}>Unlimited scans</Text>
+              </View>
+              <View style={upgradeModalStyles.benefitRow}>
+                <Check size={16} color={colors.primary} />
+                <Text style={upgradeModalStyles.benefitText}>Priority AI analysis</Text>
+              </View>
+              <View style={upgradeModalStyles.benefitRow}>
+                <Check size={16} color={colors.primary} />
+                <Text style={upgradeModalStyles.benefitText}>Full scan history</Text>
+              </View>
+            </View>
+            
+            {/* Buttons */}
+            <TouchableOpacity 
+              style={upgradeModalStyles.upgradeButton}
+              onPress={() => {
+                setShowUpgradeModal(false);
+                router.push('/(tabs)/profile');
+              }}
+            >
+              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={upgradeModalStyles.laterButton}
+              onPress={() => setShowUpgradeModal(false)}
+            >
+              <Text style={upgradeModalStyles.laterButtonText}>Maybe Later</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
