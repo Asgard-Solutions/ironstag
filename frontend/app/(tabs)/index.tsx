@@ -190,6 +190,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.lg,
+    alignItems: 'flex-start',
   },
   headerIcon: {
     width: 150,
