@@ -429,12 +429,12 @@ const styles = StyleSheet.create({
   },
   codeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginBottom: spacing.lg,
     gap: spacing.sm,
   },
   codeInput: {
-    flex: 1,
+    width: 48,
     height: 56,
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.md,
