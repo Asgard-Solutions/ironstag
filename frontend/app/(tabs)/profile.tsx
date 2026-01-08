@@ -1103,6 +1103,97 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Plan Selector Modal */}
+      <Modal
+        visible={showPlanSelector}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPlanSelector(false)}
+      >
+        <TouchableOpacity 
+          style={styles.planModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowPlanSelector(false)}
+        >
+          <View style={styles.planModalContent}>
+            {/* Header */}
+            <View style={styles.planModalHeader}>
+              <Crown size={32} color={colors.primary} />
+              <Text style={styles.planModalTitle}>Upgrade to Master Stag</Text>
+              <Text style={styles.planModalSubtitle}>Unlimited AI-powered deer analysis</Text>
+            </View>
+
+            {/* Monthly Plan */}
+            <TouchableOpacity 
+              style={[
+                styles.planOption,
+                selectedPlan === 'monthly' && styles.planOptionSelected
+              ]}
+              onPress={() => setSelectedPlan('monthly')}
+            >
+              <View style={styles.planOptionLeft}>
+                <View style={[
+                  styles.planRadio,
+                  selectedPlan === 'monthly' && styles.planRadioSelected
+                ]}>
+                  {selectedPlan === 'monthly' && <View style={styles.planRadioInner} />}
+                </View>
+                <View>
+                  <Text style={styles.planName}>Monthly</Text>
+                  <Text style={styles.planDescription}>Billed monthly</Text>
+                </View>
+              </View>
+              <Text style={styles.planPrice}>$9.99<Text style={styles.planPeriod}>/mo</Text></Text>
+            </TouchableOpacity>
+
+            {/* Annual Plan */}
+            <TouchableOpacity 
+              style={[
+                styles.planOption,
+                selectedPlan === 'annual' && styles.planOptionSelected
+              ]}
+              onPress={() => setSelectedPlan('annual')}
+            >
+              <View style={styles.planBadge}>
+                <Text style={styles.planBadgeText}>SAVE $30</Text>
+              </View>
+              <View style={styles.planOptionLeft}>
+                <View style={[
+                  styles.planRadio,
+                  selectedPlan === 'annual' && styles.planRadioSelected
+                ]}>
+                  {selectedPlan === 'annual' && <View style={styles.planRadioInner} />}
+                </View>
+                <View>
+                  <Text style={styles.planName}>Annual</Text>
+                  <Text style={styles.planDescription}>$7.50/mo billed annually</Text>
+                </View>
+              </View>
+              <Text style={styles.planPrice}>$89.99<Text style={styles.planPeriod}>/yr</Text></Text>
+            </TouchableOpacity>
+
+            {/* Continue Button */}
+            <TouchableOpacity 
+              style={styles.planContinueButton}
+              onPress={() => handleCheckout(selectedPlan)}
+              disabled={upgradeLoading}
+            >
+              <Text style={styles.planContinueText}>
+                {upgradeLoading ? 'Loading...' : 'Continue to Payment'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Cancel */}
+            <TouchableOpacity 
+              style={styles.planCancelButton}
+              onPress={() => setShowPlanSelector(false)}
+            >
+              <Text style={styles.planCancelText}>Maybe Later</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
