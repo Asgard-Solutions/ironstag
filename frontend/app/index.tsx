@@ -45,8 +45,15 @@ export default function SplashScreen() {
     checkAuth();
   }, [token, isLoading]);
 
+  // Immediately show splash when token is cleared (logout)
+  useEffect(() => {
+    if (!token && !isLoading) {
+      setCheckingAuth(false);
+    }
+  }, [token, isLoading]);
+
   // Show splash with buttons when not authenticated or no token
-  if ((!token && !isLoading) || (!isAuthenticated && !isLoading && !checkingAuth)) {
+  if (!token && !isLoading) {
     return (
       <View style={styles.container}>
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
