@@ -281,6 +281,25 @@ const styles = StyleSheet.create({
   submitButton: {
     marginTop: spacing.sm,
   },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    color: colors.textMuted,
+    paddingHorizontal: spacing.md,
+    fontSize: 14,
+  },
+  appleButton: {
+    width: '100%',
+    height: 50,
+  },
   signupContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
