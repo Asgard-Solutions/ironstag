@@ -244,9 +244,15 @@ export default function ProfileScreen() {
   };
 
   const handleUpgrade = async () => {
+    // Show plan selector modal instead of going directly to checkout
+    setShowPlanSelector(true);
+  };
+
+  const handleCheckout = async (plan: 'monthly' | 'annual') => {
+    setShowPlanSelector(false);
     setUpgradeLoading(true);
     try {
-      const response = await subscriptionAPI.createCheckout();
+      const response = await subscriptionAPI.createCheckout(plan);
       const checkoutUrl = response.data.checkout_url;
       
       if (checkoutUrl) {
