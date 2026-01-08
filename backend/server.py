@@ -533,6 +533,7 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
         created_at=user["created_at"],
         subscription_tier=user.get("subscription_tier", "scout"),
         scans_remaining=user.get("scans_remaining", 3),
+        total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False)
     )
 
