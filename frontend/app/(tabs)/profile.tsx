@@ -844,7 +844,7 @@ export default function ProfileScreen() {
         <View style={styles.footer}>
           <Shield size={20} color={colors.textMuted} />
           <Text style={styles.footerText}>Forged in Asgard, Tested in the Field</Text>
-          <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
+          <Text style={styles.footerCopyright}>© 2026 Asgard Solutions LLC</Text>
         </View>
       </ScrollView>
 
