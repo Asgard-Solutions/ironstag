@@ -2119,4 +2119,105 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
   },
+
+  // Subscription Manager Modal Styles
+  subManagerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  subManagerContent: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 380,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subManagerHeader: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  subManagerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+  },
+  subManagerSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  subManagerPlanInfo: {
+    backgroundColor: 'rgba(200, 162, 74, 0.1)',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  subManagerPlanLabel: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  subManagerPlanValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  subManagerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subManagerOptionDanger: {
+    borderColor: 'rgba(220, 38, 38, 0.3)',
+  },
+  subManagerOptionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  subManagerOptionIconDanger: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+  },
+  subManagerOptionText: {
+    flex: 1,
+  },
+  subManagerOptionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  subManagerOptionTitleDanger: {
+    color: colors.error,
+  },
+  subManagerOptionSubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  subManagerCloseButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  subManagerCloseText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
 });
