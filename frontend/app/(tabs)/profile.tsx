@@ -15,12 +15,18 @@ import {
   HardDrive,
   ChevronRight,
   Edit2,
-  CreditCard,
   Shield,
   Info,
   Trash2,
+  ChevronLeft,
+  AtSign,
+  Mail,
+  Clock,
+  Camera,
+  BookOpen,
+  Settings,
+  FileText,
 } from 'lucide-react-native';
-import { Button } from '../../components/Button';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { subscriptionAPI } from '../../utils/api';
