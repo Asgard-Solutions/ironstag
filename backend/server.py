@@ -246,7 +246,15 @@ async def register(data: UserCreate):
 
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(data: UserLogin):
-    user = await db.users.find_one({"email": data.email.lower()})
+    # Check if input is email or username
+    identifier = data.email.lower().strip()
+    
+    # Try to find user by email first, then by username
+    user = await db.users.find_one({"email": identifier})
+    if not user:
+        # Try finding by username (case-insensitive)
+        user = await db.users.find_one({"username": {"$regex": f"^{identifier}$", "$options": "i"}})
+    
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
