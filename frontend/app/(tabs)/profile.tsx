@@ -891,6 +891,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  menuItemLast: {
+    borderBottomWidth: 0,
+  },
   menuIcon: {
     width: 40,
     height: 40,
