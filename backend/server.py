@@ -766,12 +766,17 @@ async def verify_revenuecat(user: dict = Depends(get_current_user)):
 async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_current_user)):
     """Analyze deer image using GPT-4 Vision"""
     
-    # Check scan availability
-    user = await reset_daily_scans(user)
-    if not await decrement_scan(user):
+    # CRITICAL: Check scan eligibility BEFORE any processing or API calls
+    eligibility = await check_scan_eligibility(user)
+    if not eligibility["allowed"]:
         raise HTTPException(
             status_code=403,
-            detail="No scans remaining. Upgrade to Master Stag for unlimited scans!"
+            detail={
+                "code": "FREE_LIMIT_REACHED",
+                "message": eligibility["message"],
+                "scans_remaining": 0,
+                "upgrade_required": True
+            }
         )
     
     try:
