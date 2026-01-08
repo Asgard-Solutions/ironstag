@@ -29,7 +29,6 @@ import {
   Settings,
   FileText,
   ExternalLink,
-  Calendar,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
