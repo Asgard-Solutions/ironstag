@@ -12,6 +12,7 @@ interface User {
   scans_remaining: number;  // For free tier: lifetime remaining (0-3), for premium: -1 (unlimited)
   total_scans_used: number; // Lifetime total scans used
   disclaimer_accepted: boolean;
+  disclaimer_accepted_at?: string;
   created_at: string;
 }
 
