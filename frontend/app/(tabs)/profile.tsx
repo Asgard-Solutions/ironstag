@@ -380,29 +380,26 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* User Info Card */}
-        <View style={styles.userCard}>
+        {/* Compact Profile Header */}
+        <View style={styles.profileHeader}>
           <View style={styles.avatarLarge}>
-            <User size={40} color={colors.primary} />
+            <Text style={styles.avatarInitial}>
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
+            </Text>
           </View>
           
-          <Text style={styles.labelText}>Full Name</Text>
-          <Text style={styles.valueText}>{user?.name || 'User'}</Text>
-          
-          <View style={styles.infoRow}>
-            <AtSign size={14} color={colors.textMuted} />
-            <View style={styles.infoContent}>
-              <Text style={styles.labelText}>Username</Text>
-              <Text style={styles.valueText}>{user?.username || 'username'}</Text>
-            </View>
+          <View style={styles.profileInfo}>
+            <Text style={styles.profileName}>{user?.name || 'User'}</Text>
+            {user?.username && (
+              <Text style={styles.profileUsername}>@{user.username}</Text>
+            )}
+            <Text style={styles.profileEmail}>{user?.email}</Text>
           </View>
           
-          <View style={styles.infoRow}>
-            <Mail size={14} color={colors.textMuted} />
-            <View style={styles.infoContent}>
-              <Text style={styles.labelText}>Email</Text>
-              <Text style={styles.valueText}>{user?.email}</Text>
-            </View>
+          <View style={[styles.tierBadge, isPremium && styles.tierBadgePremium]}>
+            <Text style={[styles.tierBadgeText, isPremium && styles.tierBadgeTextPremium]}>
+              {isPremium ? 'Master Stag' : 'Scout'}
+            </Text>
           </View>
         </View>
 
@@ -413,18 +410,24 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.subscriptionInfo}>
             <Text style={[styles.subscriptionTitle, isPremium && styles.subscriptionTitleActive]}>
-              {isPremium ? 'Master Stag' : 'Scout'}
+              {isPremium ? 'Master Stag Active' : 'Upgrade to Master Stag'}
             </Text>
             <Text style={styles.subscriptionSubtitle}>
-              {isPremium ? 'Unlimited scans • Premium features' : 'Free tier • 3 scans/day'}
+              {isPremium ? 'Unlimited scans • Premium features' : 'Unlimited scans • No daily limits'}
             </Text>
           </View>
+          {!isPremium && (
+            <TouchableOpacity 
+              style={styles.upgradeButton}
+              onPress={handleUpgrade}
+              disabled={upgradeLoading}
+            >
+              <Text style={styles.upgradeButtonText}>
+                {upgradeLoading ? '...' : '$9.99/mo'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
-
-        {/* Tagline */}
-        <Text style={styles.tagline}>
-          Precision AI-powered deer aging for ethical hunters
-        </Text>
 
         {/* Stats Row */}
         <View style={styles.statsCard}>
