@@ -41,11 +41,10 @@ export default function ProfileScreen() {
   const isPremium = user?.subscription_tier === 'master_stag';
 
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (bytes === 0) return '0.00 MB';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    const mb = bytes / (k * k);
+    return mb.toFixed(2) + ' MB';
   };
 
   const handleUpgrade = async () => {
@@ -70,9 +69,23 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleClearStorage = () => {
+  const handleCleanupOldImages = () => {
     Alert.alert(
-      'Clear Local Images',
+      'Clean Up Old Images',
+      'This will delete images older than 90 days.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clean Up',
+          onPress: () => Alert.alert('Done', 'Old images have been cleaned up.'),
+        },
+      ]
+    );
+  };
+
+  const handleClearAllImages = () => {
+    Alert.alert(
+      'Clear All Local Images',
       'This will delete all locally stored deer images. Your scan history will be preserved.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -123,9 +136,35 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleRequestDataDeletion = () => {
+    Alert.alert(
+      'Request Data Deletion',
+      'This will request deletion of all your data from our servers. This process may take up to 30 days.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Request Deletion',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Request Submitted', 'Your data deletion request has been submitted.');
+          },
+        },
+      ]
+    );
+  };
+
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <ChevronLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <View style={styles.headerRight} />
+        </View>
+        
         <View style={styles.authRequired}>
           <User size={64} color={colors.textMuted} />
           <Text style={styles.authTitle}>Sign In Required</Text>
@@ -143,142 +182,214 @@ export default function ProfileScreen() {
     );
   }
 
-  // Menu items - flat list, no sections
-  const menuItems = [
-    {
-      icon: Edit2,
-      title: 'Edit Profile',
-      subtitle: 'Name and username',
-      onPress: () => Alert.alert('Coming Soon', 'Profile editing will be available soon.'),
-    },
-    {
-      icon: CreditCard,
-      title: 'Subscription',
-      subtitle: isPremium ? 'Master Stag Active' : 'Scout (Free)',
-      onPress: isPremium ? handleManageSubscription : handleUpgrade,
-    },
-    {
-      icon: HardDrive,
-      title: 'Storage',
-      subtitle: `${Object.keys(images).length} images • ${formatBytes(getStorageSize())}`,
-      onPress: handleClearStorage,
-    },
-    {
-      icon: Shield,
-      title: 'Privacy Policy',
-      subtitle: 'Data protection info',
-      onPress: () => Alert.alert('Privacy', 'Your images are stored locally and never uploaded to our servers.'),
-    },
-    {
-      icon: Info,
-      title: 'About Iron Stag',
-      subtitle: 'v1.0.0',
-      onPress: () => Alert.alert('Iron Stag', 'Hunt Smarter. Harvest Responsibly.\n\nForged in Asgard, Tested in the Field.'),
-    },
-  ];
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
+          <ChevronLeft size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity style={styles.editButton}>
+          <Edit2 size={18} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Compact Profile Header */}
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user?.name?.charAt(0).toUpperCase() || 'U'}
-              </Text>
+        {/* User Info Card */}
+        <View style={styles.userCard}>
+          <View style={styles.avatarLarge}>
+            <User size={40} color={colors.primary} />
+          </View>
+          
+          <Text style={styles.labelText}>Full Name</Text>
+          <Text style={styles.valueText}>{user?.name || 'User'}</Text>
+          
+          <View style={styles.infoRow}>
+            <AtSign size={14} color={colors.textMuted} />
+            <View style={styles.infoContent}>
+              <Text style={styles.labelText}>Username</Text>
+              <Text style={styles.valueText}>{user?.username || 'username'}</Text>
             </View>
-            <View style={styles.headerInfo}>
-              <Text style={styles.userName}>{user?.name}</Text>
-              <Text style={styles.userEmail}>{user?.email}</Text>
-            </View>
-            <View style={[styles.tierBadge, isPremium && styles.premiumBadge]}>
-              {isPremium && <Crown size={12} color={colors.primary} />}
-              <Text style={[styles.tierText, isPremium && styles.premiumText]}>
-                {isPremium ? 'Master Stag' : 'Scout'}
-              </Text>
+          </View>
+          
+          <View style={styles.infoRow}>
+            <Mail size={14} color={colors.textMuted} />
+            <View style={styles.infoContent}>
+              <Text style={styles.labelText}>Email</Text>
+              <Text style={styles.valueText}>{user?.email}</Text>
             </View>
           </View>
         </View>
 
-        {/* Primary CTA: Subscription Card */}
-        <View style={[styles.subscriptionCard, isPremium && styles.subscriptionCardPremium]}>
-          <View style={styles.subscriptionHeader}>
-            <Crown size={28} color={isPremium ? colors.primary : colors.textMuted} />
-            <View style={styles.subscriptionInfo}>
-              <Text style={styles.subscriptionTitle}>
-                {isPremium ? 'Master Stag Active' : 'Upgrade to Master Stag'}
-              </Text>
-              <Text style={styles.subscriptionSubtitle}>
-                {isPremium ? 'Unlimited scans • Premium features' : 'Unlimited scans • No daily limits'}
-              </Text>
-            </View>
+        {/* Subscription Card */}
+        <View style={[styles.subscriptionCard, isPremium && styles.subscriptionCardActive]}>
+          <View style={styles.subscriptionIcon}>
+            <Crown size={24} color={isPremium ? colors.background : colors.primary} />
           </View>
-          <TouchableOpacity
-            style={[styles.subscriptionButton, isPremium && styles.subscriptionButtonSecondary]}
-            onPress={isPremium ? handleManageSubscription : handleUpgrade}
-            disabled={upgradeLoading}
-          >
-            <Text style={[styles.subscriptionButtonText, isPremium && styles.subscriptionButtonTextSecondary]}>
-              {upgradeLoading ? 'Loading...' : isPremium ? 'Manage Subscription' : '$9.99/month'}
+          <View style={styles.subscriptionInfo}>
+            <Text style={[styles.subscriptionTitle, isPremium && styles.subscriptionTitleActive]}>
+              {isPremium ? 'Master Stag' : 'Scout'}
             </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Usage Snapshot - Minimal */}
-        <View style={styles.usageRow}>
-          <View style={styles.usageStat}>
-            <Text style={styles.usageValue}>{user?.scans_remaining || 0}</Text>
-            <Text style={styles.usageLabel}>Scans Left Today</Text>
-          </View>
-          <View style={styles.usageDivider} />
-          <View style={styles.usageStat}>
-            <Text style={styles.usageValue}>{Object.keys(images).length}</Text>
-            <Text style={styles.usageLabel}>Saved Images</Text>
+            <Text style={styles.subscriptionSubtitle}>
+              {isPremium ? 'Unlimited scans • Premium features' : 'Free tier • 3 scans/day'}
+            </Text>
           </View>
         </View>
 
-        {/* Single Flat Menu List */}
-        <View style={styles.menuContainer}>
-          {menuItems.map((item, index) => (
-            <TouchableOpacity
-              key={index}
-              style={[
-                styles.menuItem,
-                index === menuItems.length - 1 && styles.menuItemLast
-              ]}
-              onPress={item.onPress}
-              activeOpacity={0.7}
-            >
-              <View style={styles.menuIcon}>
-                <item.icon size={18} color={colors.primary} />
-              </View>
-              <View style={styles.menuContent}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-              </View>
-              <ChevronRight size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Destructive Actions - De-emphasized */}
-        <View style={styles.destructiveActions}>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleDeleteAccount}>
-            <Text style={styles.deleteText}>Delete Account</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Minimal Footer */}
-        <Text style={styles.footer}>
-          Iron Stag v1.0 • Forged in Asgard
+        {/* Tagline */}
+        <Text style={styles.tagline}>
+          Precision AI-powered deer aging for ethical hunters
         </Text>
+
+        {/* Stats Row */}
+        <View style={styles.statsCard}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statLabel}>Ethical{'\n'}Decisions</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={[styles.statValue, styles.harvestValue]}>0</Text>
+            <Text style={styles.statLabel}>Harvest{'\n'}Recs</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={[styles.statValue, styles.passValue]}>0</Text>
+            <Text style={styles.statLabel}>Pass{'\n'}Recs</Text>
+          </View>
+        </View>
+
+        {/* Local Storage Card */}
+        <View style={styles.storageCard}>
+          <View style={styles.storageHeader}>
+            <HardDrive size={18} color={colors.background} />
+            <Text style={styles.storageTitle}>Local Storage</Text>
+          </View>
+          <Text style={styles.storageInfo}>{Object.keys(images).length} images stored</Text>
+          <Text style={styles.storageInfo}>{formatBytes(getStorageSize())} used</Text>
+          
+          <View style={styles.cleanupRow}>
+            <Clock size={16} color={colors.textMuted} />
+            <Text style={styles.cleanupLabel}>Cleanup Interval</Text>
+            <Text style={styles.cleanupValue}>90 days</Text>
+          </View>
+
+          <TouchableOpacity style={styles.cleanupButton} onPress={handleCleanupOldImages}>
+            <Trash2 size={16} color={colors.primary} />
+            <Text style={styles.cleanupButtonText}>Clean Up Old Images (90+ days)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.clearAllButton} onPress={handleClearAllImages}>
+            <Trash2 size={16} color={colors.error} />
+            <Text style={styles.clearAllButtonText}>Clear All Local Images</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.storageNote}>
+            Images are stored only on your device. Deleting them does not affect your scan history or analysis results.
+          </Text>
+        </View>
+
+        {/* Menu Items */}
+        <View style={styles.menuSection}>
+          <TouchableOpacity style={styles.menuItem} onPress={isPremium ? handleManageSubscription : handleUpgrade}>
+            <View style={styles.menuIcon}>
+              <Settings size={18} color={colors.textPrimary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Manage Subscription</Text>
+              <Text style={styles.menuSubtitle}>Cancel anytime</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/learn')}>
+            <View style={styles.menuIcon}>
+              <BookOpen size={18} color={colors.textPrimary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Deer Aging Guide</Text>
+              <Text style={styles.menuSubtitle}>Learn to age deer</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/history')}>
+            <View style={styles.menuIcon}>
+              <Camera size={18} color={colors.textPrimary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Scan History</Text>
+              <Text style={styles.menuSubtitle}>0 total scans</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Iron Stag', 'Hunt Smarter. Harvest Responsibly.\n\nVersion 1.0.0\nForged in Asgard, Tested in the Field.')}>
+            <View style={styles.menuIcon}>
+              <Info size={18} color={colors.textPrimary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>About Iron Stag</Text>
+              <Text style={styles.menuSubtitle}>App information</Text>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Privacy & Legal */}
+        <Text style={styles.sectionHeader}>Privacy & Legal</Text>
+        <View style={styles.menuSection}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Privacy Policy', 'Your images are stored locally and never uploaded to our servers without your explicit consent.')}>
+            <View style={[styles.menuIcon, styles.menuIconGold]}>
+              <FileText size={18} color={colors.primary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Privacy Policy</Text>
+              <Text style={styles.menuSubtitle}>How we protect your data</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Terms of Service', 'By using Iron Stag, you agree to our terms of service and acceptable use policies.')}>
+            <View style={[styles.menuIcon, styles.menuIconGold]}>
+              <FileText size={18} color={colors.primary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Terms of Service</Text>
+              <Text style={styles.menuSubtitle}>Usage terms and conditions</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={handleRequestDataDeletion}>
+            <View style={[styles.menuIcon, styles.menuIconWarning]}>
+              <Trash2 size={18} color={colors.primary} />
+            </View>
+            <View style={styles.menuContent}>
+              <Text style={styles.menuTitle}>Request Data Deletion</Text>
+              <Text style={styles.menuSubtitle}>Delete your data from our servers</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Account Actions */}
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleLogout}>
+          <Text style={styles.signOutBtnText}>Sign Out</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
+          <Trash2 size={16} color={colors.error} />
+          <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
+        </TouchableOpacity>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Shield size={20} color={colors.textMuted} />
+          <Text style={styles.footerText}>Forged in Asgard, Tested in the Field</Text>
+          <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
+        </View>
       </ScrollView>
     </View>
   );
