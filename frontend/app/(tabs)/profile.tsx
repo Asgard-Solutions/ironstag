@@ -758,8 +758,8 @@ export default function ProfileScreen() {
               <Settings size={18} color={colors.textPrimary} />
             </View>
             <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Manage Subscription</Text>
-              <Text style={styles.menuSubtitle}>Cancel anytime</Text>
+              <Text style={styles.menuTitle}>{isPremium ? 'Manage Subscription' : 'Upgrade to Master Stag'}</Text>
+              <Text style={styles.menuSubtitle}>{isPremium ? 'Billing, payment & cancel' : 'Unlimited scans'}</Text>
             </View>
             <ChevronRight size={18} color={colors.textMuted} />
           </TouchableOpacity>
