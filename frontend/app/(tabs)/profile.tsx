@@ -87,6 +87,30 @@ export default function ProfileScreen() {
     });
   };
 
+  // Calculate next cleanup date based on oldest image and cleanup interval
+  const getNextCleanupDate = (): Date | null => {
+    if (!stats.oldestImage) return null;
+    
+    // Next cleanup date = oldest image date + cleanup interval days
+    const nextCleanup = new Date(stats.oldestImage);
+    nextCleanup.setDate(nextCleanup.getDate() + cleanupInterval);
+    
+    return nextCleanup;
+  };
+
+  // Check if cleanup is due (oldest image is older than interval)
+  const isCleanupDue = (): boolean => {
+    if (!stats.oldestImage) return false;
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - cleanupInterval);
+    
+    return stats.oldestImage < cutoffDate;
+  };
+
+  const nextCleanupDate = getNextCleanupDate();
+  const cleanupIsDue = isCleanupDue();
+
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
     try {
