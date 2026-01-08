@@ -732,44 +732,64 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl * 2,
   },
 
-  // User Card
-  userCard: {
-    backgroundColor: colors.backgroundCard,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+  // Compact Profile Header
+  profileHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: spacing.md,
   },
   avatarLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.background,
     borderWidth: 2,
     borderColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
   },
-  labelText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: spacing.sm,
+  avatarInitial: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.primary,
   },
-  valueText: {
+  profileInfo: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  profileName: {
     fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    width: '100%',
-    marginTop: spacing.md,
-    gap: spacing.sm,
+  profileUsername: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginTop: 1,
   },
-  infoContent: {
-    flex: 1,
+  profileEmail: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  tierBadge: {
+    backgroundColor: colors.backgroundCard,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  tierBadgePremium: {
+    backgroundColor: 'rgba(200, 162, 74, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  tierBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  tierBadgeTextPremium: {
+    color: colors.primary,
   },
 
   // Subscription Card
