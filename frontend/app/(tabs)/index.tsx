@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuthStore();
   const [stats, setStats] = useState({ total_scans: 0, harvest_count: 0, pass_count: 0 });
-  const [subscription, setSubscription] = useState({ tier: 'scout', scans_remaining: 3, is_premium: false });
+  const [subscription, setSubscription] = useState({ tier: 'scout', scans_remaining: 3, total_scans_used: 0, is_premium: false });
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
@@ -47,6 +47,12 @@ export default function HomeScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  // Get scans display text
+  const getScansDisplayText = () => {
+    if (subscription.is_premium) return 'Unlimited';
+    return `${subscription.scans_remaining} free scan${subscription.scans_remaining !== 1 ? 's' : ''} left`;
   };
 
   const quickActions = [
