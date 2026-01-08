@@ -6,13 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, History, BookOpen, User, Crown, Target, XCircle, Sparkles } from 'lucide-react-native';
+import { Camera, History, BookOpen, User, Target, XCircle, Sparkles } from 'lucide-react-native';
 import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { useAuthStore } from '../../stores/authStore';
 import { scanAPI, subscriptionAPI } from '../../utils/api';
@@ -49,11 +47,26 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  // Get scans display text
-  const getScansDisplayText = () => {
-    if (subscription.is_premium) return 'Unlimited';
-    return `${subscription.scans_remaining} free scan${subscription.scans_remaining !== 1 ? 's' : ''} left`;
+  // Get status header content
+  const getStatusHeader = () => {
+    if (subscription.is_premium) {
+      return {
+        primary: 'Master Stag • Unlimited scans',
+        secondary: "You're fully unlocked",
+        isPremium: true,
+      };
+    }
+    const scansText = subscription.scans_remaining === 1 
+      ? '1 free scan remaining' 
+      : `${subscription.scans_remaining} free scans remaining`;
+    return {
+      primary: `Tracker • ${scansText}`,
+      secondary: 'Upgrade anytime for unlimited scans',
+      isPremium: false,
+    };
   };
+
+  const statusHeader = getStatusHeader();
 
   const quickActions = [
     { icon: Camera, label: 'Scan Deer', route: '/(tabs)/scan', primary: true },
@@ -75,40 +88,27 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Image
-            source={require('../../assets/images/IronStagIcon.png')}
-            style={styles.headerIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
-        </View>
-
-        {/* Subscription Card */}
-        <Card style={styles.subscriptionCard} variant="elevated">
-          <View style={styles.subscriptionHeader}>
-            <View style={styles.tierBadge}>
-              <Crown size={16} color={subscription.is_premium ? colors.primary : colors.textMuted} />
-              <Text style={[styles.tierText, subscription.is_premium && styles.premiumTier]}>
-                {subscription.is_premium ? 'Master Stag' : 'Tracker'}
-              </Text>
-            </View>
-            {!subscription.is_premium && (
-              <Badge
-                text={getScansDisplayText()}
-                variant={subscription.scans_remaining > 0 ? 'info' : 'warning'}
-                size="small"
-              />
-            )}
-          </View>
+        {/* Status Header */}
+        <View style={styles.statusHeader}>
+          <Text style={[
+            styles.statusPrimary,
+            statusHeader.isPremium && styles.statusPremium
+          ]}>
+            {statusHeader.primary}
+          </Text>
+          <Text style={styles.statusSecondary}>
+            {statusHeader.secondary}
+          </Text>
           {!subscription.is_premium && (
-            <TouchableOpacity style={styles.upgradeButton} onPress={() => router.push('/(tabs)/profile')}>
-              <Sparkles size={16} color={colors.background} />
-              <Text style={styles.upgradeText}>Upgrade to Unlimited</Text>
+            <TouchableOpacity 
+              style={styles.upgradeLink} 
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              <Sparkles size={14} color={colors.primary} />
+              <Text style={styles.upgradeLinkText}>Upgrade to Master Stag</Text>
             </TouchableOpacity>
           )}
-        </Card>
+        </View>
 
         {/* Quick Actions */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -194,55 +194,32 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
   },
-  header: {
-    marginBottom: spacing.lg,
-    alignItems: 'flex-start',
-  },
-  headerIcon: {
-    width: 150,
-    height: 60,
-  },
-  tagline: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  subscriptionCard: {
+  statusHeader: {
     marginBottom: spacing.lg,
   },
-  subscriptionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  statusPrimary: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
-  tierBadge: {
+  statusPremium: {
+    color: colors.primary,
+  },
+  statusSecondary: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  upgradeLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    marginTop: spacing.sm,
   },
-  tierText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  premiumTier: {
+  upgradeLinkText: {
+    fontSize: 13,
+    fontWeight: '500',
     color: colors.primary,
-  },
-  upgradeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    marginTop: spacing.md,
-  },
-  upgradeText: {
-    color: colors.background,
-    fontWeight: '600',
-    fontSize: 14,
   },
   sectionTitle: {
     fontSize: 18,
