@@ -804,7 +804,7 @@ const styles = StyleSheet.create({
   storageTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.background,
+    color: '#333',
   },
   storageInfo: {
     fontSize: 14,
@@ -830,12 +830,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
+    marginRight: spacing.xs,
   },
   cleanupButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: '#FEF3C7',
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     marginBottom: spacing.sm,
@@ -844,13 +845,13 @@ const styles = StyleSheet.create({
   cleanupButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.primary,
+    color: '#D97706',
   },
   clearAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: '#FEE2E2',
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     marginBottom: spacing.sm,
@@ -861,11 +862,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.error,
   },
+  buttonDisabled: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.6,
+  },
+  buttonTextDisabled: {
+    color: colors.textMuted,
+  },
   storageNote: {
     fontSize: 11,
     color: '#888',
     textAlign: 'center',
     marginTop: spacing.xs,
+    lineHeight: 16,
   },
 
   // Menu Section
