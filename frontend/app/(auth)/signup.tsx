@@ -81,7 +81,7 @@ export default function SignupScreen() {
         username,
       });
       await login(response.data.access_token, response.data.user);
-      router.replace('/(auth)/disclaimer');
+      router.replace('/(auth)/onboarding');
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Registration failed. Please try again.';
       Alert.alert('Error', message);
