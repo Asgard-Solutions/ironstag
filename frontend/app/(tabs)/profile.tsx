@@ -535,9 +535,11 @@ export default function ProfileScreen() {
 
         {/* Subscription Card */}
         <View style={[styles.subscriptionCard, isPremium && styles.subscriptionCardActive]}>
-          <View style={styles.subscriptionIcon}>
-            <Crown size={24} color={isPremium ? colors.background : colors.primary} />
-          </View>
+          <Image 
+            source={require('../../assets/images/StagIcon.png')} 
+            style={styles.stagIcon}
+            resizeMode="contain"
+          />
           <View style={styles.subscriptionInfo}>
             <Text style={[styles.subscriptionTitle, isPremium && styles.subscriptionTitleActive]}>
               {isPremium ? 'Master Stag Active' : 'Upgrade to Master Stag'}
