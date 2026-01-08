@@ -91,7 +91,7 @@ export default function HomeScreen() {
             <View style={styles.tierBadge}>
               <Crown size={16} color={subscription.is_premium ? colors.primary : colors.textMuted} />
               <Text style={[styles.tierText, subscription.is_premium && styles.premiumTier]}>
-                {subscription.is_premium ? 'Master Stag' : 'Scout'}
+                {subscription.is_premium ? 'Master Stag' : 'Tracker'}
               </Text>
             </View>
             {!subscription.is_premium && (

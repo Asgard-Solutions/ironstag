@@ -558,7 +558,7 @@ export default function ProfileScreen() {
           
           <View style={[styles.tierBadge, isPremium && styles.tierBadgePremium]}>
             <Text style={[styles.tierBadgeText, isPremium && styles.tierBadgeTextPremium]}>
-              {isPremium ? 'Master Stag' : 'Scout'}
+              {isPremium ? 'Master Stag' : 'Tracker'}
             </Text>
           </View>
         </View>
