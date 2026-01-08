@@ -1,551 +1,571 @@
 diff --git a/frontend/app/(tabs)/scan.tsx b/frontend/app/(tabs)/scan.tsx
-index 77c4245..1720668 100644
+index a14c42f..88120b7 100644
 --- a/frontend/app/(tabs)/scan.tsx
 +++ b/frontend/app/(tabs)/scan.tsx
-@@ -397,29 +397,60 @@ export default function ScanScreen() {
-               You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
-             </Text>
-             
--            {/* Benefits */}
--            <View style={upgradeModalStyles.benefits}>
--              <View style={upgradeModalStyles.benefitRow}>
--                <Check size={16} color={colors.primary} />
--                <Text style={upgradeModalStyles.benefitText}>Unlimited scans</Text>
--              </View>
--              <View style={upgradeModalStyles.benefitRow}>
--                <Check size={16} color={colors.primary} />
--                <Text style={upgradeModalStyles.benefitText}>Priority AI analysis</Text>
--              </View>
--              <View style={upgradeModalStyles.benefitRow}>
--                <Check size={16} color={colors.primary} />
--                <Text style={upgradeModalStyles.benefitText}>Full scan history</Text>
--              </View>
-+            {/* Plan Options */}
-+            <View style={upgradeModalStyles.planOptions}>
-+              {/* Monthly */}
-+              <TouchableOpacity 
-+                style={[
-+                  upgradeModalStyles.planOption,
-+                  selectedPlan === 'monthly' && upgradeModalStyles.planOptionSelected
-+                ]}
-+                onPress={() => setSelectedPlan('monthly')}
-+              >
-+                <View style={[
-+                  upgradeModalStyles.planRadio,
-+                  selectedPlan === 'monthly' && upgradeModalStyles.planRadioSelected
-+                ]}>
-+                  {selectedPlan === 'monthly' && <View style={upgradeModalStyles.planRadioInner} />}
-+                </View>
-+                <View style={upgradeModalStyles.planInfo}>
-+                  <Text style={upgradeModalStyles.planName}>Monthly</Text>
-+                  <Text style={upgradeModalStyles.planPrice}>$9.99/mo</Text>
-+                </View>
-+              </TouchableOpacity>
-+
-+              {/* Annual */}
-+              <TouchableOpacity 
-+                style={[
-+                  upgradeModalStyles.planOption,
-+                  selectedPlan === 'annual' && upgradeModalStyles.planOptionSelected
-+                ]}
-+                onPress={() => setSelectedPlan('annual')}
-+              >
-+                <View style={upgradeModalStyles.saveBadge}>
-+                  <Text style={upgradeModalStyles.saveBadgeText}>SAVE $30</Text>
-+                </View>
-+                <View style={[
-+                  upgradeModalStyles.planRadio,
-+                  selectedPlan === 'annual' && upgradeModalStyles.planRadioSelected
-+                ]}>
-+                  {selectedPlan === 'annual' && <View style={upgradeModalStyles.planRadioInner} />}
-+                </View>
-+                <View style={upgradeModalStyles.planInfo}>
-+                  <Text style={upgradeModalStyles.planName}>Annual</Text>
-+                  <Text style={upgradeModalStyles.planPrice}>$89.99/yr</Text>
-+                </View>
-+              </TouchableOpacity>
-             </View>
-             
-             {/* Buttons */}
-             <TouchableOpacity 
-               style={upgradeModalStyles.upgradeButton}
-+              disabled={checkoutLoading}
-               onPress={async () => {
--                setShowUpgradeModal(false);
-+                setCheckoutLoading(true);
-                 try {
--                  const response = await subscriptionAPI.createCheckout();
-+                  const response = await subscriptionAPI.createCheckout(selectedPlan);
-                   const checkoutUrl = response.data.checkout_url;
-                   if (checkoutUrl) {
-                     const canOpen = await Linking.canOpenURL(checkoutUrl);
-@@ -427,12 +458,17 @@ export default function ScanScreen() {
-                       await Linking.openURL(checkoutUrl);
-                     }
-                   }
-+                  setShowUpgradeModal(false);
-                 } catch (error) {
-                   Alert.alert('Error', 'Failed to start upgrade process.');
-+                } finally {
-+                  setCheckoutLoading(false);
-                 }
-               }}
-             >
--              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag - $9.99/mo</Text>
-+              <Text style={upgradeModalStyles.upgradeButtonText}>
-+                {checkoutLoading ? 'Loading...' : 'Continue to Payment'}
-+              </Text>
-             </TouchableOpacity>
-             
-             <TouchableOpacity 
-@@ -1106,4 +1142,69 @@ const upgradeModalStyles = StyleSheet.create({
-     fontSize: 14,
-     color: colors.textMuted,
-   },
-+  planOptions: {
-+    width: '100%',
-+    marginBottom: spacing.lg,
-+    gap: spacing.sm,
-+  },
-+  planOption: {
-+    flexDirection: 'row',
-+    alignItems: 'center',
-+    padding: spacing.md,
-+    borderRadius: borderRadius.md,
-+    borderWidth: 1,
-+    borderColor: colors.border,
-+    backgroundColor: colors.background,
-+    position: 'relative',
-+  },
-+  planOptionSelected: {
-+    borderColor: colors.primary,
-+    backgroundColor: 'rgba(200, 162, 74, 0.1)',
-+  },
-+  planRadio: {
-+    width: 20,
-+    height: 20,
-+    borderRadius: 10,
-+    borderWidth: 2,
-+    borderColor: colors.border,
-+    marginRight: spacing.sm,
-+    justifyContent: 'center',
-+    alignItems: 'center',
-+  },
-+  planRadioSelected: {
-+    borderColor: colors.primary,
-+  },
-+  planRadioInner: {
-+    width: 10,
-+    height: 10,
-+    borderRadius: 5,
-+    backgroundColor: colors.primary,
-+  },
-+  planInfo: {
-+    flex: 1,
-+  },
-+  planName: {
-+    fontSize: 16,
-+    fontWeight: '600',
-+    color: colors.textPrimary,
-+    marginBottom: 2,
-+  },
-+  planPrice: {
-+    fontSize: 14,
-+    color: colors.textSecondary,
-+  },
-+  saveBadge: {
-+    position: 'absolute',
-+    top: -8,
-+    right: spacing.sm,
-+    backgroundColor: colors.primary,
-+    paddingHorizontal: spacing.xs,
-+    paddingVertical: 2,
-+    borderRadius: borderRadius.sm,
-+  },
-+  saveBadgeText: {
-+    fontSize: 10,
-+    fontWeight: '700',
-+    color: colors.background,
-+  },
- });
+@@ -91,10 +91,6 @@ export default function ScanScreen() {
+     }
+   };
+ 
+-  const generateUUID = async (): Promise<string> => {
+-    return Crypto.randomUUID();
+-  };
+-
+   const takePicture = async () => {
+     if (!cameraRef.current || !cameraReady) return;
+ 
 diff --git a/model.patch b/model.patch
-index b69c9ff..a07edd4 100644
+index 0d492a4..e69de29 100644
 --- a/model.patch
 +++ b/model.patch
-@@ -1,376 +0,0 @@
--diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
--index 0954941..0044656 100644
----- a/frontend/app/index.tsx
--+++ b/frontend/app/index.tsx
--@@ -9,7 +9,7 @@ import { colors, spacing } from '../constants/theme';
-- 
-- export default function SplashScreen() {
--   const insets = useSafeAreaInsets();
---  const { token, isLoading, login, isAuthenticated } = useAuthStore();
--+  const { token, isLoading, login, isAuthenticated, user } = useAuthStore();
--   const [fadeAnim] = useState(new Animated.Value(0));
--   const [checkingAuth, setCheckingAuth] = useState(true);
-- 
--@@ -25,7 +25,7 @@ export default function SplashScreen() {
--     const checkAuth = async () => {
--       if (isLoading) return;
-- 
---      // If no token, show splash buttons
--+      // If no token or user is null (logged out), show splash buttons
--       if (!token) {
--         setCheckingAuth(false);
--         return;
--@@ -43,10 +43,10 @@ export default function SplashScreen() {
--     };
-- 
--     checkAuth();
---  }, [token, isLoading]);
--+  }, [token, isLoading, isAuthenticated]);
-- 
--   // Show splash with buttons when not authenticated
---  if (!token && !isLoading) {
--+  if (!isAuthenticated && !isLoading && !checkingAuth) {
--     return (
--       <View style={styles.container}>
--         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+@@ -1,551 +0,0 @@
+-diff --git a/frontend/app/(tabs)/scan.tsx b/frontend/app/(tabs)/scan.tsx
+-index 77c4245..1720668 100644
+---- a/frontend/app/(tabs)/scan.tsx
+-+++ b/frontend/app/(tabs)/scan.tsx
+-@@ -397,29 +397,60 @@ export default function ScanScreen() {
+-               You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
+-             </Text>
+-             
+--            {/* Benefits */}
+--            <View style={upgradeModalStyles.benefits}>
+--              <View style={upgradeModalStyles.benefitRow}>
+--                <Check size={16} color={colors.primary} />
+--                <Text style={upgradeModalStyles.benefitText}>Unlimited scans</Text>
+--              </View>
+--              <View style={upgradeModalStyles.benefitRow}>
+--                <Check size={16} color={colors.primary} />
+--                <Text style={upgradeModalStyles.benefitText}>Priority AI analysis</Text>
+--              </View>
+--              <View style={upgradeModalStyles.benefitRow}>
+--                <Check size={16} color={colors.primary} />
+--                <Text style={upgradeModalStyles.benefitText}>Full scan history</Text>
+--              </View>
+-+            {/* Plan Options */}
+-+            <View style={upgradeModalStyles.planOptions}>
+-+              {/* Monthly */}
+-+              <TouchableOpacity 
+-+                style={[
+-+                  upgradeModalStyles.planOption,
+-+                  selectedPlan === 'monthly' && upgradeModalStyles.planOptionSelected
+-+                ]}
+-+                onPress={() => setSelectedPlan('monthly')}
+-+              >
+-+                <View style={[
+-+                  upgradeModalStyles.planRadio,
+-+                  selectedPlan === 'monthly' && upgradeModalStyles.planRadioSelected
+-+                ]}>
+-+                  {selectedPlan === 'monthly' && <View style={upgradeModalStyles.planRadioInner} />}
+-+                </View>
+-+                <View style={upgradeModalStyles.planInfo}>
+-+                  <Text style={upgradeModalStyles.planName}>Monthly</Text>
+-+                  <Text style={upgradeModalStyles.planPrice}>$9.99/mo</Text>
+-+                </View>
+-+              </TouchableOpacity>
+-+
+-+              {/* Annual */}
+-+              <TouchableOpacity 
+-+                style={[
+-+                  upgradeModalStyles.planOption,
+-+                  selectedPlan === 'annual' && upgradeModalStyles.planOptionSelected
+-+                ]}
+-+                onPress={() => setSelectedPlan('annual')}
+-+              >
+-+                <View style={upgradeModalStyles.saveBadge}>
+-+                  <Text style={upgradeModalStyles.saveBadgeText}>SAVE $30</Text>
+-+                </View>
+-+                <View style={[
+-+                  upgradeModalStyles.planRadio,
+-+                  selectedPlan === 'annual' && upgradeModalStyles.planRadioSelected
+-+                ]}>
+-+                  {selectedPlan === 'annual' && <View style={upgradeModalStyles.planRadioInner} />}
+-+                </View>
+-+                <View style={upgradeModalStyles.planInfo}>
+-+                  <Text style={upgradeModalStyles.planName}>Annual</Text>
+-+                  <Text style={upgradeModalStyles.planPrice}>$89.99/yr</Text>
+-+                </View>
+-+              </TouchableOpacity>
+-             </View>
+-             
+-             {/* Buttons */}
+-             <TouchableOpacity 
+-               style={upgradeModalStyles.upgradeButton}
+-+              disabled={checkoutLoading}
+-               onPress={async () => {
+--                setShowUpgradeModal(false);
+-+                setCheckoutLoading(true);
+-                 try {
+--                  const response = await subscriptionAPI.createCheckout();
+-+                  const response = await subscriptionAPI.createCheckout(selectedPlan);
+-                   const checkoutUrl = response.data.checkout_url;
+-                   if (checkoutUrl) {
+-                     const canOpen = await Linking.canOpenURL(checkoutUrl);
+-@@ -427,12 +458,17 @@ export default function ScanScreen() {
+-                       await Linking.openURL(checkoutUrl);
+-                     }
+-                   }
+-+                  setShowUpgradeModal(false);
+-                 } catch (error) {
+-                   Alert.alert('Error', 'Failed to start upgrade process.');
+-+                } finally {
+-+                  setCheckoutLoading(false);
+-                 }
+-               }}
+-             >
+--              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag - $9.99/mo</Text>
+-+              <Text style={upgradeModalStyles.upgradeButtonText}>
+-+                {checkoutLoading ? 'Loading...' : 'Continue to Payment'}
+-+              </Text>
+-             </TouchableOpacity>
+-             
+-             <TouchableOpacity 
+-@@ -1106,4 +1142,69 @@ const upgradeModalStyles = StyleSheet.create({
+-     fontSize: 14,
+-     color: colors.textMuted,
+-   },
+-+  planOptions: {
+-+    width: '100%',
+-+    marginBottom: spacing.lg,
+-+    gap: spacing.sm,
+-+  },
+-+  planOption: {
+-+    flexDirection: 'row',
+-+    alignItems: 'center',
+-+    padding: spacing.md,
+-+    borderRadius: borderRadius.md,
+-+    borderWidth: 1,
+-+    borderColor: colors.border,
+-+    backgroundColor: colors.background,
+-+    position: 'relative',
+-+  },
+-+  planOptionSelected: {
+-+    borderColor: colors.primary,
+-+    backgroundColor: 'rgba(200, 162, 74, 0.1)',
+-+  },
+-+  planRadio: {
+-+    width: 20,
+-+    height: 20,
+-+    borderRadius: 10,
+-+    borderWidth: 2,
+-+    borderColor: colors.border,
+-+    marginRight: spacing.sm,
+-+    justifyContent: 'center',
+-+    alignItems: 'center',
+-+  },
+-+  planRadioSelected: {
+-+    borderColor: colors.primary,
+-+  },
+-+  planRadioInner: {
+-+    width: 10,
+-+    height: 10,
+-+    borderRadius: 5,
+-+    backgroundColor: colors.primary,
+-+  },
+-+  planInfo: {
+-+    flex: 1,
+-+  },
+-+  planName: {
+-+    fontSize: 16,
+-+    fontWeight: '600',
+-+    color: colors.textPrimary,
+-+    marginBottom: 2,
+-+  },
+-+  planPrice: {
+-+    fontSize: 14,
+-+    color: colors.textSecondary,
+-+  },
+-+  saveBadge: {
+-+    position: 'absolute',
+-+    top: -8,
+-+    right: spacing.sm,
+-+    backgroundColor: colors.primary,
+-+    paddingHorizontal: spacing.xs,
+-+    paddingVertical: 2,
+-+    borderRadius: borderRadius.sm,
+-+  },
+-+  saveBadgeText: {
+-+    fontSize: 10,
+-+    fontWeight: '700',
+-+    color: colors.background,
+-+  },
+- });
 -diff --git a/model.patch b/model.patch
--index 56bbeab..e69de29 100644
+-index b69c9ff..a07edd4 100644
 ---- a/model.patch
 -+++ b/model.patch
--@@ -1,336 +0,0 @@
---diff --git a/frontend/app/(tabs)/profile.tsx b/frontend/app/(tabs)/profile.tsx
---index 867a8f2..d3401cd 100644
------ a/frontend/app/(tabs)/profile.tsx
---+++ b/frontend/app/(tabs)/profile.tsx
---@@ -29,7 +29,6 @@ import {
---   Settings,
---   FileText,
---   ExternalLink,
----  Calendar,
--- } from 'lucide-react-native';
--- import { useAuthStore } from '../../stores/authStore';
--- import { useImageStore } from '../../stores/imageStore';
---@@ -52,43 +51,34 @@ const CLEANUP_INTERVALS = [
--- export default function ProfileScreen() {
+-@@ -1,376 +0,0 @@
+--diff --git a/frontend/app/index.tsx b/frontend/app/index.tsx
+--index 0954941..0044656 100644
+----- a/frontend/app/index.tsx
+--+++ b/frontend/app/index.tsx
+--@@ -9,7 +9,7 @@ import { colors, spacing } from '../constants/theme';
+-- 
+-- export default function SplashScreen() {
 --   const insets = useSafeAreaInsets();
---   const { user, isAuthenticated, logout } = useAuthStore();
----  const { images, clearAllImages, getStorageSize } = useImageStore();
---+  const { 
---+    stats, 
---+    cleanupInterval, 
---+    isLoaded,
---+    initialize,
---+    cleanupOldImages, 
---+    clearAllImages, 
---+    setCleanupInterval,
---+    refreshStats 
---+  } = useImageStore();
---   const [upgradeLoading, setUpgradeLoading] = useState(false);
----  const [cleanupInterval, setCleanupInterval] = useState(90);
---   const [isCleaningUp, setIsCleaningUp] = useState(false);
+---  const { token, isLoading, login, isAuthenticated } = useAuthStore();
+--+  const { token, isLoading, login, isAuthenticated, user } = useAuthStore();
+--   const [fadeAnim] = useState(new Animated.Value(0));
+--   const [checkingAuth, setCheckingAuth] = useState(true);
 -- 
---   const isPremium = user?.subscription_tier === 'master_stag';
----  const imageCount = Object.keys(images).length;
----  const storageUsed = getStorageSize();
+--@@ -25,7 +25,7 @@ export default function SplashScreen() {
+--     const checkAuth = async () => {
+--       if (isLoading) return;
 -- 
----  // Load cleanup interval from storage
---+  // Initialize image store on mount
---   useEffect(() => {
----    const loadCleanupInterval = async () => {
----      try {
----        const stored = await AsyncStorage.getItem(CLEANUP_INTERVAL_KEY);
----        if (stored) {
----          setCleanupInterval(parseInt(stored, 10));
----        }
----      } catch (error) {
----        console.error('Error loading cleanup interval:', error);
----      }
----    };
----    loadCleanupInterval();
----  }, []);
----
----  const formatBytes = (bytes: number) => {
----    if (bytes === 0) return '0.00 MB';
----    const k = 1024;
----    const mb = bytes / (k * k);
----    return mb.toFixed(2) + ' MB';
----  };
----
----  // Get oldest image date from metadata
----  const getOldestImageDate = () => {
----    const entries = Object.values(images);
----    if (entries.length === 0) return null;
----    // For now, return a placeholder since we don't have createdAt in the current store
----    return null;
---+    initialize();
---+  }, [initialize]);
---+
---+  // Format date for display
---+  const formatDate = (date) => {
---+    if (!date) return null;
---+    return date.toLocaleDateString('en-US', {
---+      month: '2-digit',
---+      day: '2-digit',
---+      year: 'numeric',
---+    });
---   };
+---      // If no token, show splash buttons
+--+      // If no token or user is null (logged out), show splash buttons
+--       if (!token) {
+--         setCheckingAuth(false);
+--         return;
+--@@ -43,10 +43,10 @@ export default function SplashScreen() {
+--     };
 -- 
---   const handleUpgrade = async () => {
---@@ -121,8 +111,7 @@ export default function ProfileScreen() {
---         : interval.label,
---       onPress: async () => {
---         try {
----          await AsyncStorage.setItem(CLEANUP_INTERVAL_KEY, interval.value.toString());
----          setCleanupInterval(interval.value);
---+          await setCleanupInterval(interval.value);
---           Alert.alert(
---             'Cleanup Interval Updated',
---             `Images older than ${interval.value} days will be cleaned up when you tap "Clean Up Old Images".`
---@@ -142,7 +131,7 @@ export default function ProfileScreen() {
+--     checkAuth();
+---  }, [token, isLoading]);
+--+  }, [token, isLoading, isAuthenticated]);
 -- 
---   // Clean Up Old Images
---   const handleCleanupOldImages = () => {
----    if (imageCount === 0) {
---+    if (stats.totalImages === 0) {
---       Alert.alert('No Images', 'There are no images to clean up.');
---       return;
---     }
---@@ -158,11 +147,10 @@ export default function ProfileScreen() {
---           onPress: async () => {
---             setIsCleaningUp(true);
---             try {
----              // In a real implementation, this would filter by date
----              // For now, we'll show a success message
---+              const deletedCount = await cleanupOldImages();
---               Alert.alert(
---                 'Cleanup Complete',
----                `Cleaned up images older than ${cleanupInterval} days.`
---+                `Cleaned up ${deletedCount} images older than ${cleanupInterval} days.`
---               );
---             } catch (error) {
---               Alert.alert('Error', 'Failed to clean up images.');
---@@ -177,7 +165,7 @@ export default function ProfileScreen() {
--- 
---   // Clear All Local Images
---   const handleClearAllImages = () => {
----    if (imageCount === 0) {
---+    if (stats.totalImages === 0) {
---       Alert.alert('No Images', 'There are no images to clear.');
---       return;
---     }
---@@ -193,8 +181,8 @@ export default function ProfileScreen() {
---           onPress: async () => {
---             setIsCleaningUp(true);
---             try {
----              await clearAllImages();
----              Alert.alert('Storage Cleared', 'All local images have been deleted.');
---+              const deletedCount = await clearAllImages();
---+              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local images.`);
---             } catch (error) {
---               Alert.alert('Error', 'Failed to clear images.');
---             } finally {
---@@ -444,9 +432,9 @@ export default function ProfileScreen() {
---           
---           {/* Storage Stats */}
---           <Text style={styles.storageInfo}>
----            {imageCount} image{imageCount !== 1 ? 's' : ''} stored
---+            {stats.totalImages} image{stats.totalImages !== 1 ? 's' : ''} stored
---           </Text>
----          <Text style={styles.storageInfo}>{formatBytes(storageUsed)} used</Text>
---+          <Text style={styles.storageInfo}>{stats.totalSizeMB} MB used</Text>
---           
---           {/* Cleanup Interval Row */}
---           <TouchableOpacity 
---@@ -464,19 +452,19 @@ export default function ProfileScreen() {
---           <TouchableOpacity 
---             style={[
---               styles.cleanupButton,
----              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
---+              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
---             ]} 
---             onPress={handleCleanupOldImages}
----            disabled={imageCount === 0 || isCleaningUp}
---+            disabled={stats.totalImages === 0 || isCleaningUp}
---           >
---             {isCleaningUp ? (
---               <ActivityIndicator size="small" color={colors.primary} />
---             ) : (
----              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : '#D97706'} />
---+              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : '#D97706'} />
---             )}
---             <Text style={[
---               styles.cleanupButtonText,
----              imageCount === 0 && styles.buttonTextDisabled
---+              stats.totalImages === 0 && styles.buttonTextDisabled
---             ]}>
---               Clean Up Old Images ({cleanupInterval}+ days)
---             </Text>
---@@ -486,19 +474,19 @@ export default function ProfileScreen() {
---           <TouchableOpacity 
---             style={[
---               styles.clearAllButton,
----              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
---+              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
---             ]} 
---             onPress={handleClearAllImages}
----            disabled={imageCount === 0 || isCleaningUp}
---+            disabled={stats.totalImages === 0 || isCleaningUp}
---           >
---             {isCleaningUp ? (
---               <ActivityIndicator size="small" color={colors.error} />
---             ) : (
----              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : colors.error} />
---+              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : colors.error} />
---             )}
---             <Text style={[
---               styles.clearAllButtonText,
----              imageCount === 0 && styles.buttonTextDisabled
---+              stats.totalImages === 0 && styles.buttonTextDisabled
---             ]}>
---               Clear All Local Images
---             </Text>
+--   // Show splash with buttons when not authenticated
+---  if (!token && !isLoading) {
+--+  if (!isAuthenticated && !isLoading && !checkingAuth) {
+--     return (
+--       <View style={styles.container}>
+--         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
 --diff --git a/model.patch b/model.patch
---index ca4bb7b..b293d29 100644
+--index 56bbeab..e69de29 100644
 ----- a/model.patch
 --+++ b/model.patch
---@@ -1,140 +0,0 @@
----diff --git a/test_result.md b/test_result.md
----index d9476e7..31bd56c 100644
------- a/test_result.md
----+++ b/test_result.md
----@@ -116,6 +116,9 @@ backend:
----       - working: true
----         agent: "main"
----         comment: "Tested with curl - returns JWT token and user object"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Registration endpoint working perfectly. Creates user with UUID, returns JWT token and user object with all required fields (id, email, name, subscription_tier, scans_remaining, disclaimer_accepted)"
+--@@ -1,336 +0,0 @@
+---diff --git a/frontend/app/(tabs)/profile.tsx b/frontend/app/(tabs)/profile.tsx
+---index 867a8f2..d3401cd 100644
+------ a/frontend/app/(tabs)/profile.tsx
+---+++ b/frontend/app/(tabs)/profile.tsx
+---@@ -29,7 +29,6 @@ import {
+---   Settings,
+---   FileText,
+---   ExternalLink,
+----  Calendar,
+--- } from 'lucide-react-native';
+--- import { useAuthStore } from '../../stores/authStore';
+--- import { useImageStore } from '../../stores/imageStore';
+---@@ -52,43 +51,34 @@ const CLEANUP_INTERVALS = [
+--- export default function ProfileScreen() {
+---   const insets = useSafeAreaInsets();
+---   const { user, isAuthenticated, logout } = useAuthStore();
+----  const { images, clearAllImages, getStorageSize } = useImageStore();
+---+  const { 
+---+    stats, 
+---+    cleanupInterval, 
+---+    isLoaded,
+---+    initialize,
+---+    cleanupOldImages, 
+---+    clearAllImages, 
+---+    setCleanupInterval,
+---+    refreshStats 
+---+  } = useImageStore();
+---   const [upgradeLoading, setUpgradeLoading] = useState(false);
+----  const [cleanupInterval, setCleanupInterval] = useState(90);
+---   const [isCleaningUp, setIsCleaningUp] = useState(false);
 --- 
----   - task: "User Login API"
----     implemented: true
----@@ -128,6 +131,9 @@ backend:
----       - working: true
----         agent: "main"
----         comment: "Tested with curl - returns JWT token and user object"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Login endpoint working perfectly. Validates credentials, returns JWT token and user object. Daily scan reset logic working correctly"
+---   const isPremium = user?.subscription_tier === 'master_stag';
+----  const imageCount = Object.keys(images).length;
+----  const storageUsed = getStorageSize();
 --- 
----   - task: "Subscription Status API"
----     implemented: true
----@@ -140,30 +146,39 @@ backend:
----       - working: true
----         agent: "main"
----         comment: "Returns tier, scans_remaining, is_premium status"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Subscription status endpoint working perfectly. Returns tier (scout/master_stag), scans_remaining, is_premium boolean, and expires_at fields correctly"
---- 
----   - task: "Deer Analysis API (GPT-4 Vision)"
----     implemented: true
-----    working: "NA"
----+    working: true
----     file: "/app/backend/server.py"
----     stuck_count: 0
----     priority: "high"
-----    needs_retesting: true
----+    needs_retesting: false
----     status_history:
----       - working: "NA"
----         agent: "main"
----         comment: "Implemented with OpenAI GPT-4 Vision - needs testing with real image"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Deer analysis endpoint structure working correctly. Endpoint accessible, validates auth, decrements scans, calls OpenAI API. Returns expected 500 error with proper error handling when OpenAI rejects invalid image data (expected behavior). Integration with GPT-4 Vision confirmed working"
---- 
----   - task: "Scan History CRUD APIs"
----     implemented: true
-----    working: "NA"
----+    working: true
----     file: "/app/backend/server.py"
----     stuck_count: 0
----     priority: "high"
-----    needs_retesting: true
----+    needs_retesting: false
----     status_history:
----       - working: "NA"
----         agent: "main"
----         comment: "GET/PUT/DELETE endpoints implemented"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Scan history endpoints working perfectly. GET /scans returns empty array for new users (correct). GET /scans/stats/summary returns proper statistics structure with total_scans, harvest_count, pass_count fields"
---- 
----   - task: "Learn Content API"
----     implemented: true
----@@ -176,18 +191,48 @@ backend:
----       - working: true
----         agent: "main"
----         comment: "Returns educational content sections"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Learn content endpoint working perfectly. Returns 3 educational sections (aging, ethics, management) with proper structure. No authentication required (correct design)"
---- 
----   - task: "Stripe Checkout Integration"
----     implemented: true
-----    working: "NA"
----+    working: true
----     file: "/app/backend/server.py"
----     stuck_count: 0
----     priority: "medium"
-----    needs_retesting: true
----+    needs_retesting: false
----     status_history:
----       - working: "NA"
----         agent: "main"
----         comment: "Checkout session creation implemented - needs live testing"
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Stripe checkout integration working perfectly. Creates Stripe customer, generates checkout session, returns checkout_url and session_id. Stripe API integration confirmed working with live API keys"
+----  // Load cleanup interval from storage
+---+  // Initialize image store on mount
+---   useEffect(() => {
+----    const loadCleanupInterval = async () => {
+----      try {
+----        const stored = await AsyncStorage.getItem(CLEANUP_INTERVAL_KEY);
+----        if (stored) {
+----          setCleanupInterval(parseInt(stored, 10));
+----        }
+----      } catch (error) {
+----        console.error('Error loading cleanup interval:', error);
+----      }
+----    };
+----    loadCleanupInterval();
+----  }, []);
+----
+----  const formatBytes = (bytes: number) => {
+----    if (bytes === 0) return '0.00 MB';
+----    const k = 1024;
+----    const mb = bytes / (k * k);
+----    return mb.toFixed(2) + ' MB';
+----  };
+----
+----  // Get oldest image date from metadata
+----  const getOldestImageDate = () => {
+----    const entries = Object.values(images);
+----    if (entries.length === 0) return null;
+----    // For now, return a placeholder since we don't have createdAt in the current store
+----    return null;
+---+    initialize();
+---+  }, [initialize]);
 ---+
----+  - task: "User Profile Management APIs"
----+    implemented: true
----+    working: true
----+    file: "/app/backend/server.py"
----+    stuck_count: 0
----+    priority: "high"
----+    needs_retesting: false
----+    status_history:
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Profile management working perfectly. GET /auth/me returns current user info. PUT /auth/profile updates name/username with uniqueness validation. POST /auth/disclaimer accepts disclaimer. All endpoints require proper authentication"
----+
----+  - task: "Password Reset Flow APIs"
----+    implemented: true
----+    working: true
----+    file: "/app/backend/server.py"
----+    stuck_count: 0
----+    priority: "medium"
----+    needs_retesting: false
----+    status_history:
----+      - working: true
----+        agent: "testing"
----+        comment: "✅ TESTED: Password reset flow working correctly. POST /auth/password-reset/request generates 6-digit code with 15-minute expiration. POST /auth/password-reset/verify validates code and updates password. Proper security measures in place"
+---+  // Format date for display
+---+  const formatDate = (date) => {
+---+    if (!date) return null;
+---+    return date.toLocaleDateString('en-US', {
+---+      month: '2-digit',
+---+      day: '2-digit',
+---+      year: 'numeric',
+---+    });
+---   };
 --- 
---- frontend:
----   - task: "Splash Screen"
----@@ -282,13 +327,14 @@ metadata:
+---   const handleUpgrade = async () => {
+---@@ -121,8 +111,7 @@ export default function ProfileScreen() {
+---         : interval.label,
+---       onPress: async () => {
+---         try {
+----          await AsyncStorage.setItem(CLEANUP_INTERVAL_KEY, interval.value.toString());
+----          setCleanupInterval(interval.value);
+---+          await setCleanupInterval(interval.value);
+---           Alert.alert(
+---             'Cleanup Interval Updated',
+---             `Images older than ${interval.value} days will be cleaned up when you tap "Clean Up Old Images".`
+---@@ -142,7 +131,7 @@ export default function ProfileScreen() {
 --- 
---- test_plan:
----   current_focus:
-----    - "Full auth flow testing"
-----    - "Tab navigation"
-----    - "Deer analysis with real image"
----+    - "Backend API testing completed successfully"
----+    - "All core backend functionality verified"
----   stuck_tasks: []
----   test_all: false
----   test_priority: "high_first"
+---   // Clean Up Old Images
+---   const handleCleanupOldImages = () => {
+----    if (imageCount === 0) {
+---+    if (stats.totalImages === 0) {
+---       Alert.alert('No Images', 'There are no images to clean up.');
+---       return;
+---     }
+---@@ -158,11 +147,10 @@ export default function ProfileScreen() {
+---           onPress: async () => {
+---             setIsCleaningUp(true);
+---             try {
+----              // In a real implementation, this would filter by date
+----              // For now, we'll show a success message
+---+              const deletedCount = await cleanupOldImages();
+---               Alert.alert(
+---                 'Cleanup Complete',
+----                `Cleaned up images older than ${cleanupInterval} days.`
+---+                `Cleaned up ${deletedCount} images older than ${cleanupInterval} days.`
+---               );
+---             } catch (error) {
+---               Alert.alert('Error', 'Failed to clean up images.');
+---@@ -177,7 +165,7 @@ export default function ProfileScreen() {
 --- 
---- agent_communication:
----   - agent: "main"
-----    message: "MVP implementation complete. Backend APIs tested with curl. Frontend screens rendering. Need full integration testing."
----\ No newline at end of file
----+    message: "MVP implementation complete. Backend APIs tested with curl. Frontend screens rendering. Need full integration testing."
----+  - agent: "testing"
----+    message: "✅ BACKEND TESTING COMPLETE: All 9 backend API endpoints tested and working correctly. Auth flow (register/login/profile/password-reset), subscription management (status/stripe checkout), scan history (get/stats), deer analysis (GPT-4 Vision integration), and learn content all functioning properly. OpenAI and Stripe integrations confirmed working with live API keys. Ready for frontend integration testing or production deployment."
----\ No newline at end of file
+---   // Clear All Local Images
+---   const handleClearAllImages = () => {
+----    if (imageCount === 0) {
+---+    if (stats.totalImages === 0) {
+---       Alert.alert('No Images', 'There are no images to clear.');
+---       return;
+---     }
+---@@ -193,8 +181,8 @@ export default function ProfileScreen() {
+---           onPress: async () => {
+---             setIsCleaningUp(true);
+---             try {
+----              await clearAllImages();
+----              Alert.alert('Storage Cleared', 'All local images have been deleted.');
+---+              const deletedCount = await clearAllImages();
+---+              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local images.`);
+---             } catch (error) {
+---               Alert.alert('Error', 'Failed to clear images.');
+---             } finally {
+---@@ -444,9 +432,9 @@ export default function ProfileScreen() {
+---           
+---           {/* Storage Stats */}
+---           <Text style={styles.storageInfo}>
+----            {imageCount} image{imageCount !== 1 ? 's' : ''} stored
+---+            {stats.totalImages} image{stats.totalImages !== 1 ? 's' : ''} stored
+---           </Text>
+----          <Text style={styles.storageInfo}>{formatBytes(storageUsed)} used</Text>
+---+          <Text style={styles.storageInfo}>{stats.totalSizeMB} MB used</Text>
+---           
+---           {/* Cleanup Interval Row */}
+---           <TouchableOpacity 
+---@@ -464,19 +452,19 @@ export default function ProfileScreen() {
+---           <TouchableOpacity 
+---             style={[
+---               styles.cleanupButton,
+----              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
+---+              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
+---             ]} 
+---             onPress={handleCleanupOldImages}
+----            disabled={imageCount === 0 || isCleaningUp}
+---+            disabled={stats.totalImages === 0 || isCleaningUp}
+---           >
+---             {isCleaningUp ? (
+---               <ActivityIndicator size="small" color={colors.primary} />
+---             ) : (
+----              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : '#D97706'} />
+---+              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : '#D97706'} />
+---             )}
+---             <Text style={[
+---               styles.cleanupButtonText,
+----              imageCount === 0 && styles.buttonTextDisabled
+---+              stats.totalImages === 0 && styles.buttonTextDisabled
+---             ]}>
+---               Clean Up Old Images ({cleanupInterval}+ days)
+---             </Text>
+---@@ -486,19 +474,19 @@ export default function ProfileScreen() {
+---           <TouchableOpacity 
+---             style={[
+---               styles.clearAllButton,
+----              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
+---+              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
+---             ]} 
+---             onPress={handleClearAllImages}
+----            disabled={imageCount === 0 || isCleaningUp}
+---+            disabled={stats.totalImages === 0 || isCleaningUp}
+---           >
+---             {isCleaningUp ? (
+---               <ActivityIndicator size="small" color={colors.error} />
+---             ) : (
+----              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : colors.error} />
+---+              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : colors.error} />
+---             )}
+---             <Text style={[
+---               styles.clearAllButtonText,
+----              imageCount === 0 && styles.buttonTextDisabled
+---+              stats.totalImages === 0 && styles.buttonTextDisabled
+---             ]}>
+---               Clear All Local Images
+---             </Text>
+---diff --git a/model.patch b/model.patch
+---index ca4bb7b..b293d29 100644
+------ a/model.patch
+---+++ b/model.patch
+---@@ -1,140 +0,0 @@
+----diff --git a/test_result.md b/test_result.md
+----index d9476e7..31bd56c 100644
+------- a/test_result.md
+----+++ b/test_result.md
+----@@ -116,6 +116,9 @@ backend:
+----       - working: true
+----         agent: "main"
+----         comment: "Tested with curl - returns JWT token and user object"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Registration endpoint working perfectly. Creates user with UUID, returns JWT token and user object with all required fields (id, email, name, subscription_tier, scans_remaining, disclaimer_accepted)"
+---- 
+----   - task: "User Login API"
+----     implemented: true
+----@@ -128,6 +131,9 @@ backend:
+----       - working: true
+----         agent: "main"
+----         comment: "Tested with curl - returns JWT token and user object"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Login endpoint working perfectly. Validates credentials, returns JWT token and user object. Daily scan reset logic working correctly"
+---- 
+----   - task: "Subscription Status API"
+----     implemented: true
+----@@ -140,30 +146,39 @@ backend:
+----       - working: true
+----         agent: "main"
+----         comment: "Returns tier, scans_remaining, is_premium status"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Subscription status endpoint working perfectly. Returns tier (scout/master_stag), scans_remaining, is_premium boolean, and expires_at fields correctly"
+---- 
+----   - task: "Deer Analysis API (GPT-4 Vision)"
+----     implemented: true
+-----    working: "NA"
+----+    working: true
+----     file: "/app/backend/server.py"
+----     stuck_count: 0
+----     priority: "high"
+-----    needs_retesting: true
+----+    needs_retesting: false
+----     status_history:
+----       - working: "NA"
+----         agent: "main"
+----         comment: "Implemented with OpenAI GPT-4 Vision - needs testing with real image"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Deer analysis endpoint structure working correctly. Endpoint accessible, validates auth, decrements scans, calls OpenAI API. Returns expected 500 error with proper error handling when OpenAI rejects invalid image data (expected behavior). Integration with GPT-4 Vision confirmed working"
+---- 
+----   - task: "Scan History CRUD APIs"
+----     implemented: true
+-----    working: "NA"
+----+    working: true
+----     file: "/app/backend/server.py"
+----     stuck_count: 0
+----     priority: "high"
+-----    needs_retesting: true
+----+    needs_retesting: false
+----     status_history:
+----       - working: "NA"
+----         agent: "main"
+----         comment: "GET/PUT/DELETE endpoints implemented"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Scan history endpoints working perfectly. GET /scans returns empty array for new users (correct). GET /scans/stats/summary returns proper statistics structure with total_scans, harvest_count, pass_count fields"
+---- 
+----   - task: "Learn Content API"
+----     implemented: true
+----@@ -176,18 +191,48 @@ backend:
+----       - working: true
+----         agent: "main"
+----         comment: "Returns educational content sections"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Learn content endpoint working perfectly. Returns 3 educational sections (aging, ethics, management) with proper structure. No authentication required (correct design)"
+---- 
+----   - task: "Stripe Checkout Integration"
+----     implemented: true
+-----    working: "NA"
+----+    working: true
+----     file: "/app/backend/server.py"
+----     stuck_count: 0
+----     priority: "medium"
+-----    needs_retesting: true
+----+    needs_retesting: false
+----     status_history:
+----       - working: "NA"
+----         agent: "main"
+----         comment: "Checkout session creation implemented - needs live testing"
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Stripe checkout integration working perfectly. Creates Stripe customer, generates checkout session, returns checkout_url and session_id. Stripe API integration confirmed working with live API keys"
+----+
+----+  - task: "User Profile Management APIs"
+----+    implemented: true
+----+    working: true
+----+    file: "/app/backend/server.py"
+----+    stuck_count: 0
+----+    priority: "high"
+----+    needs_retesting: false
+----+    status_history:
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Profile management working perfectly. GET /auth/me returns current user info. PUT /auth/profile updates name/username with uniqueness validation. POST /auth/disclaimer accepts disclaimer. All endpoints require proper authentication"
+----+
+----+  - task: "Password Reset Flow APIs"
+----+    implemented: true
+----+    working: true
+----+    file: "/app/backend/server.py"
+----+    stuck_count: 0
+----+    priority: "medium"
+----+    needs_retesting: false
+----+    status_history:
+----+      - working: true
+----+        agent: "testing"
+----+        comment: "✅ TESTED: Password reset flow working correctly. POST /auth/password-reset/request generates 6-digit code with 15-minute expiration. POST /auth/password-reset/verify validates code and updates password. Proper security measures in place"
+---- 
+---- frontend:
+----   - task: "Splash Screen"
+----@@ -282,13 +327,14 @@ metadata:
+---- 
+---- test_plan:
+----   current_focus:
+-----    - "Full auth flow testing"
+-----    - "Tab navigation"
+-----    - "Deer analysis with real image"
+----+    - "Backend API testing completed successfully"
+----+    - "All core backend functionality verified"
+----   stuck_tasks: []
+----   test_all: false
+----   test_priority: "high_first"
+---- 
+---- agent_communication:
+----   - agent: "main"
+-----    message: "MVP implementation complete. Backend APIs tested with curl. Frontend screens rendering. Need full integration testing."
+----\ No newline at end of file
+----+    message: "MVP implementation complete. Backend APIs tested with curl. Frontend screens rendering. Need full integration testing."
+----+  - agent: "testing"
+----+    message: "✅ BACKEND TESTING COMPLETE: All 9 backend API endpoints tested and working correctly. Auth flow (register/login/profile/password-reset), subscription management (status/stripe checkout), scan history (get/stats), deer analysis (GPT-4 Vision integration), and learn content all functioning properly. OpenAI and Stripe integrations confirmed working with live API keys. Ready for frontend integration testing or production deployment."
+----\ No newline at end of file
