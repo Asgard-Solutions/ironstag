@@ -303,7 +303,7 @@ export default function ScanScreen() {
             title="Analyze Deer"
             onPress={analyzeDeer}
             style={styles.previewButton}
-            disabled={scansRemaining === 0}
+            disabled={!isPremium && scansRemaining === 0}
           />
         </View>
       </View>
