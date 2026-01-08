@@ -299,6 +299,13 @@ class LocalImageServiceClass {
     
     if (!entry) return null;
 
+    if (isWeb) {
+      // On web, return a blob URL or data URL
+      const base64Data = await this.getImageAsBase64(localImageId);
+      return base64Data; // Return the data URL directly
+    }
+
+    // On native, return file path
     const localPath = `${SCAN_IMAGES_DIR}${entry.fileName}`;
     const fileInfo = await FileSystem.getInfoAsync(localPath);
     
