@@ -96,7 +96,7 @@ export default function HomeScreen() {
             </View>
             {!subscription.is_premium && (
               <Badge
-                text={`${subscription.scans_remaining} scans left`}
+                text={getScansDisplayText()}
                 variant={subscription.scans_remaining > 0 ? 'info' : 'warning'}
                 size="small"
               />
