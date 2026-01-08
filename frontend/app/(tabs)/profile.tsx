@@ -435,9 +435,9 @@ export default function ProfileScreen() {
           
           {/* Storage Stats */}
           <Text style={styles.storageInfo}>
-            {imageCount} image{imageCount !== 1 ? 's' : ''} stored
+            {stats.totalImages} image{stats.totalImages !== 1 ? 's' : ''} stored
           </Text>
-          <Text style={styles.storageInfo}>{formatBytes(storageUsed)} used</Text>
+          <Text style={styles.storageInfo}>{stats.totalSizeMB} MB used</Text>
           
           {/* Cleanup Interval Row */}
           <TouchableOpacity 
