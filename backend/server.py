@@ -182,7 +182,7 @@ async def get_optional_user(authorization: str = Header(None)) -> Optional[dict]
         user_id = verify_token(token)
         user = await db.users.find_one({"id": user_id})
         return user
-    except:
+    except Exception:
         return None
 
 # ============ AUTH ROUTES ============
