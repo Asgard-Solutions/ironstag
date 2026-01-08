@@ -102,6 +102,7 @@ export default function SplashScreen() {
     );
   }
 
+  // Fallback - show splash with buttons
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
