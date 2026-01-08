@@ -515,11 +515,13 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
             raise HTTPException(status_code=400, detail="Current password is required to change password")
         
         # Verify current password
-        if not verify_password(data.current_password, user["hashed_password"]):
+        try:
+            ph.verify(user["password"], data.current_password)
+        except VerifyMismatchError:
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         
         # Hash and set new password
-        updates["hashed_password"] = hash_password(data.new_password)
+        updates["password"] = ph.hash(data.new_password)
     
     if updates:
         await db.users.update_one({"id": user["id"]}, {"$set": updates})
