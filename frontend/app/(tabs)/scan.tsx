@@ -43,7 +43,7 @@ type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user, updateUser } = useAuthStore();
-  const { saveImage } = useImageStore();
+  const { saveImageFromBase64 } = useImageStore();
   
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
