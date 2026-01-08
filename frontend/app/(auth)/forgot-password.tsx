@@ -8,39 +8,42 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Mail, ArrowLeft, Lock, KeyRound } from 'lucide-react-native';
+import { ArrowLeft, Mail, Check, Lock } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
+import { Card } from '../../components/Card';
 import { authAPI } from '../../utils/api';
-import { colors, spacing } from '../../constants/theme';
+import { colors, spacing, borderRadius } from '../../constants/theme';
+
+type Step = 'email' | 'code' | 'reset' | 'success';
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState<'email' | 'code' | 'reset'>('email');
+  const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(['', '', '', '', '', '']);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showCodeSentModal, setShowCodeSentModal] = useState(false);
 
   const handleRequestCode = async () => {
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
-      setErrors({ email: 'Valid email is required' });
+      setErrors({ email: 'Please enter a valid email address' });
       return;
     }
 
     setLoading(true);
     try {
-      const response = await authAPI.requestPasswordReset(email);
-      // For demo, we show the code (in production, it would be sent via email)
-      if (response.data.code) {
-        Alert.alert('Code Sent', `Your reset code is: ${response.data.code}`);
-      }
-      setStep('code');
+      await authAPI.requestPasswordReset(email);
+      setShowCodeSentModal(true);
     } catch (error: any) {
       Alert.alert('Error', 'Failed to send reset code. Please try again.');
     } finally {
@@ -48,9 +51,33 @@ export default function ForgotPasswordScreen() {
     }
   };
 
+  const handleCodeSentConfirm = () => {
+    setShowCodeSentModal(false);
+    setStep('code');
+  };
+
+  const handleCodeChange = (value: string, index: number) => {
+    if (value.length > 1) {
+      // Handle paste
+      const digits = value.replace(/\D/g, '').slice(0, 6).split('');
+      const newCode = [...code];
+      digits.forEach((digit, i) => {
+        if (index + i < 6) {
+          newCode[index + i] = digit;
+        }
+      });
+      setCode(newCode);
+    } else {
+      const newCode = [...code];
+      newCode[index] = value;
+      setCode(newCode);
+    }
+  };
+
   const handleVerifyCode = () => {
-    if (!code || code.length !== 6) {
-      setErrors({ code: 'Enter the 6-digit code' });
+    const fullCode = code.join('');
+    if (fullCode.length !== 6) {
+      setErrors({ code: 'Please enter the complete 6-digit code' });
       return;
     }
     setStep('reset');
@@ -59,9 +86,22 @@ export default function ForgotPasswordScreen() {
   const handleResetPassword = async () => {
     const newErrors: Record<string, string> = {};
     
-    if (!newPassword || newPassword.length < 6) {
-      newErrors.newPassword = 'Password must be at least 6 characters';
+    if (!newPassword || newPassword.length < 8) {
+      newErrors.newPassword = 'Password must be at least 8 characters';
     }
+    
+    if (!/[A-Z]/.test(newPassword)) {
+      newErrors.newPassword = 'Password must contain an uppercase letter';
+    }
+    
+    if (!/[a-z]/.test(newPassword)) {
+      newErrors.newPassword = 'Password must contain a lowercase letter';
+    }
+    
+    if (!/[0-9]/.test(newPassword)) {
+      newErrors.newPassword = 'Password must contain a number';
+    }
+    
     if (newPassword !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
@@ -75,12 +115,10 @@ export default function ForgotPasswordScreen() {
     try {
       await authAPI.verifyPasswordReset({
         email,
-        code,
+        code: code.join(''),
         new_password: newPassword,
       });
-      Alert.alert('Success', 'Password reset successful!', [
-        { text: 'OK', onPress: () => router.replace('/(auth)/login') },
-      ]);
+      setStep('success');
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Failed to reset password.';
       Alert.alert('Error', message);
@@ -89,196 +127,458 @@ export default function ForgotPasswordScreen() {
     }
   };
 
-  const renderStep = () => {
-    switch (step) {
-      case 'email':
-        return (
-          <>
-            <Text style={styles.stepDescription}>
-              Enter your email address and we'll send you a code to reset your password.
-            </Text>
-            <Input
-              label="Email"
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={errors.email}
-              icon={<Mail size={20} color={colors.textMuted} />}
-            />
-            <Button
-              title="Send Reset Code"
-              onPress={handleRequestCode}
-              loading={loading}
-              size="large"
-              style={styles.submitButton}
-            />
-          </>
-        );
+  const renderEmailStep = () => (
+    <>
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Forgot Password?</Text>
+        <Text style={styles.subtitle}>
+          Enter your email address and we'll send you a verification code to reset your password.
+        </Text>
+      </View>
 
-      case 'code':
-        return (
-          <>
-            <Text style={styles.stepDescription}>
-              Enter the 6-digit code sent to your email.
-            </Text>
-            <Input
-              label="Verification Code"
-              placeholder="Enter 6-digit code"
-              value={code}
-              onChangeText={setCode}
-              keyboardType="number-pad"
-              maxLength={6}
-              error={errors.code}
-              icon={<KeyRound size={20} color={colors.textMuted} />}
-            />
-            <Button
-              title="Verify Code"
-              onPress={handleVerifyCode}
-              loading={loading}
-              size="large"
-              style={styles.submitButton}
-            />
-            <TouchableOpacity
-              style={styles.resendButton}
-              onPress={handleRequestCode}
-            >
-              <Text style={styles.resendText}>Resend Code</Text>
-            </TouchableOpacity>
-          </>
-        );
+      <View style={styles.form}>
+        <Input
+          label="Email Address"
+          placeholder="your@email.com"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+          error={errors.email}
+        />
 
-      case 'reset':
-        return (
-          <>
-            <Text style={styles.stepDescription}>
-              Create a new password for your account.
+        <Button
+          title="Send Reset Code"
+          onPress={handleRequestCode}
+          loading={loading}
+          size="large"
+          style={styles.submitButton}
+        />
+      </View>
+
+      <View style={styles.backToLogin}>
+        <Text style={styles.backToLoginText}>Remember your password? </Text>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={styles.backToLoginLink}>Sign In</Text>
+        </TouchableOpacity>
+      </View>
+    </>
+  );
+
+  const renderCodeStep = () => (
+    <>
+      <TouchableOpacity style={styles.backButton} onPress={() => setStep('email')}>
+        <ArrowLeft size={24} color={colors.textPrimary} />
+      </TouchableOpacity>
+
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Enter Verification Code</Text>
+        <Text style={styles.subtitle}>
+          We sent a 6-digit code to <Text style={styles.emailHighlight}>{email}</Text>
+        </Text>
+      </View>
+
+      <View style={styles.codeContainer}>
+        {code.map((digit, index) => (
+          <TextInput
+            key={index}
+            style={[styles.codeInput, digit && styles.codeInputFilled]}
+            value={digit}
+            onChangeText={(value) => handleCodeChange(value, index)}
+            keyboardType="number-pad"
+            maxLength={6}
+            selectTextOnFocus
+          />
+        ))}
+      </View>
+
+      {errors.code && <Text style={styles.errorText}>{errors.code}</Text>}
+
+      <Button
+        title="Verify Code"
+        onPress={handleVerifyCode}
+        size="large"
+        style={styles.submitButton}
+      />
+
+      <TouchableOpacity style={styles.resendContainer} onPress={handleRequestCode}>
+        <Text style={styles.resendText}>Didn't receive the code? </Text>
+        <Text style={styles.resendLink}>Resend</Text>
+      </TouchableOpacity>
+    </>
+  );
+
+  const renderResetStep = () => (
+    <>
+      <TouchableOpacity style={styles.backButton} onPress={() => setStep('code')}>
+        <ArrowLeft size={24} color={colors.textPrimary} />
+      </TouchableOpacity>
+
+      <View style={styles.headerContainer}>
+        <Text style={styles.title}>Create New Password</Text>
+        <Text style={styles.subtitle}>
+          Your new password must be different from previously used passwords.
+        </Text>
+      </View>
+
+      <View style={styles.form}>
+        <Input
+          label="New Password"
+          placeholder="Enter new password"
+          value={newPassword}
+          onChangeText={setNewPassword}
+          secureTextEntry
+          error={errors.newPassword}
+        />
+
+        <Input
+          label="Confirm Password"
+          placeholder="Confirm new password"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
+          error={errors.confirmPassword}
+        />
+
+        {/* Password Requirements */}
+        <View style={styles.requirements}>
+          <Text style={styles.requirementsTitle}>Password must contain:</Text>
+          <View style={styles.requirementRow}>
+            <Check size={16} color={newPassword.length >= 8 ? colors.harvest : colors.textMuted} />
+            <Text style={[styles.requirementText, newPassword.length >= 8 && styles.requirementMet]}>
+              At least 8 characters
             </Text>
-            <Input
-              label="New Password"
-              placeholder="Enter new password"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              error={errors.newPassword}
-              icon={<Lock size={20} color={colors.textMuted} />}
-            />
-            <Input
-              label="Confirm Password"
-              placeholder="Confirm new password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              error={errors.confirmPassword}
-              icon={<Lock size={20} color={colors.textMuted} />}
-            />
-            <Button
-              title="Reset Password"
-              onPress={handleResetPassword}
-              loading={loading}
-              size="large"
-              style={styles.submitButton}
-            />
-          </>
-        );
-    }
-  };
+          </View>
+          <View style={styles.requirementRow}>
+            <Check size={16} color={/[A-Z]/.test(newPassword) ? colors.harvest : colors.textMuted} />
+            <Text style={[styles.requirementText, /[A-Z]/.test(newPassword) && styles.requirementMet]}>
+              One uppercase letter
+            </Text>
+          </View>
+          <View style={styles.requirementRow}>
+            <Check size={16} color={/[a-z]/.test(newPassword) ? colors.harvest : colors.textMuted} />
+            <Text style={[styles.requirementText, /[a-z]/.test(newPassword) && styles.requirementMet]}>
+              One lowercase letter
+            </Text>
+          </View>
+          <View style={styles.requirementRow}>
+            <Check size={16} color={/[0-9]/.test(newPassword) ? colors.harvest : colors.textMuted} />
+            <Text style={[styles.requirementText, /[0-9]/.test(newPassword) && styles.requirementMet]}>
+              One number
+            </Text>
+          </View>
+        </View>
+
+        <Button
+          title="Reset Password"
+          onPress={handleResetPassword}
+          loading={loading}
+          size="large"
+          style={styles.submitButton}
+        />
+      </View>
+    </>
+  );
+
+  const renderSuccessStep = () => (
+    <View style={styles.successContainer}>
+      <View style={styles.successIcon}>
+        <Check size={48} color={colors.harvest} />
+      </View>
+      <Text style={styles.successTitle}>Password Reset!</Text>
+      <Text style={styles.successText}>
+        Your password has been successfully reset. You can now sign in with your new password.
+      </Text>
+      <Button
+        title="Sign In"
+        onPress={() => router.replace('/(auth)/login')}
+        size="large"
+        style={styles.submitButton}
+      />
+    </View>
+  );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg },
-        ]}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => {
-            if (step === 'email') {
-              router.back();
-            } else if (step === 'code') {
-              setStep('email');
-            } else {
-              setStep('code');
-            }
-          }}
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <ArrowLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/images/IronStagLogo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
 
-        <View style={styles.header}>
-          <Text style={styles.title}>Reset Password</Text>
-          <Text style={styles.subtitle}>
-            {step === 'email' && 'Step 1 of 3'}
-            {step === 'code' && 'Step 2 of 3'}
-            {step === 'reset' && 'Step 3 of 3'}
-          </Text>
-        </View>
+          {step === 'email' && renderEmailStep()}
+          {step === 'code' && renderCodeStep()}
+          {step === 'reset' && renderResetStep()}
+          {step === 'success' && renderSuccessStep()}
 
-        <View style={styles.form}>
-          {renderStep()}
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerTagline}>Forged in Asgard, Tested in the Field</Text>
+            <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Code Sent Modal */}
+      <Modal visible={showCodeSentModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <Card style={styles.modalCard}>
+            <View style={styles.modalIconContainer}>
+              <Mail size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Code Sent!</Text>
+            <Text style={styles.modalText}>
+              We've sent a verification code to{'\n'}
+              <Text style={styles.modalEmail}>{email}</Text>
+            </Text>
+            <Text style={styles.modalSubtext}>
+              Please check your inbox and spam folder.
+            </Text>
+            <Button
+              title="Continue"
+              onPress={handleCodeSentConfirm}
+              size="large"
+              style={styles.modalButton}
+            />
+          </Card>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#000000',
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
     padding: spacing.lg,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  logo: {
+    width: 160,
+    height: 160,
   },
   backButton: {
     width: 44,
     height: 44,
     justifyContent: 'center',
     alignItems: 'flex-start',
+    marginBottom: spacing.md,
   },
-  header: {
-    marginTop: spacing.xl,
+  headerContainer: {
     marginBottom: spacing.xl,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
+    color: colors.textSecondary,
+    lineHeight: 24,
+  },
+  emailHighlight: {
     color: colors.primary,
     fontWeight: '500',
   },
   form: {
-    flex: 1,
-  },
-  stepDescription: {
-    fontSize: 16,
-    color: colors.textSecondary,
     marginBottom: spacing.lg,
-    lineHeight: 24,
   },
   submitButton: {
     marginTop: spacing.md,
   },
-  resendButton: {
-    alignSelf: 'center',
-    marginTop: spacing.lg,
-    padding: spacing.sm,
+  backToLogin: {
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
-  resendText: {
+  backToLoginText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  backToLoginLink: {
     color: colors.primary,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  codeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  codeInput: {
+    flex: 1,
+    height: 56,
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  codeInputFilled: {
+    borderColor: colors.primary,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  resendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+  },
+  resendText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  resendLink: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  requirements: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  requirementsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  requirementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  requirementText: {
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  requirementMet: {
+    color: colors.harvest,
+  },
+  successContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.harvestBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  successText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: spacing.xl,
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  footerTagline: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginBottom: spacing.xs,
+  },
+  footerCopyright: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  modalIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(200, 162, 74, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  modalText: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  modalEmail: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  modalSubtext: {
+    fontSize: 14,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  modalButton: {
+    width: '100%',
   },
 });
