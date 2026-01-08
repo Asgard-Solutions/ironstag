@@ -438,7 +438,12 @@ export default function ScanScreen() {
 
       {/* Disclaimer Modal */}
       <Modal visible={showDisclaimer} animationType="slide">
-        <DisclaimerScreen onClose={() => setShowDisclaimer(false)} />
+        <DisclaimerScreen 
+          onClose={handleCloseDisclaimer} 
+          onAccept={handleAcceptDisclaimer}
+          isAccepted={user?.disclaimer_accepted || false}
+          acceptedAt={user?.disclaimer_accepted_at}
+        />
       </Modal>
 
       {/* Upgrade Modal - Free Scans Used */}
