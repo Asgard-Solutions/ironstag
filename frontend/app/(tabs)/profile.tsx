@@ -455,19 +455,19 @@ export default function ProfileScreen() {
           <TouchableOpacity 
             style={[
               styles.cleanupButton,
-              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
+              (stats.totalImages === 0 || isCleaningUp) && styles.buttonDisabled
             ]} 
             onPress={handleCleanupOldImages}
-            disabled={imageCount === 0 || isCleaningUp}
+            disabled={stats.totalImages === 0 || isCleaningUp}
           >
             {isCleaningUp ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : '#D97706'} />
+              <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : '#D97706'} />
             )}
             <Text style={[
               styles.cleanupButtonText,
-              imageCount === 0 && styles.buttonTextDisabled
+              stats.totalImages === 0 && styles.buttonTextDisabled
             ]}>
               Clean Up Old Images ({cleanupInterval}+ days)
             </Text>
