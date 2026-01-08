@@ -700,7 +700,7 @@ export default function ProfileScreen() {
             <ChevronRight size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Iron Stag', 'Hunt Smarter. Harvest Responsibly.\n\nVersion 1.0.0\nForged in Asgard, Tested in the Field.')}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => setShowAboutModal(true)}>
             <View style={styles.menuIcon}>
               <Info size={18} color={colors.textPrimary} />
             </View>
