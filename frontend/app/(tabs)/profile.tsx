@@ -26,7 +26,6 @@ import {
   Shield,
   Info,
   Trash2,
-  ChevronLeft,
   AtSign,
   Mail,
   Clock,
