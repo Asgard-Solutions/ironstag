@@ -127,6 +127,14 @@ export default function ScanScreen() {
   const analyzeDeer = async () => {
     if (!capturedImage || !isAuthenticated) return;
 
+    // Check eligibility before starting analysis
+    const canScan = await checkScanEligibility();
+    if (!canScan) {
+      setScanStep('main');
+      setCapturedImage(null);
+      return;
+    }
+
     setScanStep('analyzing');
     setAnalyzing(true);
 
@@ -139,15 +147,30 @@ export default function ScanScreen() {
         local_image_id: localImageId,
       });
 
-      if (user?.subscription_tier !== 'master_stag') {
-        setScansRemaining((prev) => Math.max(0, prev - 1));
-        updateUser({ scans_remaining: Math.max(0, scansRemaining - 1) });
+      // Update local state after successful scan
+      if (!isPremium) {
+        const newRemaining = Math.max(0, scansRemaining - 1);
+        setScansRemaining(newRemaining);
+        updateUser({ 
+          scans_remaining: newRemaining,
+          total_scans_used: (user?.total_scans_used || 0) + 1
+        });
       }
 
       router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Analysis failed. Please try again.';
-      Alert.alert('Error', message);
+      // Check if this is a "free limit reached" error
+      if (error.response?.status === 403) {
+        const detail = error.response?.data?.detail;
+        if (detail?.code === 'FREE_LIMIT_REACHED') {
+          setShowUpgradeModal(true);
+          setScanStep('main');
+          setCapturedImage(null);
+          return;
+        }
+      }
+      const message = error.response?.data?.detail?.message || error.response?.data?.detail || 'Analysis failed. Please try again.';
+      Alert.alert('Error', typeof message === 'string' ? message : 'Analysis failed. Please try again.');
       setScanStep('main');
     } finally {
       setAnalyzing(false);
