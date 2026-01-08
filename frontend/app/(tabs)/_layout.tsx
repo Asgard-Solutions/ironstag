@@ -7,6 +7,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  
+  // Calculate tab bar height based on platform and safe area
+  const tabBarHeight = Platform.OS === 'ios' ? 85 : 60 + insets.bottom;
+  const tabBarPaddingBottom = Platform.OS === 'ios' ? insets.bottom : insets.bottom + spacing.xs;
 
   return (
     <Tabs
@@ -16,9 +20,9 @@ export default function TabLayout() {
           backgroundColor: colors.backgroundCard,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 85 : 70,
+          height: tabBarHeight,
           paddingTop: spacing.sm,
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom : spacing.sm,
+          paddingBottom: tabBarPaddingBottom,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
