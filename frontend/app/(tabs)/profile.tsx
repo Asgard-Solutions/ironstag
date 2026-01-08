@@ -400,156 +400,259 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-  },
   
-  // Compact Header
+  // Header
   header: {
-    marginBottom: spacing.lg,
-  },
-  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.backgroundCard,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  headerRight: {
+    width: 40,
+  },
+  editButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.primary,
+
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl * 2,
   },
-  headerInfo: {
-    flex: 1,
-    marginLeft: spacing.md,
+
+  // User Card
+  userCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
   },
-  userName: {
+  avatarLarge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  labelText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+  },
+  valueText: {
     fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  userEmail: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  tierBadge: {
+  infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.backgroundCard,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
-    gap: 4,
+    alignItems: 'flex-start',
+    width: '100%',
+    marginTop: spacing.md,
+    gap: spacing.sm,
   },
-  premiumBadge: {
-    backgroundColor: 'rgba(200, 162, 74, 0.15)',
-    borderWidth: 1,
-    borderColor: colors.primaryDark,
-  },
-  tierText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  premiumText: {
-    color: colors.primary,
+  infoContent: {
+    flex: 1,
   },
 
-  // Subscription Card - Primary CTA
+  // Subscription Card
   subscriptionCard: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  subscriptionCardPremium: {
+  subscriptionCardActive: {
+    borderColor: colors.primary,
     backgroundColor: 'rgba(200, 162, 74, 0.08)',
-    borderColor: colors.primaryDark,
   },
-  subscriptionHeader: {
-    flexDirection: 'row',
+  subscriptionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginRight: spacing.md,
   },
   subscriptionInfo: {
     flex: 1,
-    marginLeft: spacing.md,
   },
   subscriptionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  subscriptionTitleActive: {
+    color: colors.primary,
   },
   subscriptionSubtitle: {
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  subscriptionButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-  },
-  subscriptionButtonSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  subscriptionButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.background,
-  },
-  subscriptionButtonTextSecondary: {
-    color: colors.primary,
+
+  // Tagline
+  tagline: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
   },
 
-  // Usage Row - Minimal
-  usageRow: {
-    flexDirection: 'row',
+  // Stats Card
+  statsCard: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
-    marginBottom: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  usageStat: {
+  stat: {
     flex: 1,
     alignItems: 'center',
   },
-  usageValue: {
-    fontSize: 24,
+  statValue: {
+    fontSize: 28,
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  usageLabel: {
+  harvestValue: {
+    color: colors.error,
+  },
+  passValue: {
+    color: colors.harvest,
+  },
+  statLabel: {
     fontSize: 11,
     color: colors.textMuted,
+    textAlign: 'center',
     marginTop: 4,
   },
-  usageDivider: {
+  statDivider: {
     width: 1,
+    height: 40,
     backgroundColor: colors.border,
-    marginHorizontal: spacing.md,
   },
 
-  // Menu Container
-  menuContainer: {
+  // Storage Card
+  storageCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  storageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  storageTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  storageInfo: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  cleanupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  cleanupLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333',
+    marginLeft: spacing.sm,
+  },
+  cleanupValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  cleanupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  cleanupButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  clearAllButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.error,
+  },
+  storageNote: {
+    fontSize: 11,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+
+  // Menu Section
+  menuSection: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
   },
   menuItem: {
     flexDirection: 'row',
@@ -558,24 +661,30 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  menuItemLast: {
-    borderBottomWidth: 0,
-  },
   menuIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(200, 162, 74, 0.12)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
+  },
+  menuIconGold: {
+    borderColor: colors.primary,
+  },
+  menuIconWarning: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   menuContent: {
     flex: 1,
   },
   menuTitle: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.textPrimary,
   },
   menuSubtitle: {
@@ -584,30 +693,62 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Destructive Actions
-  destructiveActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xl,
-    marginBottom: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  signOutText: {
+  // Section Header
+  sectionHeader: {
     fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+
+  // Account Actions
+  signOutBtn: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  signOutBtnText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.textSecondary,
+  },
+  deleteAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.error,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  deleteAccountBtnText: {
+    fontSize: 16,
     fontWeight: '500',
     color: colors.error,
-  },
-  deleteText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textMuted,
   },
 
   // Footer
   footer: {
+    alignItems: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  footerText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
+  },
+  footerCopyright: {
     fontSize: 11,
     color: colors.textMuted,
-    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 
   // Auth Required
