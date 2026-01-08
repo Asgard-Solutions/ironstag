@@ -90,7 +90,7 @@ export default function HistoryScreen() {
     recommendation: '',
   });
 
-  const loadScans = async () => {
+  const loadScans = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       const params: any = {};
@@ -99,6 +99,19 @@ export default function HistoryScreen() {
       
       const response = await scanAPI.getScans(params);
       setScans(response.data);
+    } catch (error) {
+      console.error('Failed to load scans:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated, filters]);
+
+  // Refresh scans when screen comes into focus (e.g., after delete)
+  useFocusEffect(
+    useCallback(() => {
+      loadScans();
+    }, [loadScans])
+  );
     } catch (error) {
       console.error('Failed to load scans:', error);
     } finally {
