@@ -435,6 +435,11 @@ export default function ProfileScreen() {
             {stats.totalImages} image{stats.totalImages !== 1 ? 's' : ''} stored
           </Text>
           <Text style={styles.storageInfo}>{stats.totalSizeMB} MB used</Text>
+          {stats.oldestImage && (
+            <Text style={styles.storageInfo}>
+              Oldest: {formatDate(stats.oldestImage)}
+            </Text>
+          )}
           
           {/* Cleanup Interval Row */}
           <TouchableOpacity 
