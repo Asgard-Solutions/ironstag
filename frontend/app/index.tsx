@@ -59,16 +59,23 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        <Image
-          source={require('../assets/images/IronStagLogo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        {/* Logo Section */}
+        <View style={styles.logoSection}>
+          <Image
+            source={require('../assets/images/IronStagLogo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        </View>
         
-        <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
-        <Text style={styles.subTagline}>AI-Powered Deer Aging</Text>
+        {/* Tagline Section */}
+        <View style={styles.taglineSection}>
+          <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
+          <Text style={styles.subTagline}>AI-Powered Deer Aging</Text>
+        </View>
         
-        <View style={[styles.buttonContainer, { paddingBottom: insets.bottom + spacing.lg }]}>
+        {/* Buttons Section */}
+        <View style={[styles.buttonSection, { paddingBottom: insets.bottom + spacing.md }]}>
           <Button
             title="Get Started"
             onPress={() => router.push('/(auth)/login')}
@@ -96,32 +103,36 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    alignItems: 'center',
+  },
+  logoSection: {
+    flex: 1,
     justifyContent: 'center',
-    padding: spacing.lg,
+    alignItems: 'center',
+    paddingTop: spacing.xl,
   },
   logo: {
-    width: 350,
-    height: 350,
+    width: 320,
+    height: 320,
+  },
+  taglineSection: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
   },
   tagline: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: colors.textPrimary,
     textAlign: 'center',
-    marginTop: spacing.md,
   },
   subTagline: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.primary,
     textAlign: 'center',
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
-  buttonContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: spacing.lg,
-    right: spacing.lg,
+  buttonSection: {
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   primaryButton: {
@@ -131,7 +142,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   footer: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.sm,
