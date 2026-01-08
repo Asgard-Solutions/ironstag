@@ -106,6 +106,8 @@ class DisclaimerAccept(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     username: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
 class DeerAnalysisRequest(BaseModel):
     image_base64: str
