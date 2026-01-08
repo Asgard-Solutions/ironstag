@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../stores/authStore';
 import { useImageStore } from '../stores/imageStore';
 import { colors } from '../constants/theme';
@@ -25,26 +26,28 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.background },
-          animation: 'fade',
-        }}
-      >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen 
-          name="scan-result/[id]" 
-          options={{ 
+    <SafeAreaProvider>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
             headerShown: false,
-            animation: 'slide_from_right',
-          }} 
-        />
-      </Stack>
-    </QueryClientProvider>
+            contentStyle: { backgroundColor: colors.background },
+            animation: 'fade',
+          }}
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen 
+            name="scan-result/[id]" 
+            options={{ 
+              headerShown: false,
+              animation: 'slide_from_right',
+            }} 
+          />
+        </Stack>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }
