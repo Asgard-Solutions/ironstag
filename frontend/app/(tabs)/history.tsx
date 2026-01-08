@@ -78,7 +78,6 @@ function ScanImage({ localImageId }: { localImageId: string }) {
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuthStore();
-  const { getImage, isLoaded } = useImageStore();
   
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
