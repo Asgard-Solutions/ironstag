@@ -1009,6 +1009,61 @@ export default function ProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* About Iron Stag Modal */}
+      <Modal
+        visible={showAboutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAboutModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.aboutModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAboutModal(false)}
+        >
+          <View style={styles.aboutModalContent}>
+            {/* App Logo/Icon placeholder */}
+            <View style={styles.aboutLogoContainer}>
+              <Image 
+                source={require('../../assets/images/StagIcon.png')} 
+                style={styles.aboutLogo}
+                resizeMode="contain"
+              />
+            </View>
+            
+            {/* App Name */}
+            <Text style={styles.aboutAppName}>Iron Stag</Text>
+            
+            {/* Developer */}
+            <Text style={styles.aboutDeveloper}>by Asgard Solutions LLC</Text>
+            
+            {/* Version */}
+            <Text style={styles.aboutVersion}>Version 1.0.0</Text>
+            
+            {/* Divider */}
+            <View style={styles.aboutDivider} />
+            
+            {/* Description */}
+            <Text style={styles.aboutDescription}>
+              Precision AI-powered deer aging and ethical harvest recommendations for responsible hunters.
+            </Text>
+            
+            {/* Tagline */}
+            <Text style={styles.aboutTagline}>
+              Forged in Asgard, Tested in the Field.
+            </Text>
+            
+            {/* OK Button */}
+            <TouchableOpacity 
+              style={styles.aboutOkButton}
+              onPress={() => setShowAboutModal(false)}
+            >
+              <Text style={styles.aboutOkButtonText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
