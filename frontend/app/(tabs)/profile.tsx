@@ -827,10 +827,8 @@ export default function ProfileScreen() {
           <View style={[styles.editModalContent, { paddingTop: insets.top }]}>
             {/* Edit Modal Header */}
             <View style={styles.editModalHeader}>
-              <TouchableOpacity style={styles.backButton} onPress={handleCloseEditProfile}>
-                <ChevronLeft size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>Profile</Text>
+              <View style={styles.headerSpacer} />
+              <Text style={styles.headerTitle}>Edit Profile</Text>
               <TouchableOpacity style={styles.closeButton} onPress={handleCloseEditProfile}>
                 <X size={24} color={colors.textMuted} />
               </TouchableOpacity>
@@ -845,7 +843,7 @@ export default function ProfileScreen() {
               <View style={styles.editProfileCard}>
                 <View style={styles.editCardHeader}>
                   <Edit2 size={18} color={colors.primary} />
-                  <Text style={styles.editCardTitle}>Edit Profile</Text>
+                  <Text style={styles.editCardTitle}>Profile Information</Text>
                 </View>
 
                 {/* Name Row */}
