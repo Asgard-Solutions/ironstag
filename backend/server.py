@@ -723,6 +723,24 @@ async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@api_router.post("/subscription/portal")
+async def create_customer_portal(user: dict = Depends(get_current_user)):
+    """Create Stripe customer portal session for managing subscription"""
+    try:
+        if not user.get("stripe_customer_id"):
+            raise HTTPException(status_code=400, detail="No subscription found. Please upgrade first.")
+        
+        # Create a portal session
+        session = stripe.billing_portal.Session.create(
+            customer=user["stripe_customer_id"],
+            return_url="ironstag://profile"
+        )
+        
+        return {"portal_url": session.url}
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe portal error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @api_router.post("/subscription/verify-revenuecat")
 async def verify_revenuecat(user: dict = Depends(get_current_user)):
     """Verify subscription status with RevenueCat"""
