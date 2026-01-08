@@ -133,7 +133,7 @@ export default function ProfileScreen() {
 
   // Clean Up Old Images
   const handleCleanupOldImages = () => {
-    if (imageCount === 0) {
+    if (stats.totalImages === 0) {
       Alert.alert('No Images', 'There are no images to clean up.');
       return;
     }
