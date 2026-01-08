@@ -419,8 +419,15 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            await logout();
-            router.replace('/');
+            try {
+              await logout();
+              // Navigate to root splash screen
+              router.replace('/');
+            } catch (error) {
+              console.error('Logout error:', error);
+              // Force navigation even if logout fails
+              router.replace('/');
+            }
           },
         },
       ]
