@@ -207,12 +207,7 @@ export default function HistoryScreen() {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <ChevronLeft size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
           <Text style={styles.title}>History</Text>
           <View style={styles.headerRight} />
         </View>
@@ -237,12 +232,7 @@ export default function HistoryScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.push('/(tabs)')}
-        >
-          <ChevronLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.title}>History</Text>
         <TouchableOpacity style={styles.premiumBadge}>
           <Crown size={14} color={colors.primary} />
