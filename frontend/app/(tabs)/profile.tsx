@@ -1237,6 +1237,72 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Subscription Manager Modal (for premium users) */}
+      <Modal
+        visible={showSubscriptionManager}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSubscriptionManager(false)}
+      >
+        <TouchableOpacity 
+          style={styles.subManagerOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubscriptionManager(false)}
+        >
+          <View style={styles.subManagerContent}>
+            {/* Header */}
+            <View style={styles.subManagerHeader}>
+              <Crown size={32} color={colors.primary} />
+              <Text style={styles.subManagerTitle}>Master Stag</Text>
+              <Text style={styles.subManagerSubtitle}>Manage your subscription</Text>
+            </View>
+
+            {/* Current Plan Info */}
+            <View style={styles.subManagerPlanInfo}>
+              <Text style={styles.subManagerPlanLabel}>Current Plan</Text>
+              <Text style={styles.subManagerPlanValue}>Unlimited Scans</Text>
+            </View>
+
+            {/* Options */}
+            <TouchableOpacity 
+              style={styles.subManagerOption}
+              onPress={openStripePortal}
+            >
+              <View style={styles.subManagerOptionIcon}>
+                <Settings size={20} color={colors.textPrimary} />
+              </View>
+              <View style={styles.subManagerOptionText}>
+                <Text style={styles.subManagerOptionTitle}>Billing & Payment</Text>
+                <Text style={styles.subManagerOptionSubtitle}>Update payment method, view invoices</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.subManagerOption, styles.subManagerOptionDanger]}
+              onPress={handleCancelSubscription}
+            >
+              <View style={[styles.subManagerOptionIcon, styles.subManagerOptionIconDanger]}>
+                <X size={20} color={colors.error} />
+              </View>
+              <View style={styles.subManagerOptionText}>
+                <Text style={[styles.subManagerOptionTitle, styles.subManagerOptionTitleDanger]}>Cancel Subscription</Text>
+                <Text style={styles.subManagerOptionSubtitle}>Access until end of billing period</Text>
+              </View>
+              <ChevronRight size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {/* Close Button */}
+            <TouchableOpacity 
+              style={styles.subManagerCloseButton}
+              onPress={() => setShowSubscriptionManager(false)}
+            >
+              <Text style={styles.subManagerCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
