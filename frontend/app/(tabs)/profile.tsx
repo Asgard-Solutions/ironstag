@@ -112,8 +112,7 @@ export default function ProfileScreen() {
         : interval.label,
       onPress: async () => {
         try {
-          await AsyncStorage.setItem(CLEANUP_INTERVAL_KEY, interval.value.toString());
-          setCleanupInterval(interval.value);
+          await setCleanupInterval(interval.value);
           Alert.alert(
             'Cleanup Interval Updated',
             `Images older than ${interval.value} days will be cleaned up when you tap "Clean Up Old Images".`
