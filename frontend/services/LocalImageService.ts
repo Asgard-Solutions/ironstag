@@ -163,13 +163,42 @@ class LocalImageServiceClass {
     // 1. Generate UUID for identification
     const localImageId = uuidv4();
     const fileName = `${localImageId}.${extension}`;
-    const localPath = `${SCAN_IMAGES_DIR}${fileName}`;
 
     // 2. Remove data URL prefix if present
     let base64String = base64Data;
     if (base64Data.includes(',')) {
       base64String = base64Data.split(',')[1];
     }
+
+    if (isWeb) {
+      // On web, store in AsyncStorage (limited but works)
+      try {
+        const webImages = await AsyncStorage.getItem(WEB_IMAGE_STORAGE_KEY);
+        const images = webImages ? JSON.parse(webImages) : {};
+        images[localImageId] = base64Data; // Store full data URL
+        await AsyncStorage.setItem(WEB_IMAGE_STORAGE_KEY, JSON.stringify(images));
+        
+        // Save metadata
+        const metadata = await this.getAllMetadata();
+        metadata[localImageId] = {
+          localImageId,
+          createdAt: Date.now(),
+          sizeBytes: base64String.length,
+          extension,
+          fileName,
+        };
+        await this.saveAllMetadata(metadata);
+        
+        console.log(`[LocalImageService] Saved image to web storage: ${localImageId}`);
+        return localImageId;
+      } catch (error) {
+        console.error('[LocalImageService] Web storage error:', error);
+        throw error;
+      }
+    }
+
+    // Native: use FileSystem
+    const localPath = `${SCAN_IMAGES_DIR}${fileName}`;
 
     // 3. Write base64 to file
     await FileSystem.writeAsStringAsync(localPath, base64String, {
