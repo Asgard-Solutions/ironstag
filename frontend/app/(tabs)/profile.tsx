@@ -439,28 +439,73 @@ export default function ProfileScreen() {
         {/* Local Storage Card */}
         <View style={styles.storageCard}>
           <View style={styles.storageHeader}>
-            <HardDrive size={18} color={colors.background} />
+            <HardDrive size={18} color="#333" />
             <Text style={styles.storageTitle}>Local Storage</Text>
           </View>
-          <Text style={styles.storageInfo}>{Object.keys(images).length} images stored</Text>
-          <Text style={styles.storageInfo}>{formatBytes(getStorageSize())} used</Text>
           
-          <View style={styles.cleanupRow}>
+          {/* Storage Stats */}
+          <Text style={styles.storageInfo}>
+            {imageCount} image{imageCount !== 1 ? 's' : ''} stored
+          </Text>
+          <Text style={styles.storageInfo}>{formatBytes(storageUsed)} used</Text>
+          
+          {/* Cleanup Interval Row */}
+          <TouchableOpacity 
+            style={styles.cleanupRow} 
+            onPress={handleSelectCleanupInterval}
+            activeOpacity={0.7}
+          >
             <Clock size={16} color={colors.textMuted} />
             <Text style={styles.cleanupLabel}>Cleanup Interval</Text>
-            <Text style={styles.cleanupValue}>90 days</Text>
-          </View>
-
-          <TouchableOpacity style={styles.cleanupButton} onPress={handleCleanupOldImages}>
-            <Trash2 size={16} color={colors.primary} />
-            <Text style={styles.cleanupButtonText}>Clean Up Old Images (90+ days)</Text>
+            <Text style={styles.cleanupValue}>{cleanupInterval} days</Text>
+            <ChevronRight size={16} color={colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.clearAllButton} onPress={handleClearAllImages}>
-            <Trash2 size={16} color={colors.error} />
-            <Text style={styles.clearAllButtonText}>Clear All Local Images</Text>
+          {/* Clean Up Old Images Button */}
+          <TouchableOpacity 
+            style={[
+              styles.cleanupButton,
+              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
+            ]} 
+            onPress={handleCleanupOldImages}
+            disabled={imageCount === 0 || isCleaningUp}
+          >
+            {isCleaningUp ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : '#D97706'} />
+            )}
+            <Text style={[
+              styles.cleanupButtonText,
+              imageCount === 0 && styles.buttonTextDisabled
+            ]}>
+              Clean Up Old Images ({cleanupInterval}+ days)
+            </Text>
           </TouchableOpacity>
 
+          {/* Clear All Button */}
+          <TouchableOpacity 
+            style={[
+              styles.clearAllButton,
+              (imageCount === 0 || isCleaningUp) && styles.buttonDisabled
+            ]} 
+            onPress={handleClearAllImages}
+            disabled={imageCount === 0 || isCleaningUp}
+          >
+            {isCleaningUp ? (
+              <ActivityIndicator size="small" color={colors.error} />
+            ) : (
+              <Trash2 size={16} color={imageCount === 0 ? colors.textMuted : colors.error} />
+            )}
+            <Text style={[
+              styles.clearAllButtonText,
+              imageCount === 0 && styles.buttonTextDisabled
+            ]}>
+              Clear All Local Images
+            </Text>
+          </TouchableOpacity>
+
+          {/* Privacy Disclaimer */}
           <Text style={styles.storageNote}>
             Images are stored only on your device. Deleting them does not affect your scan history or analysis results.
           </Text>
