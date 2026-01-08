@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,12 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useAuthStore } from '../../stores/authStore';
 import { authAPI } from '../../utils/api';
-import { colors, spacing } from '../../constants/theme';
+import { colors, spacing, borderRadius } from '../../constants/theme';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -24,7 +25,64 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+
+  useEffect(() => {
+    // Check if Apple Sign In is available (iOS only)
+    const checkAppleAuth = async () => {
+      if (Platform.OS === 'ios') {
+        const isAvailable = await AppleAuthentication.isAvailableAsync();
+        setAppleAuthAvailable(isAvailable);
+      }
+    };
+    checkAppleAuth();
+  }, []);
+
+  const handleAppleSignIn = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken || !credential.authorizationCode) {
+        Alert.alert('Error', 'Failed to get Apple credentials');
+        return;
+      }
+
+      setLoading(true);
+
+      // Build full name from Apple credential
+      let fullName: string | undefined;
+      if (credential.fullName) {
+        const parts = [credential.fullName.givenName, credential.fullName.familyName].filter(Boolean);
+        fullName = parts.length > 0 ? parts.join(' ') : undefined;
+      }
+
+      const response = await authAPI.appleSignIn({
+        identity_token: credential.identityToken,
+        authorization_code: credential.authorizationCode,
+        user: credential.user,
+        email: credential.email || undefined,
+        full_name: fullName,
+      });
+
+      await login(response.data.access_token, response.data.user);
+      router.replace('/(tabs)');
+    } catch (error: any) {
+      if (error.code === 'ERR_REQUEST_CANCELED') {
+        // User cancelled, do nothing
+        return;
+      }
+      console.error('Apple Sign In error:', error);
+      Alert.alert('Error', 'Failed to sign in with Apple. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
