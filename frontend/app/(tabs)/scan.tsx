@@ -195,11 +195,11 @@ export default function ScanScreen() {
   if (scanStep === 'camera') {
     return (
       <View style={styles.container}>
-        {user?.subscription_tier !== 'master_stag' && (
+        {!isPremium && (
           <View style={[styles.scanLimit, { top: insets.top + spacing.md }]}>
             <Zap size={16} color={scansRemaining > 0 ? colors.primary : colors.error} />
             <Text style={[styles.scanLimitText, scansRemaining === 0 && styles.noScansText]}>
-              {scansRemaining} scans remaining today
+              {scansRemaining} free scan{scansRemaining !== 1 ? 's' : ''} remaining
             </Text>
           </View>
         )}
