@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,7 +35,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
-import { scanAPI, subscriptionAPI } from '../../utils/api';
+import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
@@ -55,9 +55,43 @@ export default function ScanScreen() {
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [scanStep, setScanStep] = useState<ScanStep>('main');
+  const [disclaimerChecked, setDisclaimerChecked] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
   const isPremium = user?.subscription_tier === 'master_stag';
+
+  // Check if disclaimer needs to be shown on first visit
+  useEffect(() => {
+    if (isAuthenticated && user && !user.disclaimer_accepted && !disclaimerChecked) {
+      setShowDisclaimer(true);
+      setDisclaimerChecked(true);
+    }
+  }, [isAuthenticated, user, disclaimerChecked]);
+
+  const handleAcceptDisclaimer = async () => {
+    try {
+      const response = await authAPI.acceptDisclaimer(true);
+      updateUser({ 
+        disclaimer_accepted: true,
+        disclaimer_accepted_at: response.data.disclaimer_accepted_at
+      });
+      setShowDisclaimer(false);
+    } catch (error) {
+      console.error('Failed to accept disclaimer:', error);
+      Alert.alert('Error', 'Failed to save disclaimer acceptance. Please try again.');
+    }
+  };
+
+  const handleViewDisclaimer = () => {
+    setShowDisclaimer(true);
+  };
+
+  const handleCloseDisclaimer = () => {
+    // Only allow closing if already accepted
+    if (user?.disclaimer_accepted) {
+      setShowDisclaimer(false);
+    }
+  };
 
   const checkSubscription = async () => {
     if (!isAuthenticated) return;
