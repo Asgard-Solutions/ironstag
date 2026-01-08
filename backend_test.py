@@ -701,43 +701,106 @@ class IronStagAPITester:
             self.log_result("Invalid Token Handling", False, f"Expected 401, got {status}")
             return False
     
-    def run_all_tests(self):
-        """Run all API tests"""
-        print("🦌 Starting Iron Stag Backend API Tests")
+    def run_scan_analyze_flow_tests(self):
+        """Run the complete scan/analyze flow tests as requested"""
+        print("🦌 Iron Stag Backend API Testing Suite - Scan/Analyze Flow Focus")
         print(f"Testing against: {self.base_url}")
-        print("=" * 60)
+        print("=" * 70)
         
-        # Health checks first
-        self.test_health_check()
-        
-        # Auth flow tests
+        # Step 1: Create fresh test user
+        print("\n🔐 STEP 1: Authentication Setup")
         auth_success = self.test_user_registration()
-        if auth_success:
-            self.test_get_current_user()
-            self.test_update_profile()
-            self.test_disclaimer_acceptance()
+        if not auth_success:
+            print("❌ Cannot proceed without authentication")
+            return
             
-            # Test subscription endpoints
-            self.test_subscription_status()
-            self.test_stripe_checkout()
-            
-            # Test scan endpoints
-            self.test_scan_history()
-            
-            # Test deer analysis structure
-            self.test_deer_analysis_structure()
+        # Step 2: Test scan eligibility check
+        print("\n📊 STEP 2: Scan Eligibility Check")
+        self.test_scan_eligibility_check()
         
-        # Test login separately
-        self.test_user_login()
+        # Step 3: Test analyze deer endpoint (success case)
+        print("\n🔍 STEP 3: Deer Analysis (Success Case)")
+        scan_id = self.test_analyze_deer_success()
         
-        # Test password reset
-        self.test_password_reset_flow()
+        # Step 4: Test getting single scan (if we have a scan ID)
+        if scan_id:
+            print("\n📄 STEP 4: Get Single Scan")
+            self.test_get_single_scan(scan_id)
         
-        # Test learn content (no auth required)
-        self.test_learn_content()
+        # Step 5: Test getting user scans list
+        print("\n📋 STEP 5: Get User Scans List")
+        self.test_get_user_scans_list()
+        
+        # Step 6: Test scan statistics
+        print("\n📈 STEP 6: Get Scan Statistics")
+        self.test_get_scan_stats_summary()
+        
+        # Step 7: Test invalid token handling
+        print("\n🔒 STEP 7: Security - Invalid Token Handling")
+        self.test_invalid_token_handling()
+        
+        # Step 8: Test scan limit enforcement (this should be last as it uses up scans)
+        print("\n⚠️  STEP 8: Scan Limit Enforcement")
+        self.test_scan_limit_enforcement()
         
         # Print summary
-        self.print_summary()
+        self.print_scan_flow_summary()
+    
+    def print_scan_flow_summary(self):
+        """Print focused scan flow test summary"""
+        print("\n" + "=" * 70)
+        print("🦌 IRON STAG SCAN/ANALYZE FLOW TEST SUMMARY")
+        print("=" * 70)
+        
+        passed = sum(1 for r in self.test_results if r["success"])
+        failed = len(self.test_results) - passed
+        
+        print(f"Total Tests: {len(self.test_results)}")
+        print(f"✅ Passed: {passed}")
+        print(f"❌ Failed: {failed}")
+        print(f"Success Rate: {(passed/len(self.test_results)*100):.1f}%")
+        
+        # Group results by test category
+        scan_flow_tests = [
+            "Scan Eligibility Check", "Deer Analysis Success", "Get Single Scan", 
+            "Get User Scans List", "Get Scan Stats Summary", "Scan Limit Enforcement",
+            "Invalid Token Handling"
+        ]
+        
+        print("\n📊 SCAN FLOW TEST RESULTS:")
+        for test_name in scan_flow_tests:
+            result = next((r for r in self.test_results if r["test"] == test_name), None)
+            if result:
+                status = "✅" if result["success"] else "❌"
+                print(f"  {status} {test_name}: {result['message']}")
+        
+        # Show any other tests that ran
+        other_tests = [r for r in self.test_results if r["test"] not in scan_flow_tests]
+        if other_tests:
+            print("\n🔧 OTHER TESTS:")
+            for result in other_tests:
+                status = "✅" if result["success"] else "❌"
+                print(f"  {status} {result['test']}: {result['message']}")
+        
+        if failed > 0:
+            print("\n❌ FAILED TESTS DETAILS:")
+            for result in self.test_results:
+                if not result["success"]:
+                    print(f"  • {result['test']}: {result['message']}")
+                    if result.get("response_data"):
+                        print(f"    Data: {result['response_data']}")
+        
+        print("\n🎯 SCAN/ANALYZE FLOW STATUS:")
+        critical_tests = ["User Registration", "Scan Eligibility Check", "Deer Analysis Success"]
+        critical_passed = sum(1 for test in critical_tests 
+                            if any(r["test"] == test and r["success"] for r in self.test_results))
+        
+        if critical_passed == len(critical_tests):
+            print("✅ CORE SCAN FLOW: WORKING")
+        else:
+            print("❌ CORE SCAN FLOW: ISSUES DETECTED")
+            
+        print("\n" + "=" * 70)
     
     def print_summary(self):
         """Print test summary"""
