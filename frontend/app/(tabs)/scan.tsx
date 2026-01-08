@@ -183,6 +183,19 @@ export default function ScanScreen() {
   };
 
   const openCamera = async () => {
+    // Camera doesn't work well on web - use image picker instead
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Camera Not Available',
+        'Camera is only available on mobile devices. Would you like to choose an image from your library instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Choose Image', onPress: pickImage }
+        ]
+      );
+      return;
+    }
+    
     console.log('openCamera called, permission:', permission);
     
     if (!permission?.granted) {
