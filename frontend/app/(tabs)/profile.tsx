@@ -75,6 +75,8 @@ export default function ProfileScreen() {
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showPlanSelector, setShowPlanSelector] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
   
   // Edit Profile Modal State
   const [showEditProfile, setShowEditProfile] = useState(false);
