@@ -221,8 +221,8 @@ async def register(data: UserCreate):
         "username": data.username.lower() if data.username else None,
         "created_at": datetime.utcnow(),
         "subscription_tier": "scout",
-        "scans_remaining": 3,
-        "scans_reset_date": datetime.utcnow().date().isoformat(),
+        "scans_remaining": 3,  # Lifetime free scans remaining
+        "total_scans_used": 0,  # Lifetime total scans used
         "disclaimer_accepted": False,
         "stripe_customer_id": None,
         "revenuecat_id": None
@@ -242,6 +242,7 @@ async def register(data: UserCreate):
             created_at=user["created_at"],
             subscription_tier=user["subscription_tier"],
             scans_remaining=user["scans_remaining"],
+            total_scans_used=user["total_scans_used"],
             disclaimer_accepted=user["disclaimer_accepted"]
         )
     )
