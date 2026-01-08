@@ -72,19 +72,14 @@ export default function ProfileScreen() {
     initialize();
   }, []);
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0.00 MB';
-    const k = 1024;
-    const mb = bytes / (k * k);
-    return mb.toFixed(2) + ' MB';
-  };
-
-  // Get oldest image date from metadata
-  const getOldestImageDate = () => {
-    const entries = Object.values(images);
-    if (entries.length === 0) return null;
-    // For now, return a placeholder since we don't have createdAt in the current store
-    return null;
+  // Format date for display
+  const formatDate = (date: Date | null) => {
+    if (!date) return null;
+    return date.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+    });
   };
 
   const handleUpgrade = async () => {
