@@ -1,5 +1,5 @@
-import React from 'react';
-import { Tabs, Redirect } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Tabs, router } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { Home, Camera, History, BookOpen, User } from 'lucide-react-native';
 import { colors, spacing } from '../../constants/theme';
@@ -9,15 +9,29 @@ import { useAuthStore } from '../../stores/authStore';
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { token, isLoading } = useAuthStore();
+  const [hasRedirected, setHasRedirected] = useState(false);
   
   // Calculate tab bar height based on platform and safe area
   const tabBarHeight = Platform.OS === 'ios' ? 85 : 60 + insets.bottom;
   const tabBarPaddingBottom = Platform.OS === 'ios' ? insets.bottom : insets.bottom + spacing.xs;
 
-  // Redirect to splash screen if not authenticated (handles logout)
-  if (!isLoading && !token) {
-    return <Redirect href="/" />;
-  }
+  // Redirect to splash screen when logged out
+  useEffect(() => {
+    if (!isLoading && !token && !hasRedirected) {
+      setHasRedirected(true);
+      // Small delay to ensure state is fully propagated
+      setTimeout(() => {
+        router.replace('/');
+      }, 100);
+    }
+  }, [isLoading, token, hasRedirected]);
+
+  // Reset redirect flag when token changes (user logs back in)
+  useEffect(() => {
+    if (token) {
+      setHasRedirected(false);
+    }
+  }, [token]);
 
   return (
     <Tabs
