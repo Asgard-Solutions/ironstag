@@ -63,26 +63,13 @@ export default function ProfileScreen() {
     refreshStats 
   } = useImageStore();
   const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [cleanupInterval, setCleanupInterval] = useState(90);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
-  const imageCount = Object.keys(images).length;
-  const storageUsed = getStorageSize();
 
-  // Load cleanup interval from storage
+  // Initialize image store on mount
   useEffect(() => {
-    const loadCleanupInterval = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(CLEANUP_INTERVAL_KEY);
-        if (stored) {
-          setCleanupInterval(parseInt(stored, 10));
-        }
-      } catch (error) {
-        console.error('Error loading cleanup interval:', error);
-      }
-    };
-    loadCleanupInterval();
+    initialize();
   }, []);
 
   const formatBytes = (bytes: number) => {
