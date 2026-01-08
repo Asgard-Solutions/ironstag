@@ -112,16 +112,6 @@ export default function HistoryScreen() {
       loadScans();
     }, [loadScans])
   );
-    } catch (error) {
-      console.error('Failed to load scans:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadScans();
-  }, [isAuthenticated, filters]);
 
   const onRefresh = async () => {
     setRefreshing(true);
