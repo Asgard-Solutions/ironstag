@@ -796,6 +796,200 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={showEditProfile}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleCloseEditProfile}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.editModalContainer}
+        >
+          <View style={[styles.editModalContent, { paddingTop: insets.top }]}>
+            {/* Edit Modal Header */}
+            <View style={styles.editModalHeader}>
+              <TouchableOpacity style={styles.backButton} onPress={handleCloseEditProfile}>
+                <ChevronLeft size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Profile</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={handleCloseEditProfile}>
+                <X size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView 
+              contentContainerStyle={styles.editModalScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Edit Profile Card */}
+              <View style={styles.editProfileCard}>
+                <View style={styles.editCardHeader}>
+                  <Edit2 size={18} color={colors.primary} />
+                  <Text style={styles.editCardTitle}>Edit Profile</Text>
+                </View>
+
+                {/* Name Row */}
+                <View style={styles.nameRow}>
+                  <View style={styles.nameField}>
+                    <Text style={styles.inputLabel}>First Name</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={editFirstName}
+                      onChangeText={setEditFirstName}
+                      placeholder="First"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                  <View style={styles.nameField}>
+                    <Text style={styles.inputLabel}>Last Name</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={editLastName}
+                      onChangeText={setEditLastName}
+                      placeholder="Last"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                </View>
+
+                {/* Username */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Username</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editUsername}
+                    onChangeText={setEditUsername}
+                    placeholder="username"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                  />
+                  <Text style={styles.inputHint}>
+                    3-50 characters, letters, numbers, underscores only
+                  </Text>
+                </View>
+
+                {/* Email (Read-only) */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Email</Text>
+                  <View style={styles.inputDisabled}>
+                    <Text style={styles.inputDisabledText}>{user?.email}</Text>
+                  </View>
+                  <Text style={styles.inputHint}>
+                    Email cannot be changed
+                  </Text>
+                </View>
+              </View>
+
+              {/* Change Password Card */}
+              <View style={styles.editProfileCard}>
+                <View style={styles.editCardHeader}>
+                  <Shield size={18} color={colors.primary} />
+                  <Text style={styles.editCardTitle}>Change Password</Text>
+                  <Text style={styles.optionalBadge}>Optional</Text>
+                </View>
+
+                {/* Current Password */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Current Password</Text>
+                  <View style={styles.passwordInputContainer}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      placeholder="Enter current password"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showCurrentPassword}
+                    />
+                    <TouchableOpacity 
+                      style={styles.eyeButton}
+                      onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                    >
+                      {showCurrentPassword ? (
+                        <EyeOff size={20} color={colors.textMuted} />
+                      ) : (
+                        <Eye size={20} color={colors.textMuted} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* New Password */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>New Password</Text>
+                  <View style={styles.passwordInputContainer}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      placeholder="Enter new password"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showNewPassword}
+                    />
+                    <TouchableOpacity 
+                      style={styles.eyeButton}
+                      onPress={() => setShowNewPassword(!showNewPassword)}
+                    >
+                      {showNewPassword ? (
+                        <EyeOff size={20} color={colors.textMuted} />
+                      ) : (
+                        <Eye size={20} color={colors.textMuted} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.inputHint}>
+                    Minimum 8 characters
+                  </Text>
+                </View>
+
+                {/* Confirm New Password */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Confirm New Password</Text>
+                  <View style={styles.passwordInputContainer}>
+                    <TextInput
+                      style={styles.passwordInput}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showConfirmPassword}
+                    />
+                    <TouchableOpacity 
+                      style={styles.eyeButton}
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      {showConfirmPassword ? (
+                        <EyeOff size={20} color={colors.textMuted} />
+                      ) : (
+                        <Eye size={20} color={colors.textMuted} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Save Button */}
+              <TouchableOpacity 
+                style={styles.saveButton}
+                onPress={handleSaveProfile}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color={colors.background} />
+                ) : (
+                  <>
+                    <Save size={18} color={colors.background} />
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
