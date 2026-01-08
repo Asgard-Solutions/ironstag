@@ -128,7 +128,7 @@ class LocalImageServiceClass {
     }
 
     // 2. Check file size (10MB limit)
-    const sizeBytes = fileInfo.size || 0;
+    const sizeBytes = (fileInfo.exists && 'size' in fileInfo) ? fileInfo.size || 0 : 0;
     if (sizeBytes > 10 * 1024 * 1024) {
       const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
       throw new Error(`Image too large: ${sizeMB}MB exceeds 10MB limit`);
