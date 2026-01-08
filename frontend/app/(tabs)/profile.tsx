@@ -1695,20 +1695,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  aboutLogoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(200, 162, 74, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
   aboutLogo: {
-    width: 50,
-    height: 50,
+    width: 140,
+    height: 140,
+    marginBottom: spacing.sm,
   },
   aboutAppName: {
     fontSize: 26,
