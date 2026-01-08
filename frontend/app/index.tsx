@@ -46,7 +46,7 @@ export default function SplashScreen() {
   }, [token, isLoading, isAuthenticated]);
 
   // Show splash with buttons when not authenticated
-  if (!token && !isLoading) {
+  if (!isAuthenticated && !isLoading && !checkingAuth) {
     return (
       <View style={styles.container}>
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
