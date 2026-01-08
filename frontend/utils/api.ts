@@ -41,6 +41,14 @@ export const authAPI = {
   login: (data: { email: string; password: string }) =>
     api.post('/auth/login', data),
 
+  appleSignIn: (data: { 
+    identity_token: string; 
+    authorization_code: string; 
+    user: string; 
+    email?: string; 
+    full_name?: string; 
+  }) => api.post('/auth/apple', data),
+
   getMe: () => api.get('/auth/me'),
 
   updateProfile: (data: { 
