@@ -504,9 +504,13 @@ export default function ProfileScreen() {
             } catch (error) {
               console.error('Logout error:', error);
             }
-            // Always navigate to splash after logout attempt
-            router.dismissAll();
-            router.replace('/');
+            // Reset navigation state and go to splash screen
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: 'index' }],
+              })
+            );
           },
         },
       ]
