@@ -488,12 +488,24 @@ export default function ProfileScreen() {
             ) : (
               <Trash2 size={16} color={stats.totalImages === 0 ? colors.textMuted : '#D97706'} />
             )}
-            <Text style={[
-              styles.cleanupButtonText,
-              stats.totalImages === 0 && styles.buttonTextDisabled
-            ]}>
-              Clean Up Old Images ({cleanupInterval}+ days)
-            </Text>
+            <View style={styles.cleanupButtonContent}>
+              <Text style={[
+                styles.cleanupButtonText,
+                stats.totalImages === 0 && styles.buttonTextDisabled
+              ]}>
+                Clean Up Old Images ({cleanupInterval}+ days)
+              </Text>
+              {nextCleanupDate && stats.totalImages > 0 && (
+                <Text style={[
+                  styles.cleanupDateText,
+                  cleanupIsDue && styles.cleanupDateDue
+                ]}>
+                  {cleanupIsDue 
+                    ? 'Cleanup available now' 
+                    : `Next cleanup: ${formatDate(nextCleanupDate)}`}
+                </Text>
+              )}
+            </View>
           </TouchableOpacity>
 
           {/* Clear All Button - Always Active */}
