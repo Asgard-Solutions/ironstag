@@ -168,7 +168,7 @@ export default function ProfileScreen() {
 
   // Clear All Local Images
   const handleClearAllImages = () => {
-    if (imageCount === 0) {
+    if (stats.totalImages === 0) {
       Alert.alert('No Images', 'There are no images to clear.');
       return;
     }
