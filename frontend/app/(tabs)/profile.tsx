@@ -499,7 +499,10 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await logout();
-              // Navigate to root splash screen
+              // Clear navigation stack and go to splash
+              while (router.canGoBack()) {
+                router.back();
+              }
               router.replace('/');
             } catch (error) {
               console.error('Logout error:', error);
