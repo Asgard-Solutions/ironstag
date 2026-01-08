@@ -159,6 +159,13 @@ class ProfileUpdate(BaseModel):
 class DisclaimerAccept(BaseModel):
     accepted: bool
 
+class AppleSignInRequest(BaseModel):
+    identity_token: str
+    authorization_code: str
+    user: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+
 class SubscriptionStatus(BaseModel):
     tier: str
     scans_remaining: int
