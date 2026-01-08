@@ -105,8 +105,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   logoSection: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
     paddingTop: spacing.xl,
   },
@@ -115,9 +113,10 @@ const styles = StyleSheet.create({
     height: 320,
   },
   taglineSection: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
   },
   tagline: {
     fontSize: 22,
