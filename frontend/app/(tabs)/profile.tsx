@@ -602,6 +602,52 @@ export default function ProfileScreen() {
           <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
         </View>
       </ScrollView>
+
+      {/* Cleanup Interval Picker Modal */}
+      <Modal
+        visible={showIntervalPicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowIntervalPicker(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowIntervalPicker(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Cleanup Interval</Text>
+              <TouchableOpacity onPress={() => setShowIntervalPicker(false)}>
+                <X size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Choose how old images should be before cleanup:
+            </Text>
+            {CLEANUP_INTERVALS.map((interval) => (
+              <TouchableOpacity
+                key={interval.value}
+                style={[
+                  styles.intervalOption,
+                  cleanupInterval === interval.value && styles.intervalOptionSelected
+                ]}
+                onPress={() => handleIntervalSelect(interval.value)}
+              >
+                <Text style={[
+                  styles.intervalOptionText,
+                  cleanupInterval === interval.value && styles.intervalOptionTextSelected
+                ]}>
+                  {interval.label}
+                </Text>
+                {cleanupInterval === interval.value && (
+                  <Check size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
