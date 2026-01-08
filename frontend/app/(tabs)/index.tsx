@@ -191,11 +191,9 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.lg,
   },
-  logoText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 2,
+  headerIcon: {
+    width: 150,
+    height: 60,
   },
   tagline: {
     fontSize: 14,
