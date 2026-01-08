@@ -287,110 +287,151 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
   },
+  
+  // Compact Header
   header: {
-    alignItems: 'center',
     marginBottom: spacing.lg,
   },
-  avatarContainer: {
-    position: 'relative',
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: colors.backgroundCard,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: colors.primary,
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  crownBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: -4,
-    backgroundColor: colors.backgroundCard,
-    borderRadius: 12,
-    padding: 4,
     borderWidth: 2,
     borderColor: colors.primary,
   },
-  userName: {
+  avatarText: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.textPrimary,
-    marginTop: spacing.md,
+    color: colors.primary,
   },
-  userEmail: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  tierBadge: {
-    marginTop: spacing.md,
-  },
-  statsCard: {
-    marginBottom: spacing.md,
-  },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stat: {
+  headerInfo: {
     flex: 1,
-    alignItems: 'center',
+    marginLeft: spacing.md,
   },
-  statValue: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: colors.border,
-  },
-  upgradeCard: {
-    marginBottom: spacing.md,
-    backgroundColor: 'rgba(200, 162, 74, 0.1)',
-    borderWidth: 1,
-    borderColor: colors.primaryDark,
-  },
-  upgradeContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  upgradeText: {
-    flex: 1,
-  },
-  upgradeTitle: {
+  userName: {
     fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  upgradeSubtitle: {
-    fontSize: 14,
+  userEmail: {
+    fontSize: 13,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
+    marginTop: 2,
   },
-  upgradeButton: {
-    width: '100%',
+  tierBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundCard,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    gap: 4,
   },
+  premiumBadge: {
+    backgroundColor: 'rgba(200, 162, 74, 0.15)',
+    borderWidth: 1,
+    borderColor: colors.primaryDark,
+  },
+  tierText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  premiumText: {
+    color: colors.primary,
+  },
+
+  // Subscription Card - Primary CTA
+  subscriptionCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subscriptionCardPremium: {
+    backgroundColor: 'rgba(200, 162, 74, 0.08)',
+    borderColor: colors.primaryDark,
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  subscriptionInfo: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  subscriptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  subscriptionSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  subscriptionButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  subscriptionButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  subscriptionButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.background,
+  },
+  subscriptionButtonTextSecondary: {
+    color: colors.primary,
+  },
+
+  // Usage Row - Minimal
+  usageRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  usageStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  usageValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  usageLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+  },
+  usageDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.md,
+  },
+
+  // Menu Container
   menuContainer: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
-    overflow: 'hidden',
     marginBottom: spacing.lg,
   },
   menuItem: {
@@ -400,11 +441,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  menuItemLast: {
+    borderBottomWidth: 0,
+  },
   menuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(200, 162, 74, 0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(200, 162, 74, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -413,33 +457,43 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
     color: colors.textPrimary,
   },
   menuSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textMuted,
     marginTop: 2,
   },
-  signOutButton: {
+
+  // Destructive Actions
+  destructiveActions: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
+    gap: spacing.xl,
     marginBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
   signOutText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
     color: colors.error,
   },
+  deleteText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textMuted,
+  },
+
+  // Footer
   footer: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textMuted,
     textAlign: 'center',
   },
+
+  // Auth Required
   authRequired: {
     flex: 1,
     justifyContent: 'center',
@@ -447,16 +501,27 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   authTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '600',
     color: colors.textPrimary,
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
   authText: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
+  },
+  signInButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.full,
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
   },
 });
