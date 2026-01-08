@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Image, Animated } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '../stores/authStore';
 import { authAPI } from '../utils/api';
 import { Button } from '../components/Button';
 import { colors, spacing } from '../constants/theme';
 
 export default function SplashScreen() {
+  const insets = useSafeAreaInsets();
   const { token, isLoading, login, isAuthenticated } = useAuthStore();
   const [fadeAnim] = useState(new Animated.Value(0));
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -44,12 +46,11 @@ export default function SplashScreen() {
     return (
       <View style={styles.container}>
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoText}>IRON STAG</Text>
-            <View style={styles.antlerDecor} />
-          </View>
-          <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
-          <Text style={styles.subTagline}>Forged in Asgard, Tested in the Field</Text>
+          <Image
+            source={require('../assets/images/IronStagLogo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </Animated.View>
       </View>
     );
@@ -58,31 +59,28 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>IRON STAG</Text>
-          <View style={styles.antlerDecor} />
-        </View>
-        <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
-        <Text style={styles.subTagline}>Forged in Asgard, Tested in the Field</Text>
+        <Image
+          source={require('../assets/images/IronStagLogo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         
-        <View style={styles.buttonContainer}>
+        <View style={[styles.buttonContainer, { paddingBottom: insets.bottom + spacing.lg }]}>
           <Button
             title="Get Started"
-            onPress={() => router.push('/(auth)/signup')}
+            onPress={() => router.push('/(auth)/login')}
             size="large"
             style={styles.primaryButton}
           />
           <Button
-            title="I Already Have an Account"
-            onPress={() => router.push('/(auth)/login')}
+            title="Create Account"
+            onPress={() => router.push('/(auth)/signup')}
             variant="outline"
             size="large"
             style={styles.secondaryButton}
           />
         </View>
       </Animated.View>
-      
-      <Text style={styles.footer}>AI-Powered Deer Aging for Ethical Hunters</Text>
     </View>
   );
 }
@@ -90,48 +88,23 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    backgroundColor: '#000000',
   },
   content: {
+    flex: 1,
     alignItems: 'center',
-    width: '100%',
+    justifyContent: 'center',
+    padding: spacing.lg,
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  logoText: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: colors.primary,
-    letterSpacing: 4,
-  },
-  antlerDecor: {
-    width: 80,
-    height: 4,
-    backgroundColor: colors.primary,
-    marginTop: spacing.md,
-    borderRadius: 2,
-  },
-  tagline: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
-  subTagline: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    fontStyle: 'italic',
+  logo: {
+    width: 350,
+    height: 350,
   },
   buttonContainer: {
-    width: '100%',
-    marginTop: spacing.xxl,
+    position: 'absolute',
+    bottom: 0,
+    left: spacing.lg,
+    right: spacing.lg,
     gap: spacing.md,
   },
   primaryButton: {
@@ -139,11 +112,5 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     width: '100%',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: spacing.xl,
-    color: colors.textMuted,
-    fontSize: 12,
   },
 });
