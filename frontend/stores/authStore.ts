@@ -66,7 +66,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await storage.removeItem('auth_token');
-    set({ token: null, user: null, isAuthenticated: false });
+    set({ token: null, user: null, isAuthenticated: false, isLoading: false });
   },
 
   loadToken: async () => {
