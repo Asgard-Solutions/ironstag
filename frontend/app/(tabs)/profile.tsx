@@ -129,6 +129,101 @@ export default function ProfileScreen() {
   const nextCleanupDate = getNextCleanupDate();
   const cleanupIsDue = isCleanupDue();
 
+  // Open Edit Profile Modal
+  const handleOpenEditProfile = () => {
+    // Split name into first and last
+    const nameParts = (user?.name || '').split(' ');
+    setEditFirstName(nameParts[0] || '');
+    setEditLastName(nameParts.slice(1).join(' ') || '');
+    setEditUsername(user?.username || '');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setShowEditProfile(true);
+  };
+
+  // Close Edit Profile Modal
+  const handleCloseEditProfile = () => {
+    setShowEditProfile(false);
+  };
+
+  // Validate username
+  const isValidUsername = (username: string): boolean => {
+    const regex = /^[a-zA-Z0-9_]{3,50}$/;
+    return regex.test(username);
+  };
+
+  // Save Profile Changes
+  const handleSaveProfile = async () => {
+    // Validate inputs
+    if (!editFirstName.trim()) {
+      Alert.alert('Error', 'First name is required.');
+      return;
+    }
+
+    if (!editUsername.trim()) {
+      Alert.alert('Error', 'Username is required.');
+      return;
+    }
+
+    if (!isValidUsername(editUsername)) {
+      Alert.alert('Error', 'Username must be 3-50 characters and contain only letters, numbers, and underscores.');
+      return;
+    }
+
+    // Validate password if changing
+    if (newPassword || currentPassword || confirmPassword) {
+      if (!currentPassword) {
+        Alert.alert('Error', 'Current password is required to change password.');
+        return;
+      }
+      if (newPassword.length < 8) {
+        Alert.alert('Error', 'New password must be at least 8 characters.');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        Alert.alert('Error', 'New passwords do not match.');
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    try {
+      const fullName = editLastName 
+        ? `${editFirstName.trim()} ${editLastName.trim()}` 
+        : editFirstName.trim();
+      
+      // Update profile
+      const response = await authAPI.updateProfile({
+        name: fullName,
+        username: editUsername.trim(),
+        ...(newPassword && currentPassword ? {
+          current_password: currentPassword,
+          new_password: newPassword,
+        } : {}),
+      });
+
+      // Update local user state
+      if (updateUser) {
+        updateUser({
+          name: fullName,
+          username: editUsername.trim(),
+        });
+      }
+
+      Alert.alert('Success', 'Your profile has been updated.');
+      setShowEditProfile(false);
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Failed to update profile.';
+      Alert.alert('Error', message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
     try {
