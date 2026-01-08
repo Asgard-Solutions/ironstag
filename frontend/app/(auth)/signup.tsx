@@ -232,11 +232,11 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   logo: {
-    width: 160,
-    height: 160,
+    width: 100,
+    height: 100,
   },
   headerContainer: {
     alignItems: 'center',
