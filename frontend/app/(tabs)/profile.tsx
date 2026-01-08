@@ -834,13 +834,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-
-  // Tagline
-  tagline: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
+  upgradeButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  upgradeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.background,
   },
 
   // Stats Card
