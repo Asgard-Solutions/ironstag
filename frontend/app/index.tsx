@@ -88,6 +88,7 @@ export default function SplashScreen() {
               style={styles.secondaryButton}
             />
             <Text style={styles.footer}>Forged in Asgard, Tested in the Field</Text>
+            <Text style={styles.copyright}>© 2026 Asgard Solutions LLC</Text>
           </View>
         </Animated.View>
       </View>
