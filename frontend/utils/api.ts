@@ -90,6 +90,8 @@ export const subscriptionAPI = {
 
   getPortalUrl: () => api.post('/subscription/portal'),
 
+  cancelSubscription: () => api.post('/subscription/cancel'),
+
   verifyRevenueCat: () => api.post('/subscription/verify-revenuecat'),
 };
 
