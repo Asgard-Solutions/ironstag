@@ -276,7 +276,7 @@ async def request_password_reset(data: PasswordResetRequest):
     user = await db.users.find_one({"email": data.email.lower()})
     if not user:
         # Don't reveal if email exists
-        return {"message": "If the email exists, a reset code has been sent"}
+        return {"message": "If the email exists, a reset code has been sent", "success": True}
     
     # Generate 6-digit code
     code = ''.join(random.choices(string.digits, k=6))
@@ -290,10 +290,131 @@ async def request_password_reset(data: PasswordResetRequest):
         "used": False
     })
     
-    # In production, send email here
-    logger.info(f"Password reset code for {data.email}: {code}")
+    # Send email using Microsoft Graph
+    email_sent = await send_reset_email(data.email, code, user.get("name", "User"))
     
-    return {"message": "If the email exists, a reset code has been sent", "code": code}
+    if email_sent:
+        logger.info(f"Password reset email sent to {data.email}")
+    else:
+        logger.error(f"Failed to send password reset email to {data.email}")
+    
+    return {"message": "If the email exists, a reset code has been sent", "success": True}
+
+async def send_reset_email(to_email: str, code: str, user_name: str) -> bool:
+    """Send password reset email using Microsoft Graph API"""
+    try:
+        # Get access token using MSAL
+        app = msal.ConfidentialClientApplication(
+            MS_GRAPH_CLIENT_ID,
+            authority=f"https://login.microsoftonline.com/{MS_GRAPH_TENANT_ID}",
+            client_credential=MS_GRAPH_CLIENT_SECRET,
+        )
+        
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        
+        if "access_token" not in result:
+            logger.error(f"Failed to get access token: {result.get('error_description', 'Unknown error')}")
+            return False
+        
+        access_token = result["access_token"]
+        
+        # Create email content
+        email_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #0E1A14; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0E1A14;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="100%" style="max-width: 500px; background-color: #1A2B22; border-radius: 16px; overflow: hidden;">
+                    <!-- Header -->
+                    <tr>
+                        <td align="center" style="padding: 40px 40px 20px 40px;">
+                            <h1 style="margin: 0; color: #C8A24A; font-size: 28px; font-weight: 700; letter-spacing: 2px;">IRON STAG</h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 20px 40px;">
+                            <h2 style="margin: 0 0 10px 0; color: #FFFFFF; font-size: 24px; font-weight: 600; text-align: center;">Password Reset</h2>
+                            <p style="margin: 0 0 30px 0; color: #A0A0A0; font-size: 16px; text-align: center; line-height: 1.5;">
+                                We received a request to reset your password. Use the code below to complete the process.
+                            </p>
+                            
+                            <!-- Code Box -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                <tr>
+                                    <td align="center" style="padding: 20px; background-color: #0E1A14; border-radius: 12px; border: 1px solid #2A3F32;">
+                                        <p style="margin: 0 0 10px 0; color: #A0A0A0; font-size: 14px;">Your verification code:</p>
+                                        <p style="margin: 0; color: #C8A24A; font-size: 36px; font-weight: 700; letter-spacing: 8px;">{code}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 30px 0 0 0; color: #6B6B6B; font-size: 14px; text-align: center; line-height: 1.5;">
+                                This code expires in 15 minutes. If you didn't request a password reset, please ignore this email.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td align="center" style="padding: 30px 40px 40px 40px; border-top: 1px solid #2A3F32;">
+                            <p style="margin: 0 0 5px 0; color: #6B6B6B; font-size: 13px; font-style: italic;">Forged in Asgard, Tested in the Field</p>
+                            <p style="margin: 0; color: #6B6B6B; font-size: 12px;">© 2025 Asgard Solutions LLC</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+        
+        # Send email via Graph API
+        email_message = {
+            "message": {
+                "subject": "Reset Your Iron Stag Password",
+                "body": {
+                    "contentType": "HTML",
+                    "content": email_html
+                },
+                "toRecipients": [
+                    {
+                        "emailAddress": {
+                            "address": to_email
+                        }
+                    }
+                ]
+            },
+            "saveToSentItems": "true"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"https://graph.microsoft.com/v1.0/users/{MS_GRAPH_SENDER_EMAIL}/sendMail",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json"
+                },
+                json=email_message
+            )
+        
+        if response.status_code == 202:
+            return True
+        else:
+            logger.error(f"Graph API error: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending email: {str(e)}")
+        return False
 
 @api_router.post("/auth/password-reset/verify")
 async def verify_password_reset(data: PasswordResetVerify):
