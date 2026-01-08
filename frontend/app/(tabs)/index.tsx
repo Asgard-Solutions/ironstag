@@ -71,10 +71,12 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.logoText}>IRON STAG</Text>
-            <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
-          </View>
+          <Image
+            source={require('../../assets/images/IronStagIcon.png')}
+            style={styles.headerIcon}
+            resizeMode="contain"
+          />
+          <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
         </View>
 
         {/* Subscription Card */}
