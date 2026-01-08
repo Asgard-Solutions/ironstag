@@ -106,6 +106,7 @@ class DisclaimerAccept(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     username: Optional[str] = None
+    email: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
 
