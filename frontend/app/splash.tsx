@@ -88,6 +88,7 @@ export default function SplashScreen() {
               style={styles.secondaryButton}
             />
             <Text style={styles.footer}>Forged in Asgard, Tested in the Field</Text>
+            <Text style={styles.copyright}>© 2026 Asgard Solutions LLC</Text>
           </View>
         </Animated.View>
       </View>
@@ -144,6 +145,7 @@ export default function SplashScreen() {
             style={styles.secondaryButton}
           />
           <Text style={styles.footer}>Forged in Asgard, Tested in the Field</Text>
+          <Text style={styles.copyright}>© 2026 Asgard Solutions LLC</Text>
         </View>
       </Animated.View>
     </View>
@@ -200,5 +202,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+  copyright: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 });
