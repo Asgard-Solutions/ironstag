@@ -189,6 +189,25 @@ export default function LoginScreen() {
               size="large"
               style={styles.submitButton}
             />
+
+            {/* Apple Sign In - iOS only */}
+            {appleAuthAvailable && (
+              <>
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={borderRadius.md}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              </>
+            )}
           </View>
 
           {/* Sign Up Link */}
