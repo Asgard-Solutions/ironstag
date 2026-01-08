@@ -2,13 +2,18 @@ import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import { Platform } from 'react-native';
 
 // Storage keys
 const IMAGE_METADATA_KEY = '@iron_stag_image_metadata';
 const CLEANUP_INTERVAL_KEY = '@cleanup_interval_days';
+const WEB_IMAGE_STORAGE_KEY = '@iron_stag_web_images';
 
-// Storage directory
-const SCAN_IMAGES_DIR = `${FileSystem.documentDirectory}scan_images/`;
+// Storage directory (only used on native)
+const SCAN_IMAGES_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}scan_images/` : '';
+
+// Check if running on web
+const isWeb = Platform.OS === 'web';
 
 // Image metadata interface
 interface ImageMetadata {
