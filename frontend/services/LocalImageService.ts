@@ -478,6 +478,18 @@ class LocalImageServiceClass {
     
     if (!entry) return false;
 
+    if (isWeb) {
+      // On web, check if image exists in AsyncStorage
+      try {
+        const webImages = await AsyncStorage.getItem(WEB_IMAGE_STORAGE_KEY);
+        const images = webImages ? JSON.parse(webImages) : {};
+        return !!images[localImageId];
+      } catch (error) {
+        return false;
+      }
+    }
+
+    // On native, check file system
     const localPath = `${SCAN_IMAGES_DIR}${entry.fileName}`;
     const fileInfo = await FileSystem.getInfoAsync(localPath);
     
