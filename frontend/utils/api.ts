@@ -52,7 +52,7 @@ export const authAPI = {
   }) => api.put('/auth/profile', data),
 
   acceptDisclaimer: (accepted: boolean) =>
-    api.post('/auth/disclaimer', { accepted }),
+    api.post('/auth/accept-disclaimer', { accepted }),
 
   requestPasswordReset: (email: string) =>
     api.post('/auth/password-reset/request', { email }),
