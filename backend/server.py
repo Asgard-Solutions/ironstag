@@ -266,8 +266,16 @@ async def login(data: UserLogin):
     except VerifyMismatchError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Reset scans if new day
-    user = await reset_daily_scans(user)
+    # Migrate existing users: ensure total_scans_used field exists
+    if "total_scans_used" not in user:
+        # Calculate from existing scans or set to (3 - scans_remaining)
+        used_scans = 3 - user.get("scans_remaining", 3)
+        used_scans = max(0, min(used_scans, 3))  # Clamp between 0-3
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"total_scans_used": used_scans}}
+        )
+        user["total_scans_used"] = used_scans
     
     token = create_token(user["id"])
     
@@ -281,6 +289,7 @@ async def login(data: UserLogin):
             created_at=user["created_at"],
             subscription_tier=user.get("subscription_tier", "scout"),
             scans_remaining=user.get("scans_remaining", 3),
+            total_scans_used=user.get("total_scans_used", 0),
             disclaimer_accepted=user.get("disclaimer_accepted", False)
         )
     )
