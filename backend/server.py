@@ -372,7 +372,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         subscription_tier=user.get("subscription_tier", "tracker"),
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
-        disclaimer_accepted=user.get("disclaimer_accepted", False)
+        disclaimer_accepted=user.get("disclaimer_accepted", False),
+        disclaimer_accepted_at=user.get("disclaimer_accepted_at")
     )
 
 @api_router.put("/auth/profile", response_model=UserResponse)
