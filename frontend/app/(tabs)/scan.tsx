@@ -91,10 +91,6 @@ export default function ScanScreen() {
     }
   };
 
-  const generateUUID = async (): Promise<string> => {
-    return Crypto.randomUUID();
-  };
-
   const takePicture = async () => {
     if (!cameraRef.current || !cameraReady) return;
 
