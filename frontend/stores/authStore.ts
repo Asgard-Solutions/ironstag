@@ -9,7 +9,8 @@ interface User {
   name: string;
   username?: string;
   subscription_tier: string;
-  scans_remaining: number;
+  scans_remaining: number;  // For free tier: lifetime remaining (0-3), for premium: -1 (unlimited)
+  total_scans_used: number; // Lifetime total scans used
   disclaimer_accepted: boolean;
   created_at: string;
 }
