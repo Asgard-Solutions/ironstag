@@ -111,28 +111,20 @@ export default function ProfileScreen() {
 
   // Cleanup Interval Selector
   const handleSelectCleanupInterval = () => {
-    const options = CLEANUP_INTERVALS.map(interval => ({
-      text: interval.value === cleanupInterval 
-        ? `✓ ${interval.label}` 
-        : interval.label,
-      onPress: async () => {
-        try {
-          await setCleanupInterval(interval.value);
-          Alert.alert(
-            'Cleanup Interval Updated',
-            `Images older than ${interval.value} days will be cleaned up when you tap "Clean Up Old Images".`
-          );
-        } catch (error) {
-          Alert.alert('Error', 'Failed to save cleanup interval.');
-        }
-      },
-    }));
-    
-    Alert.alert(
-      'Select Cleanup Interval',
-      'Choose how old images should be before cleanup:',
-      [...options, { text: 'Cancel', style: 'cancel' }]
-    );
+    setShowIntervalPicker(true);
+  };
+
+  const handleIntervalSelect = async (value: number) => {
+    try {
+      await setCleanupInterval(value);
+      setShowIntervalPicker(false);
+      Alert.alert(
+        'Cleanup Interval Updated',
+        `Images older than ${value} days will be cleaned up when you tap "Clean Up Old Images".`
+      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save cleanup interval.');
+    }
   };
 
   // Clean Up Old Images
