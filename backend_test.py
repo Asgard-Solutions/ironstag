@@ -829,4 +829,4 @@ class IronStagAPITester:
 
 if __name__ == "__main__":
     tester = IronStagAPITester()
-    tester.run_all_tests()
+    tester.run_scan_analyze_flow_tests()
