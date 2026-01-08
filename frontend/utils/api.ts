@@ -83,6 +83,8 @@ export const scanAPI = {
 export const subscriptionAPI = {
   getStatus: () => api.get('/subscription/status'),
 
+  checkEligibility: () => api.get('/subscription/scan-eligibility'),
+
   createCheckout: () => api.post('/subscription/create-checkout'),
 
   verifyRevenueCat: () => api.post('/subscription/verify-revenuecat'),
