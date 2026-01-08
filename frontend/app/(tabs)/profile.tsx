@@ -1020,14 +1020,12 @@ export default function ProfileScreen() {
           onPress={() => setShowAboutModal(false)}
         >
           <View style={styles.aboutModalContent}>
-            {/* App Logo/Icon placeholder */}
-            <View style={styles.aboutLogoContainer}>
-              <Image 
-                source={require('../../assets/images/StagIcon.png')} 
-                style={styles.aboutLogo}
-                resizeMode="contain"
-              />
-            </View>
+            {/* App Logo */}
+            <Image 
+              source={require('../../assets/images/IronStagLogo.png')} 
+              style={styles.aboutLogo}
+              resizeMode="contain"
+            />
             
             {/* App Name */}
             <Text style={styles.aboutAppName}>Iron Stag</Text>
