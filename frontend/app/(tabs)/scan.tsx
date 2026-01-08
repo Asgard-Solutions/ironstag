@@ -469,17 +469,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.backgroundCard,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   headerText: {
     flex: 1,
-    marginLeft: spacing.md,
   },
   headerTitle: {
     fontSize: 20,
