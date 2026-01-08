@@ -1976,6 +1976,12 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: colors.primary,
     textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  aboutCopyright: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
     marginBottom: spacing.lg,
   },
   aboutOkButton: {
