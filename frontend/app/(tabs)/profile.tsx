@@ -910,10 +910,22 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     gap: spacing.sm,
   },
+  cleanupButtonContent: {
+    flex: 1,
+  },
   cleanupButtonText: {
     fontSize: 14,
     fontWeight: '500',
     color: '#D97706',
+  },
+  cleanupDateText: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+  },
+  cleanupDateDue: {
+    color: '#059669',
+    fontWeight: '600',
   },
   clearAllButton: {
     flexDirection: 'row',
