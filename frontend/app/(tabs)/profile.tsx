@@ -497,9 +497,7 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
-          <ChevronLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
         <Text style={styles.headerTitle}>Profile</Text>
         <TouchableOpacity style={styles.editButton} onPress={handleOpenEditProfile}>
           <Edit2 size={18} color={colors.primary} />
