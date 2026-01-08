@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   User,
   Crown,
@@ -30,6 +29,7 @@ import {
   Settings,
   FileText,
   ExternalLink,
+  Calendar,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
@@ -40,7 +40,6 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 const PRIVACY_POLICY_URL = 'https://www.asgardsolution.io/iron-stag/privacy';
 const TERMS_OF_SERVICE_URL = 'https://www.asgardsolution.io/iron-stag/terms';
 const PRIVACY_EMAIL = 'privacy@asgardsolutions.io';
-const CLEANUP_INTERVAL_KEY = '@cleanup_interval_days';
 
 // Available cleanup intervals
 const CLEANUP_INTERVALS = [
