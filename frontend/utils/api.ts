@@ -43,8 +43,12 @@ export const authAPI = {
 
   getMe: () => api.get('/auth/me'),
 
-  updateProfile: (data: { name?: string; username?: string }) =>
-    api.put('/auth/profile', data),
+  updateProfile: (data: { 
+    name?: string; 
+    username?: string;
+    current_password?: string;
+    new_password?: string;
+  }) => api.put('/auth/profile', data),
 
   acceptDisclaimer: (accepted: boolean) =>
     api.post('/auth/disclaimer', { accepted }),
