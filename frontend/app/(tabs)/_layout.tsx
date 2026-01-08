@@ -1,16 +1,25 @@
-import React from 'react';
-import { Tabs } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Tabs, router } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { Home, Camera, History, BookOpen, User } from 'lucide-react-native';
 import { colors, spacing } from '../../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuthStore } from '../../stores/authStore';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { isAuthenticated, token, isLoading } = useAuthStore();
   
   // Calculate tab bar height based on platform and safe area
   const tabBarHeight = Platform.OS === 'ios' ? 85 : 60 + insets.bottom;
   const tabBarPaddingBottom = Platform.OS === 'ios' ? insets.bottom : insets.bottom + spacing.xs;
+
+  // Redirect to splash if not authenticated (handles logout)
+  useEffect(() => {
+    if (!isLoading && !token) {
+      router.replace('/');
+    }
+  }, [isLoading, token]);
 
   return (
     <Tabs
