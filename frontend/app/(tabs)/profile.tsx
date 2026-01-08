@@ -8,6 +8,9 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  ActionSheetIOS,
+  Platform,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +32,8 @@ import {
   Settings,
   FileText,
   ExternalLink,
+  Check,
+  X,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
