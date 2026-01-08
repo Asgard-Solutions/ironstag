@@ -144,7 +144,7 @@ export default function LoginScreen() {
           {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.footerTagline}>Forged in Asgard, Tested in the Field</Text>
-            <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
+            <Text style={styles.footerCopyright}>© 2026 Asgard Solutions LLC</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
