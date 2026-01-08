@@ -106,7 +106,7 @@ export default function ScanResultScreen() {
             try {
               await scanAPI.deleteScan(scan.id);
               await deleteImage(scan.local_image_id);
-              router.back();
+              router.replace('/(tabs)/history');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete scan.');
             }
