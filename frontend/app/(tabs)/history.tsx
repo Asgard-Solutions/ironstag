@@ -36,6 +36,45 @@ interface Scan {
   created_at: string;
 }
 
+// Component to handle async image loading
+function ScanImage({ localImageId }: { localImageId: string }) {
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const { getImage } = useImageStore();
+
+  useEffect(() => {
+    let mounted = true;
+    
+    const loadImage = async () => {
+      try {
+        const uri = await getImage(localImageId);
+        if (mounted && uri) {
+          setImageUri(uri);
+        }
+      } catch (error) {
+        console.error('Failed to load image:', error);
+      }
+    };
+
+    if (localImageId) {
+      loadImage();
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [localImageId]);
+
+  if (!imageUri) {
+    return (
+      <View style={styles.scanIconBox}>
+        <Target size={28} color={colors.textPrimary} />
+      </View>
+    );
+  }
+
+  return <Image source={{ uri: imageUri }} style={styles.thumbnail} />;
+}
+
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuthStore();
