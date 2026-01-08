@@ -21,7 +21,7 @@ export default function TabLayout() {
       setHasRedirected(true);
       // Small delay to ensure state is fully propagated
       setTimeout(() => {
-        router.replace('/');
+        router.replace('/splash');
       }, 100);
     }
   }, [isLoading, token, hasRedirected]);
