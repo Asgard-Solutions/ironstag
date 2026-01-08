@@ -1130,6 +1130,9 @@ export default function ProfileScreen() {
             <Text style={styles.aboutTagline}>
               Forged in Asgard, Tested in the Field.
             </Text>
+            <Text style={styles.aboutCopyright}>
+              © 2026 Asgard Solutions LLC
+            </Text>
             
             {/* OK Button */}
             <TouchableOpacity 
