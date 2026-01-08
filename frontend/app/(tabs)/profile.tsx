@@ -276,6 +276,12 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
+    // Show subscription management modal for premium users
+    setShowSubscriptionManager(true);
+  };
+
+  const openStripePortal = async () => {
+    setShowSubscriptionManager(false);
     setUpgradeLoading(true);
     try {
       const response = await subscriptionAPI.getPortalUrl();
@@ -297,6 +303,42 @@ export default function ProfileScreen() {
     } finally {
       setUpgradeLoading(false);
     }
+  };
+
+  const handleCancelSubscription = () => {
+    Alert.alert(
+      'Cancel Subscription',
+      'Are you sure you want to cancel your Master Stag subscription? You will lose access to unlimited scans at the end of your billing period.',
+      [
+        { text: 'Keep Subscription', style: 'cancel' },
+        {
+          text: 'Cancel Subscription',
+          style: 'destructive',
+          onPress: async () => {
+            setShowSubscriptionManager(false);
+            setUpgradeLoading(true);
+            try {
+              const response = await subscriptionAPI.cancelSubscription();
+              if (response.data.status === 'canceled') {
+                Alert.alert(
+                  'Subscription Canceled',
+                  'Your subscription has been canceled. You will have access until the end of your current billing period.',
+                  [{ text: 'OK' }]
+                );
+                // Refresh user data
+                const meResponse = await authAPI.getMe();
+                updateUser(meResponse.data);
+              }
+            } catch (error: any) {
+              const message = error.response?.data?.detail || 'Failed to cancel subscription.';
+              Alert.alert('Error', typeof message === 'string' ? message : 'Failed to cancel subscription.');
+            } finally {
+              setUpgradeLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Cleanup Interval Selector
