@@ -148,11 +148,10 @@ export default function ProfileScreen() {
           onPress: async () => {
             setIsCleaningUp(true);
             try {
-              // In a real implementation, this would filter by date
-              // For now, we'll show a success message
+              const deletedCount = await cleanupOldImages();
               Alert.alert(
                 'Cleanup Complete',
-                `Cleaned up images older than ${cleanupInterval} days.`
+                `Cleaned up ${deletedCount} images older than ${cleanupInterval} days.`
               );
             } catch (error) {
               Alert.alert('Error', 'Failed to clean up images.');
