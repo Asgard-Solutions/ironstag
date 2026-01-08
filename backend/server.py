@@ -552,12 +552,17 @@ async def verify_password_reset(data: PasswordResetVerify):
 
 @api_router.post("/auth/accept-disclaimer", response_model=UserResponse)
 async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_current_user)):
+    now = datetime.utcnow()
     query = users_table.update().where(
         users_table.c.id == user["id"]
-    ).values(disclaimer_accepted=data.accepted)
+    ).values(
+        disclaimer_accepted=data.accepted,
+        disclaimer_accepted_at=now if data.accepted else None
+    )
     await database.execute(query)
     
     user["disclaimer_accepted"] = data.accepted
+    user["disclaimer_accepted_at"] = now if data.accepted else None
     
     return UserResponse(
         id=user["id"],
@@ -568,7 +573,8 @@ async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_cur
         subscription_tier=user.get("subscription_tier", "tracker"),
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
-        disclaimer_accepted=user["disclaimer_accepted"]
+        disclaimer_accepted=user["disclaimer_accepted"],
+        disclaimer_accepted_at=user.get("disclaimer_accepted_at")
     )
 
 # ============ SUBSCRIPTION HELPERS ============
