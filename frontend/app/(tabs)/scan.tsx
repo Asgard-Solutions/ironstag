@@ -381,7 +381,7 @@ export default function ScanScreen() {
           <Text style={styles.headerTitle}>Iron Stag</Text>
           <Text style={styles.headerSubtitle}>Precision for Ethical Hunters</Text>
         </View>
-        <TouchableOpacity style={styles.infoButton} onPress={() => setShowDisclaimer(true)}>
+        <TouchableOpacity style={styles.infoButton} onPress={handleViewDisclaimer}>
           <FileText size={20} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
