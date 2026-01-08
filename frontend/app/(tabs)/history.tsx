@@ -38,7 +38,7 @@ interface Scan {
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const { getImage, isLoaded } = useImageStore();
   
   const [scans, setScans] = useState<Scan[]>([]);
@@ -103,60 +103,131 @@ export default function HistoryScreen() {
         activeOpacity={0.8}
         onPress={() => router.push(`/scan-result/${item.id}`)}
       >
-        <Card style={styles.scanCard}>
+        <View style={styles.scanCard}>
           <View style={styles.scanRow}>
+            {/* Left side - Icon or Image */}
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={styles.thumbnail} />
             ) : (
-              <View style={styles.placeholderImage}>
-                <HistoryIcon size={24} color={colors.textMuted} />
+              <View style={styles.scanIconBox}>
+                <Target size={28} color={colors.textPrimary} />
               </View>
             )}
+            
+            {/* Middle - Info */}
             <View style={styles.scanInfo}>
-              <View style={styles.scanHeader}>
-                <Text style={styles.scanType}>
-                  {item.deer_type || 'Unknown Type'}
+              <View style={styles.statusBadge}>
+                <Text style={[
+                  styles.statusText,
+                  item.recommendation === 'HARVEST' ? styles.harvestStatus : styles.passStatus
+                ]}>
+                  {item.recommendation || 'PASS'}
                 </Text>
-                <Badge
-                  text={item.recommendation || 'N/A'}
-                  variant={item.recommendation === 'HARVEST' ? 'harvest' : 'pass'}
-                  size="small"
-                />
               </View>
-              <Text style={styles.scanDetails}>
-                {item.deer_sex || 'Unknown'} • Age: {item.deer_age || '?'} yrs
-                {item.antler_points && ` • ${item.antler_points} pts`}
+              <Text style={styles.ageText}>
+                Age: {item.deer_age || '?'} yrs
               </Text>
-              <View style={styles.scanFooter}>
-                <Text style={styles.scanDate}>
-                  {format(new Date(item.created_at), 'MMM d, yyyy')}
-                </Text>
-                {item.confidence && (
-                  <Text style={styles.confidence}>
-                    {item.confidence}% confidence
-                  </Text>
-                )}
-              </View>
+              <Text style={styles.pointsText}>
+                {item.antler_points || 0} points
+              </Text>
+              <Text style={styles.dateText}>
+                {format(new Date(item.created_at), 'MMM d, yyyy')}
+              </Text>
+            </View>
+            
+            {/* Right side - Confidence */}
+            <View style={styles.confidenceContainer}>
+              <Text style={styles.confidenceValue}>
+                {item.confidence || 0}%
+              </Text>
+              <Text style={styles.confidenceLabel}>confidence</Text>
             </View>
           </View>
-        </Card>
+        </View>
       </TouchableOpacity>
     );
   };
 
+  // Empty State Component
+  const EmptyState = () => (
+    <View style={styles.emptyContainer}>
+      {/* Camera Icon Circle */}
+      <View style={styles.emptyIconCircle}>
+        <Camera size={48} color={colors.textMuted} />
+      </View>
+      
+      {/* Title & Description */}
+      <Text style={styles.emptyTitle}>Build Your History</Text>
+      <Text style={styles.emptyDescription}>
+        Every scan you run will appear here with{'\n'}detailed analysis and recommendations
+      </Text>
+      
+      {/* Example Card */}
+      <View style={styles.exampleCard}>
+        <View style={styles.exampleBadge}>
+          <Text style={styles.exampleBadgeText}>EXAMPLE</Text>
+        </View>
+        
+        <View style={styles.exampleContent}>
+          {/* Left Icon */}
+          <View style={styles.exampleIconBox}>
+            <Target size={28} color={colors.textPrimary} />
+          </View>
+          
+          {/* Middle Info */}
+          <View style={styles.exampleInfo}>
+            <View style={styles.exampleStatusBadge}>
+              <Text style={styles.exampleStatusText}>PASS</Text>
+            </View>
+            <Text style={styles.exampleAgeText}>Age: 3.5 yrs</Text>
+            <Text style={styles.examplePointsText}>8 points</Text>
+            <Text style={styles.exampleSubText}>Your scans will show here</Text>
+          </View>
+          
+          {/* Right Confidence */}
+          <View style={styles.exampleConfidence}>
+            <Text style={styles.exampleConfidenceValue}>87%</Text>
+            <Text style={styles.exampleConfidenceLabel}>confidence</Text>
+          </View>
+        </View>
+      </View>
+      
+      {/* CTA Button */}
+      <TouchableOpacity 
+        style={styles.scanButton}
+        onPress={() => router.push('/(tabs)/scan')}
+      >
+        <Camera size={20} color={colors.background} />
+        <Text style={styles.scanButtonText}>Scan Your First Deer</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.emptyState}>
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <ChevronLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>History</Text>
+          <View style={styles.headerRight} />
+        </View>
+        <View style={styles.authRequired}>
           <HistoryIcon size={64} color={colors.textMuted} />
-          <Text style={styles.emptyTitle}>Sign In Required</Text>
-          <Text style={styles.emptyText}>
+          <Text style={styles.authTitle}>Sign In Required</Text>
+          <Text style={styles.authText}>
             Please sign in to view your scan history.
           </Text>
-          <Button
-            title="Sign In"
+          <TouchableOpacity 
+            style={styles.signInButton}
             onPress={() => router.push('/(auth)/login')}
-          />
+          >
+            <Text style={styles.signInButtonText}>Sign In</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -166,124 +237,146 @@ export default function HistoryScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Scan History</Text>
-      </View>
-
-      {/* Search & Filters */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Search size={20} color={colors.textMuted} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search scans..."
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <X size={18} color={colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
-        <TouchableOpacity
-          style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
-          onPress={() => setShowFilters(!showFilters)}
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={() => router.push('/(tabs)')}
         >
-          <Filter size={20} color={hasActiveFilters ? colors.background : colors.textPrimary} />
+          <ChevronLeft size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.title}>History</Text>
+        <TouchableOpacity style={styles.premiumBadge}>
+          <Crown size={14} color={colors.primary} />
+          <Text style={styles.premiumText}>Premium</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Filter Options */}
-      {showFilters && (
-        <View style={styles.filterOptions}>
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Sex:</Text>
-            {['', 'Buck', 'Doe'].map((sex) => (
-              <TouchableOpacity
-                key={sex || 'all'}
-                style={[
-                  styles.filterChip,
-                  filters.deer_sex === sex && styles.filterChipActive,
-                ]}
-                onPress={() => setFilters({ ...filters, deer_sex: sex })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    filters.deer_sex === sex && styles.filterChipTextActive,
-                  ]}
-                >
-                  {sex || 'All'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Rec:</Text>
-            {['', 'HARVEST', 'PASS'].map((rec) => (
-              <TouchableOpacity
-                key={rec || 'all'}
-                style={[
-                  styles.filterChip,
-                  filters.recommendation === rec && styles.filterChipActive,
-                ]}
-                onPress={() => setFilters({ ...filters, recommendation: rec })}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    filters.recommendation === rec && styles.filterChipTextActive,
-                  ]}
-                >
-                  {rec || 'All'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {hasActiveFilters && (
-            <TouchableOpacity style={styles.clearFilters} onPress={clearFilters}>
-              <Text style={styles.clearFiltersText}>Clear All Filters</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Scan List */}
-      <FlatList
-        data={filteredScans}
-        keyExtractor={(item) => item.id}
-        renderItem={renderScanCard}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <HistoryIcon size={48} color={colors.textMuted} />
-            <Text style={styles.emptyTitle}>
-              {hasActiveFilters ? 'No Matching Scans' : 'No Scans Yet'}
-            </Text>
-            <Text style={styles.emptyText}>
-              {hasActiveFilters
-                ? 'Try adjusting your filters or search query.'
-                : 'Start by scanning your first deer!'}
-            </Text>
-            {!hasActiveFilters && (
-              <Button
-                title="Scan a Deer"
-                onPress={() => router.push('/(tabs)/scan')}
-                style={styles.emptyButton}
+      {scans.length > 0 ? (
+        <>
+          {/* Search & Filters - Only show when there are scans */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Search size={20} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search scans..."
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
               />
-            )}
+              {searchQuery && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <X size={18} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+              onPress={() => setShowFilters(!showFilters)}
+            >
+              <Filter size={20} color={hasActiveFilters ? colors.background : colors.textPrimary} />
+            </TouchableOpacity>
           </View>
-        }
-      />
+
+          {/* Filter Options */}
+          {showFilters && (
+            <View style={styles.filterOptions}>
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Sex:</Text>
+                {['', 'Buck', 'Doe'].map((sex) => (
+                  <TouchableOpacity
+                    key={sex || 'all'}
+                    style={[
+                      styles.filterChip,
+                      filters.deer_sex === sex && styles.filterChipActive,
+                    ]}
+                    onPress={() => setFilters({ ...filters, deer_sex: sex })}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        filters.deer_sex === sex && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {sex || 'All'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.filterRow}>
+                <Text style={styles.filterLabel}>Rec:</Text>
+                {['', 'HARVEST', 'PASS'].map((rec) => (
+                  <TouchableOpacity
+                    key={rec || 'all'}
+                    style={[
+                      styles.filterChip,
+                      filters.recommendation === rec && styles.filterChipActive,
+                    ]}
+                    onPress={() => setFilters({ ...filters, recommendation: rec })}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        filters.recommendation === rec && styles.filterChipTextActive,
+                      ]}
+                    >
+                      {rec || 'All'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {hasActiveFilters && (
+                <TouchableOpacity style={styles.clearFilters} onPress={clearFilters}>
+                  <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Scan List */}
+          <FlatList
+            data={filteredScans}
+            keyExtractor={(item) => item.id}
+            renderItem={renderScanCard}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.primary}
+              />
+            }
+            ListEmptyComponent={
+              hasActiveFilters ? (
+                <View style={styles.noResultsContainer}>
+                  <Search size={48} color={colors.textMuted} />
+                  <Text style={styles.noResultsTitle}>No Matching Scans</Text>
+                  <Text style={styles.noResultsText}>
+                    Try adjusting your filters or search query.
+                  </Text>
+                  <TouchableOpacity onPress={clearFilters}>
+                    <Text style={styles.clearFiltersText}>Clear All Filters</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null
+            }
+          />
+        </>
+      ) : (
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          <EmptyState />
+        </ScrollView>
+      )}
     </View>
   );
 }
