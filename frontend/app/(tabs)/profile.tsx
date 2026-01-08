@@ -70,7 +70,7 @@ export default function ProfileScreen() {
   // Initialize image store on mount
   useEffect(() => {
     initialize();
-  }, []);
+  }, [initialize]);
 
   // Format date for display
   const formatDate = (date: Date | null) => {
