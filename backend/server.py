@@ -472,6 +472,13 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
             raise HTTPException(status_code=400, detail="Username already taken")
         updates["username"] = data.username
     
+    if data.email is not None:
+        # Check email uniqueness
+        existing = await db.users.find_one({"email": data.email.lower(), "id": {"$ne": user["id"]}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already in use")
+        updates["email"] = data.email.lower()
+    
     # Handle password change
     if data.new_password:
         if not data.current_password:
@@ -490,7 +497,7 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
     
     return UserResponse(
         id=user["id"],
-        email=user["email"],
+        email=user.get("email"),
         name=user.get("name", user["email"]),
         username=user.get("username"),
         created_at=user["created_at"],
