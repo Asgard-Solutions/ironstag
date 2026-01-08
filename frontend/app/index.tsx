@@ -68,7 +68,7 @@ export default function SplashScreen() {
           />
         </View>
         
-        {/* Tagline Section */}
+        {/* Tagline Section - Centered between logo and buttons */}
         <View style={styles.taglineSection}>
           <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
           <Text style={styles.subTagline}>AI-Powered Deer Aging</Text>
