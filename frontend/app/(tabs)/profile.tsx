@@ -68,6 +68,7 @@ export default function ProfileScreen() {
   } = useImageStore();
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [showIntervalPicker, setShowIntervalPicker] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
