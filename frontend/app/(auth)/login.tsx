@@ -53,7 +53,7 @@ export default function LoginScreen() {
       
       // Check if disclaimer accepted
       if (!response.data.user.disclaimer_accepted) {
-        router.replace('/(auth)/disclaimer');
+        router.replace('/(auth)/onboarding');
       } else {
         router.replace('/(tabs)');
       }
