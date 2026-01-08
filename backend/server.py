@@ -84,7 +84,8 @@ class UserResponse(BaseModel):
     username: Optional[str] = None
     created_at: datetime
     subscription_tier: str = "scout"
-    scans_remaining: int = 3
+    scans_remaining: int = 3  # For free tier: lifetime remaining (0-3), for premium: unlimited (-1)
+    total_scans_used: int = 0  # Lifetime total scans used
     disclaimer_accepted: bool = False
 
 class TokenResponse(BaseModel):
