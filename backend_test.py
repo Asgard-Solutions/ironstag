@@ -67,7 +67,8 @@ class IronStagAPITester:
                 
             return response
         except requests.exceptions.RequestException as e:
-            return None, str(e)
+            print(f"Request exception for {method} {url}: {e}")
+            return None
     
     def test_health_check(self):
         """Test basic health endpoints"""
