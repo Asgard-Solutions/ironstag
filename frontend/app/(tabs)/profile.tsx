@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   User,
   Crown,
@@ -26,11 +29,26 @@ import {
   BookOpen,
   Settings,
   FileText,
+  ExternalLink,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { subscriptionAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
+
+// Constants for Privacy & Legal URLs
+const PRIVACY_POLICY_URL = 'https://www.asgardsolution.io/iron-stag/privacy';
+const TERMS_OF_SERVICE_URL = 'https://www.asgardsolution.io/iron-stag/terms';
+const PRIVACY_EMAIL = 'privacy@asgardsolutions.io';
+const CLEANUP_INTERVAL_KEY = '@cleanup_interval_days';
+
+// Available cleanup intervals
+const CLEANUP_INTERVALS = [
+  { label: '30 days', value: 30 },
+  { label: '60 days', value: 60 },
+  { label: '90 days (recommended)', value: 90 },
+  { label: '180 days', value: 180 },
+];
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
