@@ -134,8 +134,6 @@ export default function HistoryScreen() {
   const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery;
 
   const renderScanCard = ({ item }: { item: Scan }) => {
-    const imageUri = getImage(item.local_image_id);
-    
     return (
       <TouchableOpacity
         activeOpacity={0.8}
@@ -144,13 +142,7 @@ export default function HistoryScreen() {
         <View style={styles.scanCard}>
           <View style={styles.scanRow}>
             {/* Left side - Icon or Image */}
-            {imageUri ? (
-              <Image source={{ uri: imageUri }} style={styles.thumbnail} />
-            ) : (
-              <View style={styles.scanIconBox}>
-                <Target size={28} color={colors.textPrimary} />
-              </View>
-            )}
+            <ScanImage localImageId={item.local_image_id} />
             
             {/* Middle - Info */}
             <View style={styles.scanInfo}>
