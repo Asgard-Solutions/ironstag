@@ -246,6 +246,26 @@ class LocalImageServiceClass {
       return null;
     }
 
+    if (isWeb) {
+      // On web, retrieve from AsyncStorage
+      try {
+        const webImages = await AsyncStorage.getItem(WEB_IMAGE_STORAGE_KEY);
+        const images = webImages ? JSON.parse(webImages) : {};
+        const base64Data = images[localImageId];
+        
+        if (!base64Data) {
+          console.warn(`[LocalImageService] Web image not found: ${localImageId}`);
+          return null;
+        }
+        
+        return base64Data; // Already includes data URL prefix
+      } catch (error) {
+        console.error(`[LocalImageService] Error reading web image: ${localImageId}`, error);
+        return null;
+      }
+    }
+
+    // Native: use FileSystem
     const localPath = `${SCAN_IMAGES_DIR}${entry.fileName}`;
     
     try {
