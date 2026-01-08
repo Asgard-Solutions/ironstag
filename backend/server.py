@@ -768,24 +768,48 @@ async def create_customer_portal(user: dict = Depends(get_current_user)):
 @api_router.post("/subscription/cancel")
 async def cancel_subscription(user: dict = Depends(get_current_user)):
     try:
-        if not user.get("stripe_subscription_id"):
-            raise HTTPException(status_code=400, detail="No active subscription")
+        # Check if user is premium
+        if user.get("subscription_tier") != "master_stag":
+            raise HTTPException(status_code=400, detail="No active subscription to cancel")
         
-        subscription = stripe.Subscription.modify(
-            user["stripe_subscription_id"],
-            cancel_at_period_end=True
-        )
+        subscription_id = user.get("stripe_subscription_id")
         
-        query = users_table.update().where(
-            users_table.c.id == user["id"]
-        ).values(subscription_cancel_at_period_end=True)
-        await database.execute(query)
-        
-        return {
-            "status": "canceled",
-            "cancel_at": subscription.cancel_at,
-            "current_period_end": subscription.current_period_end
-        }
+        if subscription_id:
+            # User has a real Stripe subscription - cancel it
+            subscription = stripe.Subscription.modify(
+                subscription_id,
+                cancel_at_period_end=True
+            )
+            
+            query = users_table.update().where(
+                users_table.c.id == user["id"]
+            ).values(subscription_cancel_at_period_end=True)
+            await database.execute(query)
+            
+            return {
+                "status": "canceled",
+                "cancel_at": subscription.cancel_at,
+                "current_period_end": subscription.current_period_end
+            }
+        else:
+            # User was manually upgraded (no Stripe subscription) - downgrade immediately
+            query = users_table.update().where(
+                users_table.c.id == user["id"]
+            ).values(
+                subscription_tier="tracker",
+                scans_remaining=0,  # They've used their free tier already
+                subscription_cancel_at_period_end=False
+            )
+            await database.execute(query)
+            
+            return {
+                "status": "canceled",
+                "message": "Subscription canceled. You have been downgraded to Tracker tier."
+            }
+            
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe cancel error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except stripe.error.StripeError as e:
         logger.error(f"Stripe cancel error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
