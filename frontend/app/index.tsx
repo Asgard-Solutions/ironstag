@@ -104,6 +104,19 @@ const styles = StyleSheet.create({
     width: 350,
     height: 350,
   },
+  tagline: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  subTagline: {
+    fontSize: 14,
+    color: colors.primary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
   buttonContainer: {
     position: 'absolute',
     bottom: 0,
@@ -116,5 +129,12 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     width: '100%',
+  },
+  footer: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
 });
