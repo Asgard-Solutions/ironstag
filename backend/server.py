@@ -365,7 +365,104 @@ async def login(data: UserLogin):
             subscription_tier=user.get("subscription_tier", "tracker"),
             scans_remaining=user.get("scans_remaining", 3),
             total_scans_used=user.get("total_scans_used", 0),
-            disclaimer_accepted=user.get("disclaimer_accepted", False)
+            disclaimer_accepted=user.get("disclaimer_accepted", False),
+            disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+        )
+    )
+
+@api_router.post("/auth/apple", response_model=TokenResponse)
+async def apple_sign_in(data: AppleSignInRequest):
+    """Sign in with Apple - creates account if not exists"""
+    # Check if user already exists by apple_user_id
+    query = users_table.select().where(users_table.c.apple_user_id == data.user)
+    user = await database.fetch_one(query)
+    
+    if user:
+        # Existing user - return token
+        user = dict(user)
+        token = create_token(user["id"])
+        return TokenResponse(
+            access_token=token,
+            user=UserResponse(
+                id=user["id"],
+                email=user["email"],
+                name=user["name"] or user.get("email", "Apple User"),
+                username=user.get("username"),
+                created_at=user["created_at"],
+                subscription_tier=user.get("subscription_tier", "tracker"),
+                scans_remaining=user.get("scans_remaining", 3),
+                total_scans_used=user.get("total_scans_used", 0),
+                disclaimer_accepted=user.get("disclaimer_accepted", False),
+                disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+            )
+        )
+    
+    # Check if email already exists (but not linked to Apple)
+    if data.email:
+        query = users_table.select().where(users_table.c.email == data.email.lower())
+        existing_user = await database.fetch_one(query)
+        if existing_user:
+            # Link Apple ID to existing account
+            existing_user = dict(existing_user)
+            update_query = users_table.update().where(
+                users_table.c.id == existing_user["id"]
+            ).values(apple_user_id=data.user)
+            await database.execute(update_query)
+            
+            token = create_token(existing_user["id"])
+            return TokenResponse(
+                access_token=token,
+                user=UserResponse(
+                    id=existing_user["id"],
+                    email=existing_user["email"],
+                    name=existing_user["name"] or existing_user.get("email", "Apple User"),
+                    username=existing_user.get("username"),
+                    created_at=existing_user["created_at"],
+                    subscription_tier=existing_user.get("subscription_tier", "tracker"),
+                    scans_remaining=existing_user.get("scans_remaining", 3),
+                    total_scans_used=existing_user.get("total_scans_used", 0),
+                    disclaimer_accepted=existing_user.get("disclaimer_accepted", False),
+                    disclaimer_accepted_at=existing_user.get("disclaimer_accepted_at")
+                )
+            )
+    
+    # Create new user
+    user_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    
+    # Use email from Apple or generate placeholder for private relay
+    email = data.email.lower() if data.email else f"{data.user}@privaterelay.appleid.com"
+    name = data.full_name or "Apple User"
+    
+    insert_query = users_table.insert().values(
+        id=user_id,
+        email=email,
+        name=name,
+        password=ph.hash(str(uuid.uuid4())),  # Random password since they'll use Apple Sign In
+        created_at=now,
+        subscription_tier="tracker",
+        scans_remaining=3,
+        total_scans_used=0,
+        disclaimer_accepted=False,
+        apple_user_id=data.user
+    )
+    await database.execute(insert_query)
+    
+    token = create_token(user_id)
+    
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(
+            id=user_id,
+            email=email,
+            name=name,
+            username=None,
+            created_at=now,
+            subscription_tier="tracker",
+            scans_remaining=3,
+            total_scans_used=0,
+            disclaimer_accepted=False,
+            disclaimer_accepted_at=None
         )
     )
 
