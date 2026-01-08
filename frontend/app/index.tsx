@@ -25,16 +25,19 @@ export default function SplashScreen() {
     const checkAuth = async () => {
       if (isLoading) return;
 
-      if (token) {
-        try {
-          const response = await authAPI.getMe();
-          await login(token, response.data);
-          router.replace('/(tabs)');
-        } catch (error) {
-          console.log('Token invalid, staying on splash');
-          setCheckingAuth(false);
-        }
-      } else {
+      // If no token, show splash buttons
+      if (!token) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      // If token exists, try to validate it
+      try {
+        const response = await authAPI.getMe();
+        await login(token, response.data);
+        router.replace('/(tabs)');
+      } catch (error) {
+        console.log('Token invalid, staying on splash');
         setCheckingAuth(false);
       }
     };
@@ -42,6 +45,49 @@ export default function SplashScreen() {
     checkAuth();
   }, [token, isLoading]);
 
+  // Show splash with buttons when not authenticated
+  if (!token && !isLoading) {
+    return (
+      <View style={styles.container}>
+        <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+          {/* Logo Section */}
+          <View style={styles.logoSection}>
+            <Image
+              source={require('../assets/images/IronStagLogo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
+          
+          {/* Tagline Section - Centered between logo and buttons */}
+          <View style={styles.taglineSection}>
+            <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
+            <Text style={styles.subTagline}>AI-Powered Deer Aging</Text>
+          </View>
+          
+          {/* Buttons Section */}
+          <View style={[styles.buttonSection, { paddingBottom: insets.bottom + spacing.md }]}>
+            <Button
+              title="Get Started"
+              onPress={() => router.push('/(auth)/login')}
+              size="large"
+              style={styles.primaryButton}
+            />
+            <Button
+              title="Create Account"
+              onPress={() => router.push('/(auth)/signup')}
+              variant="outline"
+              size="large"
+              style={styles.secondaryButton}
+            />
+            <Text style={styles.footer}>Forged in Asgard, Tested in the Field</Text>
+          </View>
+        </Animated.View>
+      </View>
+    );
+  }
+
+  // Show loading state while checking auth
   if (checkingAuth || isLoading) {
     return (
       <View style={styles.container}>
