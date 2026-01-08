@@ -85,7 +85,8 @@ export const subscriptionAPI = {
 
   checkEligibility: () => api.get('/subscription/scan-eligibility'),
 
-  createCheckout: () => api.post('/subscription/create-checkout'),
+  createCheckout: (plan: 'monthly' | 'annual' = 'monthly') => 
+    api.post('/subscription/create-checkout', { plan }),
 
   getPortalUrl: () => api.post('/subscription/portal'),
 
