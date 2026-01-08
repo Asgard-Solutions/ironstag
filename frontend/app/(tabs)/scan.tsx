@@ -708,12 +708,22 @@ function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: Disclai
         </Card>
 
         {/* Continue Button */}
-        <Button
-          title="I Understand"
-          onPress={onClose}
-          size="large"
-          style={disclaimerStyles.continueButton}
-        />
+        {isAccepted ? (
+          <Button
+            title="Close"
+            onPress={onClose}
+            size="large"
+            variant="outline"
+            style={disclaimerStyles.continueButton}
+          />
+        ) : (
+          <Button
+            title="I Understand"
+            onPress={onAccept}
+            size="large"
+            style={disclaimerStyles.continueButton}
+          />
+        )}
       </ScrollView>
     </View>
   );
