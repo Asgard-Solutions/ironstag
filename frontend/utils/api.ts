@@ -87,6 +87,8 @@ export const subscriptionAPI = {
 
   createCheckout: () => api.post('/subscription/create-checkout'),
 
+  getPortalUrl: () => api.post('/subscription/portal'),
+
   verifyRevenueCat: () => api.post('/subscription/verify-revenuecat'),
 };
 
