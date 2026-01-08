@@ -52,6 +52,8 @@ export default function ScanScreen() {
   const [scansRemaining, setScansRemaining] = useState(user?.scans_remaining || 3);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [scanStep, setScanStep] = useState<ScanStep>('main');
   const cameraRef = useRef<CameraView>(null);
 
