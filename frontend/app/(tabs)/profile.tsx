@@ -1044,6 +1044,9 @@ const styles = StyleSheet.create({
   headerRight: {
     width: 40,
   },
+  headerSpacer: {
+    width: 40,
+  },
   editButton: {
     width: 40,
     height: 40,
