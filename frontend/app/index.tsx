@@ -65,6 +65,9 @@ export default function SplashScreen() {
           resizeMode="contain"
         />
         
+        <Text style={styles.tagline}>Hunt Smarter. Harvest Responsibly.</Text>
+        <Text style={styles.subTagline}>AI-Powered Deer Aging</Text>
+        
         <View style={[styles.buttonContainer, { paddingBottom: insets.bottom + spacing.lg }]}>
           <Button
             title="Get Started"
@@ -79,6 +82,7 @@ export default function SplashScreen() {
             size="large"
             style={styles.secondaryButton}
           />
+          <Text style={styles.footer}>Forged in Asgard, Tested in the Field</Text>
         </View>
       </Animated.View>
     </View>
