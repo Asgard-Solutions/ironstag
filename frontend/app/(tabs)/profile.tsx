@@ -60,7 +60,7 @@ const CLEANUP_INTERVALS = [
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, logout, updateUser } = useAuthStore();
   const { 
     stats, 
     cleanupInterval, 
@@ -74,6 +74,19 @@ export default function ProfileScreen() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   const [showIntervalPicker, setShowIntervalPicker] = useState(false);
+  
+  // Edit Profile Modal State
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
