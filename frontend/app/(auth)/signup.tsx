@@ -8,10 +8,10 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Mail, Lock, User, ArrowLeft } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useAuthStore } from '../../stores/authStore';
@@ -21,8 +21,10 @@ import { colors, spacing } from '../../constants/theme';
 export default function SignupScreen() {
   const insets = useSafeAreaInsets();
   const { login } = useAuthStore();
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,8 +33,12 @@ export default function SignupScreen() {
   const validate = () => {
     const newErrors: Record<string, string> = {};
     
-    if (!name.trim()) {
-      newErrors.name = 'Name is required';
+    if (!firstName.trim()) {
+      newErrors.firstName = 'First name is required';
+    }
+    
+    if (!lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
     }
     
     if (!email) {
@@ -41,10 +47,16 @@ export default function SignupScreen() {
       newErrors.email = 'Invalid email address';
     }
     
+    if (!username.trim()) {
+      newErrors.username = 'Username is required';
+    } else if (username.length < 3) {
+      newErrors.username = 'Username must be at least 3 characters';
+    }
+    
     if (!password) {
       newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     }
     
     if (password !== confirmPassword) {
@@ -60,7 +72,14 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      const response = await authAPI.register({ email, password, name });
+      const response = await authAPI.register({
+        email,
+        password,
+        name: `${firstName} ${lastName}`,
+        first_name: firstName,
+        last_name: lastName,
+        username,
+      });
       await login(response.data.access_token, response.data.user);
       router.replace('/(auth)/disclaimer');
     } catch (error: any) {
@@ -72,142 +91,210 @@ export default function SignupScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg },
-        ]}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <ArrowLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+          {/* Logo */}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../../assets/images/IronStagLogo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+          </View>
 
-        <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join the hunt with Iron Stag</Text>
-        </View>
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>Join Iron Stag</Text>
+            <Text style={styles.subtitle}>Start with 3 free scans per day</Text>
+          </View>
 
-        <View style={styles.form}>
-          <Input
-            label="Full Name"
-            placeholder="Enter your name"
-            value={name}
-            onChangeText={setName}
-            autoCapitalize="words"
-            autoComplete="name"
-            error={errors.name}
-            icon={<User size={20} color={colors.textMuted} />}
-          />
+          {/* Form */}
+          <View style={styles.form}>
+            {/* Name Row */}
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Input
+                  label="First Name"
+                  placeholder="John"
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  autoCapitalize="words"
+                  autoComplete="given-name"
+                  error={errors.firstName}
+                  containerStyle={styles.inputContainer}
+                />
+              </View>
+              <View style={styles.nameField}>
+                <Input
+                  label="Last Name"
+                  placeholder="Doe"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  autoCapitalize="words"
+                  autoComplete="family-name"
+                  error={errors.lastName}
+                  containerStyle={styles.inputContainer}
+                />
+              </View>
+            </View>
 
-          <Input
-            label="Email"
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            error={errors.email}
-            icon={<Mail size={20} color={colors.textMuted} />}
-          />
+            <Input
+              label="Email"
+              placeholder="john@example.com"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              error={errors.email}
+            />
 
-          <Input
-            label="Password"
-            placeholder="Create a password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoComplete="new-password"
-            error={errors.password}
-            icon={<Lock size={20} color={colors.textMuted} />}
-          />
+            <Input
+              label="Username"
+              placeholder="johndoe"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoComplete="username"
+              error={errors.username}
+            />
 
-          <Input
-            label="Confirm Password"
-            placeholder="Confirm your password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            autoComplete="new-password"
-            error={errors.confirmPassword}
-            icon={<Lock size={20} color={colors.textMuted} />}
-          />
+            <Input
+              label="Password"
+              placeholder="Minimum 8 characters"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="new-password"
+              error={errors.password}
+            />
 
-          <Button
-            title="Create Account"
-            onPress={handleSignup}
-            loading={loading}
-            size="large"
-            style={styles.submitButton}
-          />
-        </View>
+            <Input
+              label="Confirm Password"
+              placeholder="Re-enter password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+              autoComplete="new-password"
+              error={errors.confirmPassword}
+            />
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
-            <Text style={styles.footerLink}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <Button
+              title="Create Account"
+              onPress={handleSignup}
+              loading={loading}
+              size="large"
+              style={styles.submitButton}
+            />
+          </View>
+
+          {/* Sign In Link */}
+          <View style={styles.signinContainer}>
+            <Text style={styles.signinText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+              <Text style={styles.signinLink}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Text style={styles.footerTagline}>Forged in Asgard, Tested in the Field</Text>
+            <Text style={styles.footerCopyright}>© 2025 Asgard Solutions LLC</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#000000',
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
     padding: spacing.lg,
   },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  header: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.xl,
+  logo: {
+    width: 160,
+    height: 160,
+  },
+  headerContainer: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: colors.primary,
+    textAlign: 'center',
   },
   form: {
+    marginBottom: spacing.md,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  nameField: {
     flex: 1,
   },
-  submitButton: {
-    marginTop: spacing.lg,
+  inputContainer: {
+    marginBottom: spacing.md,
   },
-  footer: {
+  submitButton: {
+    marginTop: spacing.sm,
+  },
+  signinContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
   },
-  footerText: {
+  signinText: {
     color: colors.textSecondary,
     fontSize: 14,
   },
-  footerLink: {
+  signinLink: {
     color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  footer: {
+    alignItems: 'center',
+    marginTop: 'auto',
+  },
+  footerTagline: {
+    fontSize: 13,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+    marginBottom: spacing.xs,
+  },
+  footerCopyright: {
+    fontSize: 12,
+    color: colors.textMuted,
   },
 });
