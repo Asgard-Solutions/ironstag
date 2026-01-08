@@ -182,13 +182,19 @@ export default function ScanScreen() {
   };
 
   const openCamera = async () => {
+    console.log('openCamera called, permission:', permission);
+    
     if (!permission?.granted) {
+      console.log('Requesting camera permission...');
       const result = await requestPermission();
+      console.log('Permission result:', result);
       if (!result.granted) {
         Alert.alert('Permission Required', 'Camera access is needed to scan deer.');
         return;
       }
     }
+    
+    console.log('Setting scanStep to camera');
     setScanStep('camera');
   };
 
