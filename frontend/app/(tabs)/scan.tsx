@@ -606,9 +606,13 @@ function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: Disclai
     <View style={[disclaimerStyles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={disclaimerStyles.header}>
-        <TouchableOpacity style={disclaimerStyles.backButton} onPress={onClose}>
-          <ArrowLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        {isAccepted ? (
+          <TouchableOpacity style={disclaimerStyles.backButton} onPress={onClose}>
+            <ArrowLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={disclaimerStyles.placeholder} />
+        )}
         <Text style={disclaimerStyles.headerTitle}>Scanning Disclaimer</Text>
         <View style={disclaimerStyles.placeholder} />
       </View>
@@ -617,6 +621,16 @@ function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: Disclai
         contentContainerStyle={disclaimerStyles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Acceptance Badge - Only show if already accepted */}
+        {isAccepted && acceptedAt && (
+          <View style={disclaimerStyles.acceptedBadge}>
+            <Check size={16} color={colors.harvest} />
+            <Text style={disclaimerStyles.acceptedText}>
+              Acknowledged on {formatAcceptedDate(acceptedAt)}
+            </Text>
+          </View>
+        )}
+
         {/* Warning Header */}
         <View style={disclaimerStyles.warningHeader}>
           <View style={disclaimerStyles.warningIcon}>
