@@ -177,9 +177,6 @@ export default function LearnScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.title}>Aging Guide</Text>
           <Text style={styles.subtitle}>Learn to assess deer age in the field</Text>

@@ -259,9 +259,6 @@ export default function ScanScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Iron Stag</Text>
           <Text style={styles.headerSubtitle}>Precision for Ethical Hunters</Text>
