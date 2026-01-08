@@ -137,7 +137,8 @@ class ScanUpdate(BaseModel):
 
 class SubscriptionStatus(BaseModel):
     tier: str
-    scans_remaining: int
+    scans_remaining: int  # For free tier: lifetime remaining (0-3), for premium: -1 (unlimited)
+    total_scans_used: int = 0  # Lifetime total scans
     is_premium: bool
     expires_at: Optional[datetime] = None
 
