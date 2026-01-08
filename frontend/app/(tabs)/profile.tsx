@@ -73,7 +73,7 @@ export default function ProfileScreen() {
   }, [initialize]);
 
   // Format date for display
-  const formatDate = (date: Date | null) => {
+  const formatDate = (date) => {
     if (!date) return null;
     return date.toLocaleDateString('en-US', {
       month: '2-digit',
