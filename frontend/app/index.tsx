@@ -9,7 +9,7 @@ import { colors, spacing } from '../constants/theme';
 
 export default function SplashScreen() {
   const insets = useSafeAreaInsets();
-  const { token, isLoading, login, isAuthenticated } = useAuthStore();
+  const { token, isLoading, login, isAuthenticated, user } = useAuthStore();
   const [fadeAnim] = useState(new Animated.Value(0));
   const [checkingAuth, setCheckingAuth] = useState(true);
 
