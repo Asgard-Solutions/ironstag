@@ -413,12 +413,23 @@ export default function ScanScreen() {
             {/* Buttons */}
             <TouchableOpacity 
               style={upgradeModalStyles.upgradeButton}
-              onPress={() => {
+              onPress={async () => {
                 setShowUpgradeModal(false);
-                router.push('/(tabs)/profile');
+                try {
+                  const response = await subscriptionAPI.createCheckout();
+                  const checkoutUrl = response.data.checkout_url;
+                  if (checkoutUrl) {
+                    const canOpen = await Linking.canOpenURL(checkoutUrl);
+                    if (canOpen) {
+                      await Linking.openURL(checkoutUrl);
+                    }
+                  }
+                } catch (error) {
+                  Alert.alert('Error', 'Failed to start upgrade process.');
+                }
               }}
             >
-              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag</Text>
+              <Text style={upgradeModalStyles.upgradeButtonText}>Upgrade to Master Stag - $9.99/mo</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
