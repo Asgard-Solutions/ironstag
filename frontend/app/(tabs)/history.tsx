@@ -361,7 +361,7 @@ export default function HistoryScreen() {
             data={filteredScans}
             keyExtractor={(item) => item.id}
             renderItem={renderScanCard}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xl }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -388,7 +388,7 @@ export default function HistoryScreen() {
         </>
       ) : (
         <ScrollView 
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
