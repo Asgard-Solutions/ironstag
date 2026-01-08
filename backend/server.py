@@ -53,6 +53,7 @@ users_table = Table(
     Column("subscription_cancel_at_period_end", Boolean, default=False),
     Column("revenuecat_id", String(100)),
     Column("subscription_expires_at", DateTime),
+    Column("apple_user_id", String(100), nullable=True),
 )
 
 scans_table = Table(
