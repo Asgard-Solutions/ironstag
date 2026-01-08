@@ -11,6 +11,8 @@ import {
   ActionSheetIOS,
   Platform,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,10 +36,13 @@ import {
   ExternalLink,
   Check,
   X,
+  Eye,
+  EyeOff,
+  Save,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
-import { subscriptionAPI } from '../../utils/api';
+import { subscriptionAPI, authAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 // Constants for Privacy & Legal URLs
