@@ -879,15 +879,15 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         
         await db.scans.insert_one(scan)
         
+        # CRITICAL: Only decrement scan count AFTER successful completion
+        # This ensures idempotency - we don't charge for failed scans
+        await use_scan(user)
+        
         return DeerAnalysisResponse(**scan)
         
     except openai.OpenAIError as e:
         logger.error(f"OpenAI error: {e}")
-        # Refund the scan on error
-        await db.users.update_one(
-            {"id": user["id"]},
-            {"$inc": {"scans_remaining": 1}}
-        )
+        # Don't refund - we didn't charge yet (scan is only used after success)
         raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
 # ============ SCAN HISTORY ROUTES ============
