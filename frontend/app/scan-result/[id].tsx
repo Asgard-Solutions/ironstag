@@ -52,6 +52,7 @@ export default function ScanResultScreen() {
   const { getImage, deleteImage } = useImageStore();
 
   const [scan, setScan] = useState<ScanResult | null>(null);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState('');
@@ -66,6 +67,12 @@ export default function ScanResultScreen() {
       const response = await scanAPI.getScan(id);
       setScan(response.data);
       setNotes(response.data.notes || '');
+      
+      // Load the image from local storage
+      if (response.data.local_image_id) {
+        const uri = await getImage(response.data.local_image_id);
+        setImageUri(uri);
+      }
     } catch (error) {
       console.error('Failed to load scan:', error);
       Alert.alert('Error', 'Failed to load scan details.');
@@ -108,8 +115,6 @@ export default function ScanResultScreen() {
       ]
     );
   };
-
-  const imageUri = scan ? getImage(scan.local_image_id) : null;
 
   if (loading) {
     return (
