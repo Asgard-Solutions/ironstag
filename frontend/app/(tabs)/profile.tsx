@@ -561,7 +561,7 @@ export default function ProfileScreen() {
         {/* Privacy & Legal */}
         <Text style={styles.sectionHeader}>Privacy & Legal</Text>
         <View style={styles.menuSection}>
-          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Privacy Policy', 'Your images are stored locally and never uploaded to our servers without your explicit consent.')}>
+          <TouchableOpacity style={styles.menuItem} onPress={openPrivacyPolicy}>
             <View style={[styles.menuIcon, styles.menuIconGold]}>
               <FileText size={18} color={colors.primary} />
             </View>
@@ -569,9 +569,10 @@ export default function ProfileScreen() {
               <Text style={styles.menuTitle}>Privacy Policy</Text>
               <Text style={styles.menuSubtitle}>How we protect your data</Text>
             </View>
+            <ExternalLink size={16} color={colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Terms of Service', 'By using Iron Stag, you agree to our terms of service and acceptable use policies.')}>
+          <TouchableOpacity style={styles.menuItem} onPress={openTermsOfService}>
             <View style={[styles.menuIcon, styles.menuIconGold]}>
               <FileText size={18} color={colors.primary} />
             </View>
@@ -579,16 +580,18 @@ export default function ProfileScreen() {
               <Text style={styles.menuTitle}>Terms of Service</Text>
               <Text style={styles.menuSubtitle}>Usage terms and conditions</Text>
             </View>
+            <ExternalLink size={16} color={colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={handleRequestDataDeletion}>
+          <TouchableOpacity style={[styles.menuItem, styles.menuItemLast]} onPress={handleRequestDataDeletion}>
             <View style={[styles.menuIcon, styles.menuIconWarning]}>
-              <Trash2 size={18} color={colors.primary} />
+              <Trash2 size={18} color="#FFF" />
             </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>Request Data Deletion</Text>
               <Text style={styles.menuSubtitle}>Delete your data from our servers</Text>
             </View>
+            <ChevronRight size={18} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
 
