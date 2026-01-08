@@ -163,24 +163,23 @@ export default function ProfileScreen() {
 
   // Clear All Local Images
   const handleClearAllImages = () => {
-    if (stats.totalImages === 0) {
-      Alert.alert('No Images', 'There are no images to clear.');
-      return;
-    }
-
     Alert.alert(
       'Clear All Local Images?',
-      'This will delete ALL images from your device. Your scan history will remain intact, but images will need to be re-scanned to view.',
+      stats.totalImages === 0 
+        ? 'There are currently no images stored on your device.'
+        : `This will delete ALL ${stats.totalImages} image${stats.totalImages !== 1 ? 's' : ''} from your device. Your scan history will remain intact, but images will need to be re-scanned to view.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Clear All',
-          style: 'destructive',
+          text: stats.totalImages === 0 ? 'OK' : 'Clear All',
+          style: stats.totalImages === 0 ? 'default' : 'destructive',
           onPress: async () => {
+            if (stats.totalImages === 0) return;
+            
             setIsCleaningUp(true);
             try {
               const deletedCount = await clearAllImages();
-              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local images.`);
+              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''}.`);
             } catch (error) {
               Alert.alert('Error', 'Failed to clear images.');
             } finally {
