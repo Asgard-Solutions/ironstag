@@ -413,6 +413,11 @@ class LocalImageServiceClass {
 
     // Clear metadata completely
     await AsyncStorage.removeItem(IMAGE_METADATA_KEY);
+    
+    // Clear web storage if on web
+    if (isWeb) {
+      await AsyncStorage.removeItem(WEB_IMAGE_STORAGE_KEY);
+    }
 
     console.log(`[LocalImageService] Cleared all ${deletedCount} images`);
     return deletedCount;
