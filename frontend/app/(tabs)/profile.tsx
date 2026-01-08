@@ -182,8 +182,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             setIsCleaningUp(true);
             try {
-              await clearAllImages();
-              Alert.alert('Storage Cleared', 'All local images have been deleted.');
+              const deletedCount = await clearAllImages();
+              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local images.`);
             } catch (error) {
               Alert.alert('Error', 'Failed to clear images.');
             } finally {
