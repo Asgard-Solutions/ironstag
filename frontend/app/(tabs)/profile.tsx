@@ -245,22 +245,49 @@ export default function ProfileScreen() {
     setUpgradeLoading(true);
     try {
       const response = await subscriptionAPI.createCheckout();
-      Alert.alert(
-        'Upgrade to Master Stag',
-        'Stripe checkout would open here. Session ID: ' + response.data.session_id
-      );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start upgrade process.');
+      const checkoutUrl = response.data.checkout_url;
+      
+      if (checkoutUrl) {
+        // Open Stripe checkout in the system browser
+        const canOpen = await Linking.canOpenURL(checkoutUrl);
+        if (canOpen) {
+          await Linking.openURL(checkoutUrl);
+        } else {
+          Alert.alert('Error', 'Unable to open checkout. Please try again.');
+        }
+      } else {
+        Alert.alert('Error', 'Failed to create checkout session.');
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Failed to start upgrade process.';
+      Alert.alert('Error', typeof message === 'string' ? message : 'Failed to start upgrade process.');
     } finally {
       setUpgradeLoading(false);
     }
   };
 
-  const handleManageSubscription = () => {
-    Alert.alert(
-      'Manage Subscription',
-      'Subscription management portal would open here.'
-    );
+  const handleManageSubscription = async () => {
+    setUpgradeLoading(true);
+    try {
+      const response = await subscriptionAPI.getPortalUrl();
+      const portalUrl = response.data.portal_url;
+      
+      if (portalUrl) {
+        const canOpen = await Linking.canOpenURL(portalUrl);
+        if (canOpen) {
+          await Linking.openURL(portalUrl);
+        } else {
+          Alert.alert('Error', 'Unable to open subscription portal.');
+        }
+      } else {
+        Alert.alert('Error', 'Failed to load subscription portal.');
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Failed to open subscription management.';
+      Alert.alert('Error', typeof message === 'string' ? message : 'Failed to open subscription management.');
+    } finally {
+      setUpgradeLoading(false);
+    }
   };
 
   // Cleanup Interval Selector
