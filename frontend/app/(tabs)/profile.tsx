@@ -176,6 +176,18 @@ export default function ProfileScreen() {
       return;
     }
 
+    if (!editEmail.trim()) {
+      Alert.alert('Error', 'Email is required.');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(editEmail.trim())) {
+      Alert.alert('Error', 'Please enter a valid email address.');
+      return;
+    }
+
     // Validate password if changing
     if (newPassword || currentPassword || confirmPassword) {
       if (!currentPassword) {
@@ -202,6 +214,7 @@ export default function ProfileScreen() {
       const response = await authAPI.updateProfile({
         name: fullName,
         username: editUsername.trim(),
+        email: editEmail.trim(),
         ...(newPassword && currentPassword ? {
           current_password: currentPassword,
           new_password: newPassword,
@@ -213,6 +226,7 @@ export default function ProfileScreen() {
         updateUser({
           name: fullName,
           username: editUsername.trim(),
+          email: editEmail.trim(),
         });
       }
 
