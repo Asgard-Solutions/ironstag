@@ -1065,6 +1065,17 @@ async def get_learn_content():
 async def health_check():
     return {"status": "healthy", "database": "postgresql", "timestamp": datetime.utcnow().isoformat()}
 
+# ============ TEST/ADMIN ENDPOINTS ============
+
+@api_router.post("/admin/upgrade-user")
+async def admin_upgrade_user(user: dict = Depends(get_current_user)):
+    """Temporary endpoint to upgrade current user to premium for testing"""
+    query = users_table.update().where(
+        users_table.c.id == user["id"]
+    ).values(subscription_tier="master_stag", scans_remaining=-1)
+    await database.execute(query)
+    return {"status": "upgraded", "tier": "master_stag"}
+
 # Include router
 app.include_router(api_router)
 
