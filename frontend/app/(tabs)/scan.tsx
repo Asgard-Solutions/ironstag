@@ -36,7 +36,6 @@ import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI, subscriptionAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
-import * as Crypto from 'expo-crypto';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 
