@@ -1047,6 +1047,22 @@ const disclaimerStyles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl,
   },
+  acceptedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  acceptedText: {
+    fontSize: 13,
+    color: colors.harvest,
+    fontWeight: '500',
+  },
   warningHeader: {
     alignItems: 'center',
     marginBottom: spacing.xl,
