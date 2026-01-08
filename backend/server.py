@@ -641,8 +641,11 @@ async def check_scan_eligibility_endpoint(user: dict = Depends(get_current_user)
     """Check if user can perform a scan before starting the process"""
     return await check_scan_eligibility(user)
 
+class CheckoutRequest(BaseModel):
+    plan: str = "monthly"  # "monthly" or "annual"
+
 @api_router.post("/subscription/create-checkout")
-async def create_checkout_session(user: dict = Depends(get_current_user)):
+async def create_checkout_session(data: CheckoutRequest, user: dict = Depends(get_current_user)):
     """Create Stripe checkout session for Master Stag subscription"""
     try:
         # Create or get Stripe customer
@@ -660,6 +663,18 @@ async def create_checkout_session(user: dict = Depends(get_current_user)):
         else:
             customer_id = user["stripe_customer_id"]
         
+        # Set pricing based on plan
+        if data.plan == "annual":
+            unit_amount = 8999  # $89.99
+            interval = "year"
+            plan_name = "Master Stag Annual"
+            description = "Unlimited deer scans - Save $30/year!"
+        else:
+            unit_amount = 999  # $9.99
+            interval = "month"
+            plan_name = "Master Stag Monthly"
+            description = "Unlimited deer scans with Iron Stag"
+        
         # Create checkout session
         session = stripe.checkout.Session.create(
             customer=customer_id,
@@ -668,18 +683,18 @@ async def create_checkout_session(user: dict = Depends(get_current_user)):
                 "price_data": {
                     "currency": "usd",
                     "product_data": {
-                        "name": "Master Stag Subscription",
-                        "description": "Unlimited deer scans with Iron Stag"
+                        "name": plan_name,
+                        "description": description
                     },
-                    "unit_amount": 999,  # $9.99
-                    "recurring": {"interval": "month"}
+                    "unit_amount": unit_amount,
+                    "recurring": {"interval": interval}
                 },
                 "quantity": 1
             }],
             mode="subscription",
             success_url="ironstag://subscription/success",
             cancel_url="ironstag://subscription/cancel",
-            metadata={"user_id": user["id"]}
+            metadata={"user_id": user["id"], "plan": data.plan}
         )
         
         return {"checkout_url": session.url, "session_id": session.id}
