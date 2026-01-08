@@ -500,8 +500,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             await logout();
-            // Use href pattern to explicitly navigate to root
-            router.replace({ pathname: '/' });
+            // Navigation is handled by tabs layout useEffect when token becomes null
           },
         },
       ]
