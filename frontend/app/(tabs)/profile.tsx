@@ -499,18 +499,9 @@ export default function ProfileScreen() {
           text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
-            try {
-              await logout();
-            } catch (error) {
-              console.error('Logout error:', error);
-            }
-            // Reset navigation state and go to splash screen
-            navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{ name: 'index' }],
-              })
-            );
+            await logout();
+            // Use href pattern to explicitly navigate to root
+            router.replace({ pathname: '/' });
           },
         },
       ]
