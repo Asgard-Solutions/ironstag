@@ -124,10 +124,18 @@ export default function ScanScreen() {
   };
 
   const analyzeDeer = async () => {
-    if (!capturedImage || !isAuthenticated) return;
+    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated });
+    
+    if (!capturedImage || !isAuthenticated) {
+      console.log('Early return - no image or not authenticated');
+      return;
+    }
 
     // Check eligibility before starting analysis
+    console.log('Checking scan eligibility...');
     const canScan = await checkScanEligibility();
+    console.log('Eligibility result:', canScan);
+    
     if (!canScan) {
       setScanStep('main');
       setCapturedImage(null);
@@ -139,12 +147,16 @@ export default function ScanScreen() {
 
     try {
       // Save image to local storage first
+      console.log('Saving image to local storage...');
       const localImageId = await saveImageFromBase64(capturedImage);
+      console.log('Image saved with ID:', localImageId);
 
+      console.log('Sending to analyze-deer API...');
       const response = await scanAPI.analyzeDeer({
         image_base64: capturedImage,
         local_image_id: localImageId,
       });
+      console.log('API response:', response.data);
 
       // Update local state after successful scan
       if (!isPremium) {
@@ -158,6 +170,9 @@ export default function ScanScreen() {
 
       router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
+      console.error('Analyze deer error:', error);
+      console.error('Error response:', error.response?.data);
+      
       // Check if this is a "free limit reached" error
       if (error.response?.status === 403) {
         const detail = error.response?.data?.detail;
