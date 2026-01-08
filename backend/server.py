@@ -43,7 +43,7 @@ users_table = Table(
     Column("last_name", String(100)),
     Column("username", String(100), unique=True),
     Column("created_at", DateTime, default=datetime.utcnow),
-    Column("subscription_tier", String(50), default="scout"),
+    Column("subscription_tier", String(50), default="tracker"),
     Column("scans_remaining", Integer, default=3),
     Column("total_scans_used", Integer, default=0),
     Column("disclaimer_accepted", Boolean, default=False),
@@ -137,7 +137,7 @@ class UserResponse(BaseModel):
     name: str
     username: Optional[str] = None
     created_at: datetime
-    subscription_tier: str = "scout"
+    subscription_tier: str = "tracker"
     scans_remaining: int = 3
     total_scans_used: int = 0
     disclaimer_accepted: bool = False
@@ -295,7 +295,7 @@ async def register(data: UserRegister):
         last_name=data.last_name,
         username=data.username.lower() if data.username else None,
         created_at=datetime.utcnow(),
-        subscription_tier="scout",
+        subscription_tier="tracker",
         scans_remaining=3,
         total_scans_used=0,
         disclaimer_accepted=False,
@@ -312,7 +312,7 @@ async def register(data: UserRegister):
             name=name,
             username=data.username.lower() if data.username else None,
             created_at=datetime.utcnow(),
-            subscription_tier="scout",
+            subscription_tier="tracker",
             scans_remaining=3,
             total_scans_used=0,
             disclaimer_accepted=False
@@ -352,7 +352,7 @@ async def login(data: UserLogin):
             name=user["name"] or user["email"],
             username=user.get("username"),
             created_at=user["created_at"],
-            subscription_tier=user.get("subscription_tier", "scout"),
+            subscription_tier=user.get("subscription_tier", "tracker"),
             scans_remaining=user.get("scans_remaining", 3),
             total_scans_used=user.get("total_scans_used", 0),
             disclaimer_accepted=user.get("disclaimer_accepted", False)
@@ -367,7 +367,7 @@ async def get_me(user: dict = Depends(get_current_user)):
         name=user["name"] or user["email"],
         username=user.get("username"),
         created_at=user["created_at"],
-        subscription_tier=user.get("subscription_tier", "scout"),
+        subscription_tier=user.get("subscription_tier", "tracker"),
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False)
@@ -420,7 +420,7 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
         name=user.get("name", user["email"]),
         username=user.get("username"),
         created_at=user["created_at"],
-        subscription_tier=user.get("subscription_tier", "scout"),
+        subscription_tier=user.get("subscription_tier", "tracker"),
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False)
@@ -563,7 +563,7 @@ async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_cur
         name=user["name"],
         username=user.get("username"),
         created_at=user["created_at"],
-        subscription_tier=user.get("subscription_tier", "scout"),
+        subscription_tier=user.get("subscription_tier", "tracker"),
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user["disclaimer_accepted"]
@@ -624,7 +624,7 @@ async def use_scan(user: dict) -> dict:
 async def get_subscription_status(user: dict = Depends(get_current_user)):
     is_premium = user.get("subscription_tier") == "master_stag"
     return SubscriptionStatus(
-        tier=user.get("subscription_tier", "scout"),
+        tier=user.get("subscription_tier", "tracker"),
         scans_remaining=-1 if is_premium else user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         is_premium=is_premium,
@@ -720,7 +720,7 @@ async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
                 query = users_table.update().where(
                     users_table.c.id == user["id"]
                 ).values(
-                    subscription_tier="scout",
+                    subscription_tier="tracker",
                     stripe_subscription_id=None,
                     scans_remaining=3
                 )
