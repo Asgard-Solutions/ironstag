@@ -1136,15 +1136,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: 'rgba(200, 162, 74, 0.08)',
   },
-  subscriptionIcon: {
+  stagIcon: {
     width: 50,
     height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.background,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: spacing.md,
   },
   subscriptionInfo: {
