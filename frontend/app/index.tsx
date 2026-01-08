@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
   },
   logo: {
-    width: 320,
-    height: 320,
+    width: 350,
+    height: 350,
   },
   taglineSection: {
     flex: 1,
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   tagline: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     color: colors.textPrimary,
     textAlign: 'center',
