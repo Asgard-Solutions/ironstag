@@ -61,6 +61,7 @@ const CLEANUP_INTERVALS = [
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { user, isAuthenticated, logout, updateUser } = useAuthStore();
   const { 
     stats, 
