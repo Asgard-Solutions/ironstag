@@ -386,14 +386,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.backgroundCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  headerRight: {
+    width: 40,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundCard,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    gap: spacing.xs,
+  },
+  premiumText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -473,79 +504,265 @@ const styles = StyleSheet.create({
     paddingTop: 0,
     gap: spacing.md,
   },
+  
+  // Scan Card Styles
   scanCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
     padding: spacing.md,
+    marginBottom: spacing.sm,
   },
   scanRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
   },
-  thumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.background,
-  },
-  placeholderImage: {
-    width: 80,
-    height: 80,
+  scanIconBox: {
+    width: 60,
+    height: 60,
     borderRadius: borderRadius.md,
     backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  thumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
   },
   scanInfo: {
     flex: 1,
-    justifyContent: 'space-between',
   },
-  scanHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    marginBottom: 4,
   },
-  scanType: {
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  harvestStatus: {
+    color: colors.harvest,
+  },
+  passStatus: {
+    color: colors.primary,
+  },
+  ageText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
+    marginBottom: 2,
   },
-  scanDetails: {
+  pointsText: {
     fontSize: 14,
     color: colors.textSecondary,
+    marginBottom: 2,
   },
-  scanFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  scanDate: {
+  dateText: {
     fontSize: 12,
     color: colors.textMuted,
   },
-  confidence: {
-    fontSize: 12,
-    color: colors.primary,
+  confidenceContainer: {
+    alignItems: 'flex-end',
   },
-  emptyState: {
+  confidenceValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  confidenceLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+
+  // Empty State Styles
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxl,
+  },
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.backgroundCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.xl,
+  },
+  
+  // Example Card Styles
+  exampleCard: {
+    width: '100%',
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.xl,
+    position: 'relative',
+  },
+  exampleBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  exampleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.background,
+    letterSpacing: 0.5,
+  },
+  exampleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  exampleIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  exampleInfo: {
+    flex: 1,
+  },
+  exampleStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    marginBottom: 4,
+  },
+  exampleStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.harvest,
+    letterSpacing: 0.5,
+  },
+  exampleAgeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  examplePointsText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  exampleSubText: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  exampleConfidence: {
+    alignItems: 'flex-end',
+  },
+  exampleConfidenceValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  exampleConfidenceLabel: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+
+  // CTA Button
+  scanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.full,
+    gap: spacing.sm,
+    width: '100%',
+  },
+  scanButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+
+  // Auth Required State
+  authRequired: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,
-    marginTop: spacing.xxl,
   },
-  emptyTitle: {
+  authTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: colors.textPrimary,
     marginTop: spacing.md,
     marginBottom: spacing.sm,
   },
-  emptyText: {
+  authText: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  emptyButton: {
-    minWidth: 200,
+  signInButton: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.full,
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.background,
+  },
+
+  // No Results
+  noResultsContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  noResultsTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  noResultsText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
   },
 });
