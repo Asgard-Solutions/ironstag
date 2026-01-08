@@ -182,16 +182,31 @@ async def register(data: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # Check if username is taken
+    if data.username:
+        existing_username = await db.users.find_one({"username": data.username.lower()})
+        if existing_username:
+            raise HTTPException(status_code=400, detail="Username already taken")
+    
     # Create user
     user_id = str(uuid.uuid4())
     hashed_password = ph.hash(data.password)
+    
+    # Build name from first_name and last_name if provided
+    name = data.name
+    if data.first_name and data.last_name:
+        name = f"{data.first_name} {data.last_name}"
+    elif data.first_name:
+        name = data.first_name
     
     user = {
         "id": user_id,
         "email": data.email.lower(),
         "password": hashed_password,
-        "name": data.name,
-        "username": None,
+        "name": name,
+        "first_name": data.first_name,
+        "last_name": data.last_name,
+        "username": data.username.lower() if data.username else None,
         "created_at": datetime.utcnow(),
         "subscription_tier": "scout",
         "scans_remaining": 3,
