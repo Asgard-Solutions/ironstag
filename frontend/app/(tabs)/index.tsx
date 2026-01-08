@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuthStore();
   const [stats, setStats] = useState({ total_scans: 0, harvest_count: 0, pass_count: 0 });
-  const [subscription, setSubscription] = useState({ tier: 'scout', scans_remaining: 3, total_scans_used: 0, is_premium: false });
+  const [subscription, setSubscription] = useState({ tier: 'tracker', scans_remaining: 3, total_scans_used: 0, is_premium: false });
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
