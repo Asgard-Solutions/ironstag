@@ -40,10 +40,12 @@ import {
   Eye,
   EyeOff,
   Save,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { subscriptionAPI, authAPI } from '../../utils/api';
+import { revenueCatService } from '../../services/RevenueCatService';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 // Constants for Privacy & Legal URLs
