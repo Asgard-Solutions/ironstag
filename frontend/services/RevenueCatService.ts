@@ -1,24 +1,14 @@
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+/**
+ * RevenueCat Mock Service for Expo Go
+ * 
+ * This file provides mock implementations for use in Expo Go environment.
+ * The real implementation is in RevenueCatService.native.ts which Metro
+ * will automatically use for native builds.
+ * 
+ * In Expo Go, IAP functionality is not available - this mock prevents crashes.
+ */
 
-// Check if we're running in Expo Go (which doesn't support native modules)
-const isExpoGo = Constants.appOwnership === 'expo';
-
-// Only import Purchases if not in Expo Go
-let Purchases: any = null;
-let LOG_LEVEL: any = null;
-
-if (!isExpoGo && Platform.OS !== 'web') {
-  try {
-    const purchasesModule = require('react-native-purchases');
-    Purchases = purchasesModule.default;
-    LOG_LEVEL = purchasesModule.LOG_LEVEL;
-  } catch (error) {
-    console.log('RevenueCat: Native module not available (expected in Expo Go)');
-  }
-}
-
-// Type definitions for RevenueCat
+// Type definitions (same as native)
 export interface PurchasesPackage {
   identifier: string;
   product: {
@@ -39,288 +29,122 @@ export interface CustomerInfo {
   };
 }
 
-// RevenueCat Configuration - Platform-specific API keys
-const REVENUECAT_IOS_API_KEY = 'sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV';
-const REVENUECAT_ANDROID_API_KEY = 'goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV';
-const ENTITLEMENT_ID = 'master_stag';
-
 // Product identifiers (same for iOS and Android)
 export const PRODUCT_IDS = {
   MONTHLY: 'ironstag_monthly_premium',
   ANNUAL: 'ironstag_annual_premium',
 };
 
+/**
+ * Mock RevenueCat Service for Expo Go
+ * All methods return safe defaults and log that RevenueCat is unavailable
+ */
 class RevenueCatService {
-  private initialized = false;
-
   /**
-   * Get the appropriate API key for the current platform
-   */
-  private getApiKey(): string {
-    return Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
-  }
-
-  /**
-   * Check if RevenueCat is available (not in Expo Go, not web)
+   * Always returns false in Expo Go - RevenueCat is not available
    */
   isAvailable(): boolean {
-    return !isExpoGo && Platform.OS !== 'web' && Purchases !== null;
+    return false;
   }
 
   /**
-   * Initialize RevenueCat SDK - Works on both iOS and Android (not Expo Go)
+   * No-op in Expo Go
    */
-  async initialize(userId?: string): Promise<void> {
-    if (!this.isAvailable()) {
-      console.log('RevenueCat: Not available (Expo Go or web platform)');
-      return;
-    }
-
-    if (this.initialized) {
-      console.log('RevenueCat: Already initialized');
-      return;
-    }
-
-    try {
-      if (LOG_LEVEL) {
-        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-      }
-      
-      const apiKey = this.getApiKey();
-      
-      if (userId) {
-        await Purchases.configure({ apiKey, appUserID: userId });
-      } else {
-        await Purchases.configure({ apiKey });
-      }
-      
-      this.initialized = true;
-      console.log(`RevenueCat: Initialized successfully on ${Platform.OS}`);
-    } catch (error) {
-      console.error('RevenueCat: Initialization failed', error);
-      // Don't throw - allow app to continue without RevenueCat
-    }
+  async initialize(_userId?: string): Promise<void> {
+    console.log('RevenueCat: Running in Expo Go - IAP not available');
+    return;
   }
 
   /**
-   * Login user to RevenueCat
+   * No-op in Expo Go
    */
-  async login(userId: string): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !Purchases) {
-      console.log('RevenueCat: Not available for login');
-      return null;
-    }
-
-    try {
-      const { customerInfo } = await Purchases.logIn(userId);
-      return customerInfo;
-    } catch (error) {
-      console.error('RevenueCat: Login failed', error);
-      throw error;
-    }
+  async login(_userId: string): Promise<CustomerInfo | null> {
+    console.log('RevenueCat: Login not available in Expo Go');
+    return null;
   }
 
   /**
-   * Logout user from RevenueCat
+   * No-op in Expo Go
    */
   async logout(): Promise<void> {
-    if (!this.isAvailable() || !Purchases) return;
-
-    try {
-      await Purchases.logOut();
-      console.log('RevenueCat: Logged out');
-    } catch (error) {
-      console.error('RevenueCat: Logout failed', error);
-    }
+    console.log('RevenueCat: Logout not available in Expo Go');
+    return;
   }
 
   /**
-   * Get available subscription offerings
+   * Returns null in Expo Go
    */
   async getOfferings(): Promise<any | null> {
-    if (!this.isAvailable() || !Purchases) {
-      return null;
-    }
-
-    try {
-      const offerings = await Purchases.getOfferings();
-      return offerings.current;
-    } catch (error) {
-      console.error('RevenueCat: Failed to get offerings', error);
-      return null;
-    }
+    console.log('RevenueCat: Offerings not available in Expo Go');
+    return null;
   }
 
   /**
-   * Get available packages (monthly/annual)
+   * Returns empty array in Expo Go
    */
   async getPackages(): Promise<PurchasesPackage[]> {
-    if (!this.isAvailable() || !Purchases) {
-      return [];
-    }
-
-    try {
-      const offering = await this.getOfferings();
-      return offering?.availablePackages || [];
-    } catch (error) {
-      console.error('RevenueCat: Failed to get packages', error);
-      return [];
-    }
+    console.log('RevenueCat: Packages not available in Expo Go');
+    return [];
   }
 
   /**
-   * Purchase a subscription package
+   * Returns null in Expo Go
    */
-  async purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !Purchases) {
-      console.log('RevenueCat: Not available for purchase');
-      return null;
-    }
-
-    try {
-      const { customerInfo } = await Purchases.purchasePackage(pkg);
-      return customerInfo;
-    } catch (error: any) {
-      if (error.userCancelled) {
-        throw new Error('Purchase cancelled by user');
-      }
-      console.error('RevenueCat: Purchase failed', error);
-      throw error;
-    }
+  async purchasePackage(_pkg: PurchasesPackage): Promise<CustomerInfo | null> {
+    console.log('RevenueCat: Purchase not available in Expo Go');
+    return null;
   }
 
   /**
-   * Purchase by product ID
+   * Returns null in Expo Go
    */
-  async purchaseProduct(productId: string): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !Purchases) {
-      console.log('RevenueCat: Not available for purchase');
-      return null;
-    }
-
-    try {
-      const packages = await this.getPackages();
-      const pkg = packages.find(p => p.product.identifier === productId);
-      
-      if (!pkg) {
-        throw new Error(`Product ${productId} not found`);
-      }
-
-      return await this.purchasePackage(pkg);
-    } catch (error) {
-      console.error('RevenueCat: Purchase product failed', error);
-      throw error;
-    }
+  async purchaseProduct(_productId: string): Promise<CustomerInfo | null> {
+    console.log('RevenueCat: Purchase not available in Expo Go');
+    return null;
   }
 
   /**
-   * Restore previous purchases
+   * Returns null in Expo Go
    */
   async restorePurchases(): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !Purchases) {
-      console.log('RevenueCat: Not available for restore');
-      return null;
-    }
-
-    try {
-      const customerInfo = await Purchases.restorePurchases();
-      console.log('RevenueCat: Purchases restored');
-      return customerInfo;
-    } catch (error) {
-      console.error('RevenueCat: Restore failed', error);
-      throw error;
-    }
+    console.log('RevenueCat: Restore not available in Expo Go');
+    return null;
   }
 
   /**
-   * Get current customer info
+   * Returns null in Expo Go
    */
   async getCustomerInfo(): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !Purchases) {
-      return null;
-    }
-
-    try {
-      return await Purchases.getCustomerInfo();
-    } catch (error) {
-      console.error('RevenueCat: Failed to get customer info', error);
-      return null;
-    }
+    return null;
   }
 
   /**
-   * Check if user has active premium subscription
+   * Returns false in Expo Go
    */
   async isPremium(): Promise<boolean> {
-    if (!this.isAvailable()) {
-      return false;
-    }
-
-    try {
-      const customerInfo = await this.getCustomerInfo();
-      if (!customerInfo) return false;
-
-      const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
-      return entitlement !== undefined && entitlement.isActive;
-    } catch (error) {
-      console.error('RevenueCat: Failed to check premium status', error);
-      return false;
-    }
+    return false;
   }
 
   /**
-   * Get subscription expiration date
+   * Returns null in Expo Go
    */
   async getExpirationDate(): Promise<Date | null> {
-    if (!this.isAvailable()) {
-      return null;
-    }
-
-    try {
-      const customerInfo = await this.getCustomerInfo();
-      if (!customerInfo) return null;
-
-      const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
-      if (!entitlement || !entitlement.expirationDate) return null;
-
-      return new Date(entitlement.expirationDate);
-    } catch (error) {
-      console.error('RevenueCat: Failed to get expiration date', error);
-      return null;
-    }
+    return null;
   }
 
   /**
-   * Get formatted price for a product
+   * Returns null in Expo Go
    */
-  async getProductPrice(productId: string): Promise<string | null> {
-    if (!this.isAvailable()) {
-      return null;
-    }
-
-    try {
-      const packages = await this.getPackages();
-      const pkg = packages.find(p => p.product.identifier === productId);
-      return pkg?.product.priceString || null;
-    } catch (error) {
-      console.error('RevenueCat: Failed to get product price', error);
-      return null;
-    }
+  async getProductPrice(_productId: string): Promise<string | null> {
+    return null;
   }
 
   /**
-   * Sync purchases with backend
+   * No-op in Expo Go
    */
-  async syncWithBackend(backendSyncFn: (isPremium: boolean, expiresAt: Date | null) => Promise<void>): Promise<void> {
-    if (!this.isAvailable()) return;
-
-    try {
-      const isPremium = await this.isPremium();
-      const expiresAt = await this.getExpirationDate();
-      await backendSyncFn(isPremium, expiresAt);
-    } catch (error) {
-      console.error('RevenueCat: Backend sync failed', error);
-    }
+  async syncWithBackend(_backendSyncFn: (isPremium: boolean, expiresAt: Date | null) => Promise<void>): Promise<void> {
+    console.log('RevenueCat: Sync not available in Expo Go');
+    return;
   }
 }
 
