@@ -82,6 +82,7 @@ export default function ProfileScreen() {
   const [showPlanSelector, setShowPlanSelector] = useState(false);
   const [showSubscriptionManager, setShowSubscriptionManager] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
+  const [restoreLoading, setRestoreLoading] = useState(false);
   
   // Edit Profile Modal State
   const [showEditProfile, setShowEditProfile] = useState(false);
