@@ -1,10 +1,43 @@
 import { Platform } from 'react-native';
-import Purchases, { 
-  PurchasesPackage, 
-  CustomerInfo,
-  PurchasesOffering,
-  LOG_LEVEL,
-} from 'react-native-purchases';
+import Constants from 'expo-constants';
+
+// Check if we're running in Expo Go (which doesn't support native modules)
+const isExpoGo = Constants.appOwnership === 'expo';
+
+// Only import Purchases if not in Expo Go
+let Purchases: any = null;
+let LOG_LEVEL: any = null;
+
+if (!isExpoGo && Platform.OS !== 'web') {
+  try {
+    const purchasesModule = require('react-native-purchases');
+    Purchases = purchasesModule.default;
+    LOG_LEVEL = purchasesModule.LOG_LEVEL;
+  } catch (error) {
+    console.log('RevenueCat: Native module not available (expected in Expo Go)');
+  }
+}
+
+// Type definitions for RevenueCat
+export interface PurchasesPackage {
+  identifier: string;
+  product: {
+    identifier: string;
+    priceString: string;
+    price: number;
+  };
+}
+
+export interface CustomerInfo {
+  entitlements: {
+    active: {
+      [key: string]: {
+        isActive: boolean;
+        expirationDate: string | null;
+      };
+    };
+  };
+}
 
 // RevenueCat Configuration - Platform-specific API keys
 const REVENUECAT_IOS_API_KEY = 'sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV';
@@ -28,11 +61,18 @@ class RevenueCatService {
   }
 
   /**
-   * Initialize RevenueCat SDK - Works on both iOS and Android
+   * Check if RevenueCat is available (not in Expo Go, not web)
+   */
+  isAvailable(): boolean {
+    return !isExpoGo && Platform.OS !== 'web' && Purchases !== null;
+  }
+
+  /**
+   * Initialize RevenueCat SDK - Works on both iOS and Android (not Expo Go)
    */
   async initialize(userId?: string): Promise<void> {
-    if (Platform.OS === 'web') {
-      console.log('RevenueCat: Skipping initialization on web platform');
+    if (!this.isAvailable()) {
+      console.log('RevenueCat: Not available (Expo Go or web platform)');
       return;
     }
 
@@ -42,7 +82,9 @@ class RevenueCatService {
     }
 
     try {
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+      if (LOG_LEVEL) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+      }
       
       const apiKey = this.getApiKey();
       
@@ -56,15 +98,8 @@ class RevenueCatService {
       console.log(`RevenueCat: Initialized successfully on ${Platform.OS}`);
     } catch (error) {
       console.error('RevenueCat: Initialization failed', error);
-      throw error;
+      // Don't throw - allow app to continue without RevenueCat
     }
-  }
-
-  /**
-   * Check if RevenueCat is available (iOS and Android only, not web)
-   */
-  isAvailable(): boolean {
-    return Platform.OS === 'ios' || Platform.OS === 'android';
   }
 
   /**
