@@ -547,6 +547,33 @@ export default function ProfileScreen() {
     );
   };
 
+  // Handle Restore Purchases (iOS and Android only)
+  const handleRestorePurchases = async () => {
+    if (!revenueCatService.isAvailable()) {
+      Alert.alert('Not Available', 'Restore purchases is only available on iOS and Android devices.');
+      return;
+    }
+
+    setRestoreLoading(true);
+    try {
+      const customerInfo = await revenueCatService.restorePurchases();
+      const isPremium = await revenueCatService.isPremium();
+      
+      if (isPremium) {
+        // Update user state to reflect premium status
+        updateUser({ subscription_tier: 'master_stag' });
+        Alert.alert('Success', 'Your purchases have been restored! You now have Master Stag access.');
+      } else {
+        Alert.alert('No Purchases Found', 'We could not find any previous purchases to restore.');
+      }
+    } catch (error: any) {
+      console.error('Restore purchases error:', error);
+      Alert.alert('Error', 'Failed to restore purchases. Please try again later.');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
