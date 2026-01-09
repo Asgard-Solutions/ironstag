@@ -45,6 +45,7 @@ export function SubscriptionDisclosure({
 }: SubscriptionDisclosureProps) {
   const insets = useSafeAreaInsets();
   const planDetails = PRICES[plan];
+  const isIOS = Platform.OS === 'ios';
 
   const features = [
     'Unlimited deer scans',
@@ -62,11 +63,31 @@ export function SubscriptionDisclosure({
     Linking.openURL('https://www.asgardsolution.io/iron-stag/terms');
   };
 
-  const openAppleSubscriptions = () => {
+  const openManageSubscriptions = () => {
     if (Platform.OS === 'ios') {
       Linking.openURL('https://apps.apple.com/account/subscriptions');
+    } else if (Platform.OS === 'android') {
+      Linking.openURL('https://play.google.com/store/account/subscriptions');
     }
   };
+
+  // Platform-specific terms
+  const getTerms = () => {
+    if (isIOS) {
+      return {
+        paymentMethod: 'Apple ID account',
+        storeName: 'Apple',
+        settingsName: 'Apple ID Account Settings',
+      };
+    }
+    return {
+      paymentMethod: 'Google Play account',
+      storeName: 'Google Play',
+      settingsName: 'Google Play Store settings',
+    };
+  };
+
+  const terms = getTerms();
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -102,7 +123,7 @@ export function SubscriptionDisclosure({
               ))}
             </View>
 
-            {/* Subscription Terms - Apple Required */}
+            {/* Subscription Terms - Store-specific */}
             <View style={styles.termsSection}>
               <View style={styles.termsHeader}>
                 <AlertCircle size={18} color={colors.info} />
@@ -110,7 +131,7 @@ export function SubscriptionDisclosure({
               </View>
 
               <Text style={styles.termsText}>
-                • <Text style={styles.termsBold}>Payment:</Text> Payment will be charged to your Apple ID account at confirmation of purchase.
+                • <Text style={styles.termsBold}>Payment:</Text> Payment will be charged to your {terms.paymentMethod} at confirmation of purchase.
               </Text>
 
               <Text style={styles.termsText}>
@@ -122,7 +143,7 @@ export function SubscriptionDisclosure({
               </Text>
 
               <Text style={styles.termsText}>
-                • <Text style={styles.termsBold}>Manage Subscription:</Text> You can manage and cancel your subscription in your Apple ID Account Settings after purchase.
+                • <Text style={styles.termsBold}>Manage Subscription:</Text> You can manage and cancel your subscription in your {terms.settingsName} after purchase.
               </Text>
 
               <Text style={styles.termsText}>
@@ -139,14 +160,10 @@ export function SubscriptionDisclosure({
               <TouchableOpacity onPress={openPrivacyPolicy}>
                 <Text style={styles.linkText}>Privacy Policy</Text>
               </TouchableOpacity>
-              {Platform.OS === 'ios' && (
-                <>
-                  <Text style={styles.linkDivider}>•</Text>
-                  <TouchableOpacity onPress={openAppleSubscriptions}>
-                    <Text style={styles.linkText}>Manage Subscriptions</Text>
-                  </TouchableOpacity>
-                </>
-              )}
+              <Text style={styles.linkDivider}>•</Text>
+              <TouchableOpacity onPress={openManageSubscriptions}>
+                <Text style={styles.linkText}>Manage Subscriptions</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
 
@@ -160,7 +177,7 @@ export function SubscriptionDisclosure({
               style={styles.subscribeButton}
             />
             <Text style={styles.cancelNote}>
-              Cancel anytime in your Apple ID settings
+              Cancel anytime in your {terms.settingsName}
             </Text>
           </View>
         </View>
