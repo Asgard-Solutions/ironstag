@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../stores/authStore';
 import { useImageStore } from '../stores/imageStore';
-import { revenueCatService } from '../services/RevenueCatService';
 import { colors } from '../constants/theme';
 
 const queryClient = new QueryClient({
@@ -23,13 +22,26 @@ export default function RootLayout() {
   const initializeImages = useImageStore((state) => state.initialize);
 
   useEffect(() => {
-    loadToken();
-    initializeImages();
+    const initApp = async () => {
+      try {
+        await loadToken();
+        await initializeImages();
+        
+        // Initialize RevenueCat for iOS and Android (only in native builds, not Expo Go)
+        if (Platform.OS === 'ios' || Platform.OS === 'android') {
+          try {
+            const { revenueCatService } = await import('../services/RevenueCatService');
+            await revenueCatService.initialize();
+          } catch (rcError) {
+            console.log('RevenueCat init skipped (Expo Go or error):', rcError);
+          }
+        }
+      } catch (error) {
+        console.error('App initialization error:', error);
+      }
+    };
     
-    // Initialize RevenueCat for iOS and Android
-    if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      revenueCatService.initialize().catch(console.error);
-    }
+    initApp();
   }, []);
 
   return (
