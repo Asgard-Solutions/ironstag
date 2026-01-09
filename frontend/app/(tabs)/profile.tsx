@@ -1709,6 +1709,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.textSecondary,
   },
+  restorePurchasesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  restorePurchasesBtnText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: colors.primary,
+  },
   deleteAccountBtn: {
     flexDirection: 'row',
     alignItems: 'center',
