@@ -865,6 +865,24 @@ export default function ProfileScreen() {
           <Text style={styles.signOutBtnText}>Sign Out</Text>
         </TouchableOpacity>
 
+        {/* Restore Purchases - Only on iOS and Android */}
+        {(Platform.OS === 'ios' || Platform.OS === 'android') && (
+          <TouchableOpacity 
+            style={styles.restorePurchasesBtn} 
+            onPress={handleRestorePurchases}
+            disabled={restoreLoading}
+          >
+            {restoreLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <RefreshCw size={16} color={colors.primary} />
+                <Text style={styles.restorePurchasesBtnText}>Restore Purchases</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
           <Trash2 size={16} color={colors.error} />
           <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
