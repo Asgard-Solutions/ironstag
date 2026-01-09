@@ -6,11 +6,12 @@ import Purchases, {
   LOG_LEVEL,
 } from 'react-native-purchases';
 
-// RevenueCat Configuration
-const REVENUECAT_API_KEY = 'sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV';
+// RevenueCat Configuration - Platform-specific API keys
+const REVENUECAT_IOS_API_KEY = 'sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV';
+const REVENUECAT_ANDROID_API_KEY = 'goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV';
 const ENTITLEMENT_ID = 'master_stag';
 
-// Product identifiers
+// Product identifiers (same for iOS and Android)
 export const PRODUCT_IDS = {
   MONTHLY: 'ironstag_monthly_premium',
   ANNUAL: 'ironstag_annual_premium',
@@ -20,11 +21,18 @@ class RevenueCatService {
   private initialized = false;
 
   /**
-   * Initialize RevenueCat SDK - Only for iOS
+   * Get the appropriate API key for the current platform
+   */
+  private getApiKey(): string {
+    return Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
+  }
+
+  /**
+   * Initialize RevenueCat SDK - Works on both iOS and Android
    */
   async initialize(userId?: string): Promise<void> {
-    if (Platform.OS !== 'ios') {
-      console.log('RevenueCat: Skipping initialization on non-iOS platform');
+    if (Platform.OS === 'web') {
+      console.log('RevenueCat: Skipping initialization on web platform');
       return;
     }
 
@@ -36,14 +44,16 @@ class RevenueCatService {
     try {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
       
+      const apiKey = this.getApiKey();
+      
       if (userId) {
-        await Purchases.configure({ apiKey: REVENUECAT_API_KEY, appUserID: userId });
+        await Purchases.configure({ apiKey, appUserID: userId });
       } else {
-        await Purchases.configure({ apiKey: REVENUECAT_API_KEY });
+        await Purchases.configure({ apiKey });
       }
       
       this.initialized = true;
-      console.log('RevenueCat: Initialized successfully');
+      console.log(`RevenueCat: Initialized successfully on ${Platform.OS}`);
     } catch (error) {
       console.error('RevenueCat: Initialization failed', error);
       throw error;
@@ -51,10 +61,10 @@ class RevenueCatService {
   }
 
   /**
-   * Check if RevenueCat is available (iOS only)
+   * Check if RevenueCat is available (iOS and Android only, not web)
    */
   isAvailable(): boolean {
-    return Platform.OS === 'ios';
+    return Platform.OS === 'ios' || Platform.OS === 'android';
   }
 
   /**
