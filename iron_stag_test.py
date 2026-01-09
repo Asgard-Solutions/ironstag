@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # Base URL for the Iron Stag API
-BASE_URL = "https://ironstag-app.preview.emergentagent.com/api"
+BASE_URL = "https://deer-tracker-1.preview.emergentagent.com/api"
 
 class IronStagTester:
     def __init__(self):
