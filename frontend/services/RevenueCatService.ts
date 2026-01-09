@@ -105,9 +105,10 @@ class RevenueCatService {
   /**
    * Login user to RevenueCat
    */
-  async login(userId: string): Promise<CustomerInfo> {
-    if (!this.isAvailable()) {
-      throw new Error('RevenueCat is only available on iOS');
+  async login(userId: string): Promise<CustomerInfo | null> {
+    if (!this.isAvailable() || !Purchases) {
+      console.log('RevenueCat: Not available for login');
+      return null;
     }
 
     try {
@@ -123,7 +124,7 @@ class RevenueCatService {
    * Logout user from RevenueCat
    */
   async logout(): Promise<void> {
-    if (!this.isAvailable()) return;
+    if (!this.isAvailable() || !Purchases) return;
 
     try {
       await Purchases.logOut();
@@ -136,8 +137,8 @@ class RevenueCatService {
   /**
    * Get available subscription offerings
    */
-  async getOfferings(): Promise<PurchasesOffering | null> {
-    if (!this.isAvailable()) {
+  async getOfferings(): Promise<any | null> {
+    if (!this.isAvailable() || !Purchases) {
       return null;
     }
 
@@ -146,7 +147,7 @@ class RevenueCatService {
       return offerings.current;
     } catch (error) {
       console.error('RevenueCat: Failed to get offerings', error);
-      throw error;
+      return null;
     }
   }
 
