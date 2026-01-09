@@ -155,7 +155,7 @@ class RevenueCatService {
    * Get available packages (monthly/annual)
    */
   async getPackages(): Promise<PurchasesPackage[]> {
-    if (!this.isAvailable()) {
+    if (!this.isAvailable() || !Purchases) {
       return [];
     }
 
@@ -171,9 +171,10 @@ class RevenueCatService {
   /**
    * Purchase a subscription package
    */
-  async purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
-    if (!this.isAvailable()) {
-      throw new Error('RevenueCat is only available on iOS');
+  async purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo | null> {
+    if (!this.isAvailable() || !Purchases) {
+      console.log('RevenueCat: Not available for purchase');
+      return null;
     }
 
     try {
@@ -191,9 +192,10 @@ class RevenueCatService {
   /**
    * Purchase by product ID
    */
-  async purchaseProduct(productId: string): Promise<CustomerInfo> {
-    if (!this.isAvailable()) {
-      throw new Error('RevenueCat is only available on iOS');
+  async purchaseProduct(productId: string): Promise<CustomerInfo | null> {
+    if (!this.isAvailable() || !Purchases) {
+      console.log('RevenueCat: Not available for purchase');
+      return null;
     }
 
     try {
@@ -214,9 +216,10 @@ class RevenueCatService {
   /**
    * Restore previous purchases
    */
-  async restorePurchases(): Promise<CustomerInfo> {
-    if (!this.isAvailable()) {
-      throw new Error('RevenueCat is only available on iOS');
+  async restorePurchases(): Promise<CustomerInfo | null> {
+    if (!this.isAvailable() || !Purchases) {
+      console.log('RevenueCat: Not available for restore');
+      return null;
     }
 
     try {
@@ -233,7 +236,7 @@ class RevenueCatService {
    * Get current customer info
    */
   async getCustomerInfo(): Promise<CustomerInfo | null> {
-    if (!this.isAvailable()) {
+    if (!this.isAvailable() || !Purchases) {
       return null;
     }
 
