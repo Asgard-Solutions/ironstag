@@ -26,8 +26,8 @@ export default function RootLayout() {
     loadToken();
     initializeImages();
     
-    // Initialize RevenueCat for iOS
-    if (Platform.OS === 'ios') {
+    // Initialize RevenueCat for iOS and Android
+    if (Platform.OS === 'ios' || Platform.OS === 'android') {
       revenueCatService.initialize().catch(console.error);
     }
   }, []);
