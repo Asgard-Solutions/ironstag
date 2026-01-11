@@ -30,6 +30,8 @@ interface Scan {
   deer_type: string | null;
   deer_sex: string | null;
   antler_points: number | null;
+  antler_points_left: number | null;
+  antler_points_right: number | null;
   body_condition: string | null;
   confidence: number | null;
   recommendation: string | null;
