@@ -191,6 +191,8 @@ class DeerAnalysisResponse(BaseModel):
     deer_type: Optional[str] = None
     deer_sex: Optional[str] = None
     antler_points: Optional[int] = None
+    antler_points_left: Optional[int] = None
+    antler_points_right: Optional[int] = None
     body_condition: Optional[str] = None
     confidence: Optional[int] = None
     recommendation: Optional[str] = None
@@ -200,6 +202,14 @@ class DeerAnalysisResponse(BaseModel):
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
+
+class ScanEditRequest(BaseModel):
+    """Request model for editing scan details and re-analyzing with LLM"""
+    deer_sex: Optional[str] = None
+    deer_type: Optional[str] = None
+    antler_points_left: Optional[int] = None
+    antler_points_right: Optional[int] = None
+    image_base64: Optional[str] = None  # Required if re-analyzing with LLM
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
