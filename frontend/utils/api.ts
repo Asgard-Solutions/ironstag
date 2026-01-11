@@ -84,6 +84,9 @@ export const scanAPI = {
 
   deleteScan: (id: string) => api.delete(`/scans/${id}`),
 
+  deleteByLocalImageIds: (localImageIds: string[]) => 
+    api.post('/scans/delete-by-local-ids', { local_image_ids: localImageIds }),
+
   getStats: () => api.get('/scans/stats/summary'),
 };
 
