@@ -1155,6 +1155,43 @@ async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
     
     return {"message": "Scan deleted"}
 
+class DeleteByLocalImageIdsRequest(BaseModel):
+    local_image_ids: list[str]
+
+@api_router.post("/scans/delete-by-local-ids")
+async def delete_scans_by_local_image_ids(
+    request: DeleteByLocalImageIdsRequest, 
+    user: dict = Depends(get_current_user)
+):
+    """
+    Delete all scans matching the provided local_image_ids for the current user.
+    Used when user clears local image storage.
+    """
+    if not request.local_image_ids:
+        return {"deleted_count": 0, "message": "No local image IDs provided"}
+    
+    # Find all scans with matching local_image_ids for this user
+    query = scans_table.select().where(
+        (scans_table.c.user_id == user["id"]) & 
+        (scans_table.c.local_image_id.in_(request.local_image_ids))
+    )
+    scans_to_delete = await database.fetch_all(query)
+    
+    if not scans_to_delete:
+        return {"deleted_count": 0, "message": "No matching scans found"}
+    
+    # Delete all matching scans
+    delete_query = scans_table.delete().where(
+        (scans_table.c.user_id == user["id"]) & 
+        (scans_table.c.local_image_id.in_(request.local_image_ids))
+    )
+    await database.execute(delete_query)
+    
+    deleted_count = len(scans_to_delete)
+    logger.info(f"Deleted {deleted_count} scans for user {user['id']} by local_image_ids")
+    
+    return {"deleted_count": deleted_count, "message": f"Deleted {deleted_count} scan(s)"}
+
 # ============ LEARN CONTENT ============
 
 @api_router.get("/learn/content")
