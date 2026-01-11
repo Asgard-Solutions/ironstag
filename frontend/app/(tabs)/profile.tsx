@@ -365,7 +365,7 @@ export default function ProfileScreen() {
     }
   };
 
-  // Clean Up Old Images
+  // Clean Up Old Images (also deletes from database)
   const handleCleanupOldImages = () => {
     if (stats.totalImages === 0) {
       Alert.alert('No Images', 'There are no images to clean up.');
@@ -374,7 +374,7 @@ export default function ProfileScreen() {
 
     Alert.alert(
       'Clean Up Old Images?',
-      `This will delete images older than ${cleanupInterval} days from your device. Your scan history will remain intact.`,
+      `This will delete images older than ${cleanupInterval} days from your device AND remove the corresponding scan history from the database.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -383,10 +383,26 @@ export default function ProfileScreen() {
           onPress: async () => {
             setIsCleaningUp(true);
             try {
+              // First, get all image IDs that will be deleted (older than interval)
+              const cutoffDate = Date.now() - (cleanupInterval * 24 * 60 * 60 * 1000);
+              const metadata = await LocalImageService.getAllImageIds();
+              const oldImageIds = metadata.filter(item => item.createdAt < cutoffDate).map(item => item.id);
+              
+              // Delete from database first
+              if (oldImageIds.length > 0) {
+                try {
+                  await scanAPI.deleteByLocalImageIds(oldImageIds);
+                } catch (apiError) {
+                  console.error('Failed to delete scans from database:', apiError);
+                  // Continue with local deletion even if API fails
+                }
+              }
+              
+              // Then delete local images
               const deletedCount = await cleanupOldImages();
               Alert.alert(
                 'Cleanup Complete',
-                `Cleaned up ${deletedCount} images older than ${cleanupInterval} days.`
+                `Cleaned up ${deletedCount} images older than ${cleanupInterval} days and removed their scan history.`
               );
             } catch (error) {
               Alert.alert('Error', 'Failed to clean up images.');
@@ -399,25 +415,40 @@ export default function ProfileScreen() {
     );
   };
 
-  // Clear All Local Images
+  // Clear All Local Images (also deletes from database)
   const handleClearAllImages = () => {
     Alert.alert(
-      'Clear All Local Images?',
+      'Clear All Data?',
       stats.totalImages === 0 
         ? 'There are currently no images stored on your device.'
-        : `This will delete ALL ${stats.totalImages} image${stats.totalImages !== 1 ? 's' : ''} from your device. Your scan history will remain intact, but images will need to be re-scanned to view.`,
+        : `This will delete ALL ${stats.totalImages} image${stats.totalImages !== 1 ? 's' : ''} from your device AND remove all scan history from the database. This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: stats.totalImages === 0 ? 'OK' : 'Clear All',
+          text: stats.totalImages === 0 ? 'OK' : 'Delete All',
           style: stats.totalImages === 0 ? 'default' : 'destructive',
           onPress: async () => {
             if (stats.totalImages === 0) return;
             
             setIsCleaningUp(true);
             try {
+              // First, get all image IDs
+              const metadata = await LocalImageService.getAllImageIds();
+              const allImageIds = metadata.map(item => item.id);
+              
+              // Delete from database first
+              if (allImageIds.length > 0) {
+                try {
+                  await scanAPI.deleteByLocalImageIds(allImageIds);
+                } catch (apiError) {
+                  console.error('Failed to delete scans from database:', apiError);
+                  // Continue with local deletion even if API fails
+                }
+              }
+              
+              // Then delete local images
               const deletedCount = await clearAllImages();
-              Alert.alert('Storage Cleared', `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''}.`);
+              Alert.alert('All Data Cleared', `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''} and their scan history.`);
             } catch (error) {
               Alert.alert('Error', 'Failed to clear images.');
             } finally {
