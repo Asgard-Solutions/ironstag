@@ -227,6 +227,17 @@ async def startup():
     # Create tables if they don't exist
     engine = sqlalchemy.create_engine(DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://") if "postgresql://" in DATABASE_URL else DATABASE_URL)
     metadata.create_all(engine)
+    
+    # Run migrations for new columns
+    try:
+        # Add antler_points_left column if it doesn't exist
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_left INTEGER")
+        # Add antler_points_right column if it doesn't exist
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_right INTEGER")
+        logger.info("Database migrations completed")
+    except Exception as e:
+        logger.warning(f"Migration note: {e}")
+    
     logger.info("Database connected and tables created")
 
 @app.on_event("shutdown")
