@@ -1167,12 +1167,181 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
         deer_type=scan["deer_type"],
         deer_sex=scan["deer_sex"],
         antler_points=scan["antler_points"],
+        antler_points_left=scan["antler_points_left"],
+        antler_points_right=scan["antler_points_right"],
         body_condition=scan["body_condition"],
         confidence=scan["confidence"],
         recommendation=scan["recommendation"],
         reasoning=scan["reasoning"],
         notes=scan["notes"],
         created_at=scan["created_at"]
+    )
+
+@api_router.post("/scans/{scan_id}/edit", response_model=DeerAnalysisResponse)
+async def edit_scan_with_reanalysis(
+    scan_id: str, 
+    data: ScanEditRequest, 
+    user: dict = Depends(get_current_user)
+):
+    """
+    Edit scan details and optionally re-analyze with LLM.
+    User can correct deer_sex, deer_type, and antler_points.
+    If image_base64 is provided, the LLM will re-analyze with user corrections as hints.
+    """
+    # Get existing scan
+    query = scans_table.select().where(
+        (scans_table.c.id == scan_id) & (scans_table.c.user_id == user["id"])
+    )
+    scan = await database.fetch_one(query)
+    
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Calculate total antler points if left/right provided
+    total_points = None
+    if data.antler_points_left is not None or data.antler_points_right is not None:
+        left = data.antler_points_left or 0
+        right = data.antler_points_right or 0
+        total_points = left + right
+    
+    # If image is provided, re-analyze with LLM
+    if data.image_base64:
+        try:
+            image_data = data.image_base64
+            if not image_data.startswith("data:"):
+                image_data = f"data:image/jpeg;base64,{image_data}"
+            
+            # Build hint text from user corrections
+            hints = []
+            if data.deer_sex:
+                hints.append(f"The deer is a {data.deer_sex}")
+            if data.deer_type:
+                hints.append(f"The deer type is {data.deer_type}")
+            if data.antler_points_left is not None:
+                hints.append(f"Left antler has {data.antler_points_left} points")
+            if data.antler_points_right is not None:
+                hints.append(f"Right antler has {data.antler_points_right} points")
+            
+            hint_text = ". ".join(hints) if hints else ""
+            
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """You are an expert wildlife biologist specializing in deer aging. 
+                        Analyze the deer image and return ONLY valid JSON:
+                        {
+                            "deer_age": <number or null>,
+                            "deer_type": <string like "Whitetail", "Mule Deer", "Elk", etc.>,
+                            "deer_sex": <"Buck" or "Doe" or "Unknown">,
+                            "antler_points": <total number or null>,
+                            "antler_points_left": <number of points on left antler or null>,
+                            "antler_points_right": <number of points on right antler or null>,
+                            "body_condition": <string>,
+                            "confidence": <number 1-100>,
+                            "recommendation": <"HARVEST" or "PASS">,
+                            "reasoning": <string>
+                        }
+                        The user has provided corrections - incorporate them into your analysis."""
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"Re-analyze this deer with these corrections: {hint_text}" if hint_text else "Analyze this deer:"},
+                            {"type": "image_url", "image_url": {"url": image_data}}
+                        ]
+                    }
+                ],
+                max_tokens=1000
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            try:
+                if "```json" in response_text:
+                    json_str = response_text.split("```json")[1].split("```")[0]
+                elif "```" in response_text:
+                    json_str = response_text.split("```")[1].split("```")[0]
+                else:
+                    json_str = response_text
+                analysis = json.loads(json_str.strip())
+            except json.JSONDecodeError:
+                analysis = None
+            
+            if analysis:
+                # Override with user corrections where provided
+                if data.deer_sex:
+                    analysis["deer_sex"] = data.deer_sex
+                if data.deer_type:
+                    analysis["deer_type"] = data.deer_type
+                if data.antler_points_left is not None:
+                    analysis["antler_points_left"] = data.antler_points_left
+                if data.antler_points_right is not None:
+                    analysis["antler_points_right"] = data.antler_points_right
+                if total_points is not None:
+                    analysis["antler_points"] = total_points
+                
+                # Update the scan with new analysis
+                update_query = scans_table.update().where(
+                    scans_table.c.id == scan_id
+                ).values(
+                    deer_age=analysis.get("deer_age"),
+                    deer_type=analysis.get("deer_type"),
+                    deer_sex=analysis.get("deer_sex"),
+                    antler_points=analysis.get("antler_points"),
+                    antler_points_left=analysis.get("antler_points_left"),
+                    antler_points_right=analysis.get("antler_points_right"),
+                    body_condition=analysis.get("body_condition"),
+                    confidence=analysis.get("confidence"),
+                    recommendation=analysis.get("recommendation"),
+                    reasoning=analysis.get("reasoning"),
+                    raw_response=analysis
+                )
+                await database.execute(update_query)
+        except Exception as e:
+            logger.error(f"Re-analysis failed: {e}")
+            # Fall through to simple update
+    else:
+        # Simple update without re-analysis
+        update_values = {}
+        if data.deer_sex is not None:
+            update_values["deer_sex"] = data.deer_sex
+        if data.deer_type is not None:
+            update_values["deer_type"] = data.deer_type
+        if data.antler_points_left is not None:
+            update_values["antler_points_left"] = data.antler_points_left
+        if data.antler_points_right is not None:
+            update_values["antler_points_right"] = data.antler_points_right
+        if total_points is not None:
+            update_values["antler_points"] = total_points
+        
+        if update_values:
+            update_query = scans_table.update().where(
+                scans_table.c.id == scan_id
+            ).values(**update_values)
+            await database.execute(update_query)
+    
+    # Fetch updated scan
+    query = scans_table.select().where(scans_table.c.id == scan_id)
+    updated_scan = await database.fetch_one(query)
+    
+    return DeerAnalysisResponse(
+        id=updated_scan["id"],
+        user_id=updated_scan["user_id"],
+        local_image_id=updated_scan["local_image_id"],
+        deer_age=updated_scan["deer_age"],
+        deer_type=updated_scan["deer_type"],
+        deer_sex=updated_scan["deer_sex"],
+        antler_points=updated_scan["antler_points"],
+        antler_points_left=updated_scan["antler_points_left"],
+        antler_points_right=updated_scan["antler_points_right"],
+        body_condition=updated_scan["body_condition"],
+        confidence=updated_scan["confidence"],
+        recommendation=updated_scan["recommendation"],
+        reasoning=updated_scan["reasoning"],
+        notes=updated_scan["notes"],
+        created_at=updated_scan["created_at"]
     )
 
 @api_router.delete("/scans/{scan_id}")
