@@ -66,6 +66,8 @@ scans_table = Table(
     Column("deer_type", String(100)),
     Column("deer_sex", String(50)),
     Column("antler_points", Integer),
+    Column("antler_points_left", Integer),
+    Column("antler_points_right", Integer),
     Column("body_condition", String(50)),
     Column("confidence", Integer),
     Column("recommendation", String(50)),
