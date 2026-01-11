@@ -82,6 +82,14 @@ export const scanAPI = {
   updateScan: (id: string, data: { notes?: string }) =>
     api.put(`/scans/${id}`, data),
 
+  editScan: (id: string, data: {
+    deer_sex?: string;
+    deer_type?: string;
+    antler_points_left?: number;
+    antler_points_right?: number;
+    image_base64?: string;
+  }) => api.post(`/scans/${id}/edit`, data),
+
   deleteScan: (id: string) => api.delete(`/scans/${id}`),
 
   deleteByLocalImageIds: (localImageIds: string[]) => 
