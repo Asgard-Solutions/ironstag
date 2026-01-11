@@ -1022,7 +1022,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         except json.JSONDecodeError:
             analysis = {
                 "deer_age": None, "deer_type": "Unknown", "deer_sex": "Unknown",
-                "antler_points": None, "body_condition": "Unknown",
+                "antler_points": None, "antler_points_left": None, "antler_points_right": None,
+                "body_condition": "Unknown",
                 "confidence": 0, "recommendation": "PASS",
                 "reasoning": f"Could not parse AI response: {response_text[:200]}"
             }
@@ -1037,6 +1038,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             deer_type=analysis.get("deer_type"),
             deer_sex=analysis.get("deer_sex"),
             antler_points=analysis.get("antler_points"),
+            antler_points_left=analysis.get("antler_points_left"),
+            antler_points_right=analysis.get("antler_points_right"),
             body_condition=analysis.get("body_condition"),
             confidence=analysis.get("confidence"),
             recommendation=analysis.get("recommendation"),
@@ -1057,6 +1060,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             deer_type=analysis.get("deer_type"),
             deer_sex=analysis.get("deer_sex"),
             antler_points=analysis.get("antler_points"),
+            antler_points_left=analysis.get("antler_points_left"),
+            antler_points_right=analysis.get("antler_points_right"),
             body_condition=analysis.get("body_condition"),
             confidence=analysis.get("confidence"),
             recommendation=analysis.get("recommendation"),
