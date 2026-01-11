@@ -986,14 +986,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     Analyze the deer image and return ONLY valid JSON:
                     {
                         "deer_age": <number or null>,
-                        "deer_type": <string>,
-                        "deer_sex": <string>,
-                        "antler_points": <number or null>,
+                        "deer_type": <string like "Whitetail", "Mule Deer", "Elk", etc.>,
+                        "deer_sex": <"Buck" or "Doe" or "Unknown">,
+                        "antler_points": <total number or null>,
+                        "antler_points_left": <number of points on left antler or null>,
+                        "antler_points_right": <number of points on right antler or null>,
                         "body_condition": <string>,
                         "confidence": <number 1-100>,
                         "recommendation": <"HARVEST" or "PASS">,
                         "reasoning": <string>
-                    }"""
+                    }
+                    For antler points, count tines on each side separately. Total should equal left + right."""
                 },
                 {
                     "role": "user",
