@@ -165,6 +165,8 @@ export default function HistoryScreen() {
               </Text>
               <Text style={styles.pointsText}>
                 {item.antler_points || 0} points
+                {(item.antler_points_left !== null || item.antler_points_right !== null) && 
+                  ` (${item.antler_points_left || 0}L/${item.antler_points_right || 0}R)`}
               </Text>
               <Text style={styles.dateText}>
                 {format(new Date(item.created_at), 'MMM d, yyyy')}
