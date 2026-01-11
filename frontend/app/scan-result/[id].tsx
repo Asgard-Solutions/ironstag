@@ -9,9 +9,13 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  Modal,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Picker } from '@react-native-picker/picker';
 import {
   ArrowLeft,
   Share2,
@@ -22,6 +26,7 @@ import {
   Target,
   Calendar,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -38,6 +43,8 @@ interface ScanResult {
   deer_type: string | null;
   deer_sex: string | null;
   antler_points: number | null;
+  antler_points_left: number | null;
+  antler_points_right: number | null;
   body_condition: string | null;
   confidence: number | null;
   recommendation: string | null;
@@ -45,6 +52,9 @@ interface ScanResult {
   notes: string | null;
   created_at: string;
 }
+
+const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Elk', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
+const DEER_SEX_OPTIONS = ['Buck', 'Doe', 'Unknown'];
 
 export default function ScanResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,6 +66,14 @@ export default function ScanResultScreen() {
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState('');
+  
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editDeerSex, setEditDeerSex] = useState<string>('');
+  const [editDeerType, setEditDeerType] = useState<string>('');
+  const [editPointsLeft, setEditPointsLeft] = useState<string>('');
+  const [editPointsRight, setEditPointsRight] = useState<string>('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   useEffect(() => {
     loadScan();
@@ -63,57 +81,121 @@ export default function ScanResultScreen() {
 
   const loadScan = async () => {
     if (!id) return;
+    setLoading(true);
     try {
       const response = await scanAPI.getScan(id);
       setScan(response.data);
       setNotes(response.data.notes || '');
-      
-      // Load the image from local storage
+
       if (response.data.local_image_id) {
         const uri = await getImage(response.data.local_image_id);
         setImageUri(uri);
       }
     } catch (error) {
       console.error('Failed to load scan:', error);
-      Alert.alert('Error', 'Failed to load scan details.');
+      Alert.alert('Error', 'Failed to load scan details');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveNotes = async () => {
-    if (!scan) return;
-    try {
-      await scanAPI.updateScan(scan.id, { notes });
-      setScan({ ...scan, notes });
-      setEditingNotes(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save notes.');
     }
   };
 
   const handleDelete = () => {
     Alert.alert(
       'Delete Scan',
-      'Are you sure you want to delete this scan? This cannot be undone.',
+      'Are you sure you want to delete this scan? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            if (!scan) return;
             try {
-              await scanAPI.deleteScan(scan.id);
-              await deleteImage(scan.local_image_id);
+              await scanAPI.deleteScan(scan!.id);
+              if (scan?.local_image_id) {
+                await deleteImage(scan.local_image_id);
+              }
               router.replace('/(tabs)/history');
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete scan.');
+              Alert.alert('Error', 'Failed to delete scan');
             }
           },
         },
       ]
     );
+  };
+
+  const handleSaveNotes = async () => {
+    try {
+      await scanAPI.updateScan(scan!.id, { notes });
+      setScan((prev) => (prev ? { ...prev, notes } : null));
+      setEditingNotes(false);
+      Alert.alert('Success', 'Notes saved');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save notes');
+    }
+  };
+
+  const openEditModal = () => {
+    if (!scan) return;
+    setEditDeerSex(scan.deer_sex || '');
+    setEditDeerType(scan.deer_type || '');
+    setEditPointsLeft(scan.antler_points_left?.toString() || '');
+    setEditPointsRight(scan.antler_points_right?.toString() || '');
+    setShowEditModal(true);
+  };
+
+  const handleSubmitEdit = async () => {
+    if (!scan) return;
+    
+    setIsSubmittingEdit(true);
+    try {
+      // Prepare edit data
+      const editData: any = {};
+      
+      if (editDeerSex && editDeerSex !== scan.deer_sex) {
+        editData.deer_sex = editDeerSex;
+      }
+      if (editDeerType && editDeerType !== scan.deer_type) {
+        editData.deer_type = editDeerType;
+      }
+      if (editPointsLeft !== '') {
+        editData.antler_points_left = parseInt(editPointsLeft, 10);
+      }
+      if (editPointsRight !== '') {
+        editData.antler_points_right = parseInt(editPointsRight, 10);
+      }
+      
+      // Include image for re-analysis if available
+      if (imageUri) {
+        // Convert image URI to base64
+        try {
+          const response = await fetch(imageUri);
+          const blob = await response.blob();
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => {
+              const base64 = reader.result as string;
+              resolve(base64);
+            };
+            reader.readAsDataURL(blob);
+          });
+          editData.image_base64 = await base64Promise;
+        } catch (imgError) {
+          console.log('Could not include image for re-analysis:', imgError);
+          // Continue without image - will just update fields
+        }
+      }
+      
+      const response = await scanAPI.editScan(scan.id, editData);
+      setScan(response.data);
+      setShowEditModal(false);
+      Alert.alert('Success', 'Scan updated successfully');
+    } catch (error) {
+      console.error('Failed to update scan:', error);
+      Alert.alert('Error', 'Failed to update scan');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
   };
 
   if (loading) {
@@ -133,11 +215,14 @@ export default function ScanResultScreen() {
     );
   }
 
+  // Build analysis data with left/right antler points
   const analysisData = [
     { label: 'Age Estimate', value: scan.deer_age ? `${scan.deer_age} years` : 'Unknown' },
     { label: 'Deer Type', value: scan.deer_type || 'Unknown' },
     { label: 'Sex', value: scan.deer_sex || 'Unknown' },
-    { label: 'Antler Points', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
+    { label: 'Antler Points (Total)', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
+    { label: 'Left Antler', value: scan.antler_points_left !== null ? `${scan.antler_points_left} pts` : 'N/A' },
+    { label: 'Right Antler', value: scan.antler_points_right !== null ? `${scan.antler_points_right} pts` : 'N/A' },
     { label: 'Body Condition', value: scan.body_condition || 'Unknown' },
     { label: 'Confidence', value: scan.confidence ? `${scan.confidence}%` : 'N/A' },
   ];
@@ -151,6 +236,9 @@ export default function ScanResultScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan Result</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerAction} onPress={openEditModal}>
+            <Pencil size={20} color={colors.primary} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.headerAction} onPress={handleDelete}>
             <Trash2 size={20} color={colors.error} />
           </TouchableOpacity>
@@ -207,7 +295,9 @@ export default function ScanResultScreen() {
           </Text>
           <Text style={styles.summarySubtitle}>
             Est. Age: {scan.deer_age || '?'} years
-            {scan.antler_points && ` • ${scan.antler_points} points`}
+            {scan.antler_points !== null && ` • ${scan.antler_points} points`}
+            {(scan.antler_points_left !== null || scan.antler_points_right !== null) && 
+              ` (${scan.antler_points_left || 0}L / ${scan.antler_points_right || 0}R)`}
           </Text>
         </Card>
 
@@ -282,6 +372,108 @@ export default function ScanResultScreen() {
           </Text>
         </Card>
       </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Analysis</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <X size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Deer Sex */}
+              <Text style={styles.inputLabel}>Deer Sex</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={editDeerSex}
+                  onValueChange={(value) => setEditDeerSex(value)}
+                  style={styles.picker}
+                  dropdownIconColor={colors.textPrimary}
+                >
+                  <Picker.Item label="Select..." value="" />
+                  {DEER_SEX_OPTIONS.map((sex) => (
+                    <Picker.Item key={sex} label={sex} value={sex} />
+                  ))}
+                </Picker>
+              </View>
+
+              {/* Deer Type */}
+              <Text style={styles.inputLabel}>Deer Type</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={editDeerType}
+                  onValueChange={(value) => setEditDeerType(value)}
+                  style={styles.picker}
+                  dropdownIconColor={colors.textPrimary}
+                >
+                  <Picker.Item label="Select..." value="" />
+                  {DEER_TYPES.map((type) => (
+                    <Picker.Item key={type} label={type} value={type} />
+                  ))}
+                </Picker>
+              </View>
+
+              {/* Antler Points Left */}
+              <Text style={styles.inputLabel}>Left Antler Points</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editPointsLeft}
+                onChangeText={setEditPointsLeft}
+                placeholder="e.g., 4"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+
+              {/* Antler Points Right */}
+              <Text style={styles.inputLabel}>Right Antler Points</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editPointsRight}
+                onChangeText={setEditPointsRight}
+                placeholder="e.g., 5"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.editNote}>
+                Your corrections will be used to re-analyze this deer with updated information.
+              </Text>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowEditModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, isSubmittingEdit && styles.disabledButton]}
+                onPress={handleSubmitEdit}
+                disabled={isSubmittingEdit}
+              >
+                {isSubmittingEdit ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Update & Re-analyze</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -305,10 +497,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
+    padding: spacing.xs,
   },
   headerTitle: {
     fontSize: 18,
@@ -317,28 +506,28 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   headerAction: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: spacing.xs,
   },
   scrollContent: {
-    paddingBottom: spacing.xxl,
+    padding: spacing.md,
   },
   image: {
     width: '100%',
-    height: 300,
-    backgroundColor: colors.backgroundCard,
+    height: 250,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
   },
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: spacing.md,
   },
   placeholderText: {
     color: colors.textMuted,
@@ -348,23 +537,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   recommendationBadge: {
-    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
   },
   harvestBadge: {
-    backgroundColor: colors.harvestBg,
+    backgroundColor: colors.harvest + '20',
   },
   passBadge: {
-    backgroundColor: colors.passBg,
+    backgroundColor: colors.pass + '20',
   },
   recommendationText: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   harvestText: {
     color: colors.harvest,
@@ -382,26 +570,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   summaryCard: {
-    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
-    alignItems: 'center',
+    padding: spacing.md,
   },
   summaryTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   summarySubtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
   },
   insightCard: {
-    marginHorizontal: spacing.md,
     marginBottom: spacing.md,
-    backgroundColor: 'rgba(200, 162, 74, 0.1)',
-    borderWidth: 1,
-    borderColor: colors.primaryDark,
+    padding: spacing.md,
+    backgroundColor: colors.primary + '10',
   },
   insightHeader: {
     flexDirection: 'row',
@@ -417,41 +602,36 @@ const styles = StyleSheet.create({
   insightText: {
     fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   dataGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
   dataItem: {
-    width: '48%',
-    backgroundColor: colors.backgroundCard,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    width: '50%',
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.sm,
   },
   dataLabel: {
     fontSize: 12,
     color: colors.textMuted,
-    marginBottom: spacing.xs,
+    marginBottom: 2,
   },
   dataValue: {
     fontSize: 16,
-    fontWeight: '600',
     color: colors.textPrimary,
+    fontWeight: '500',
   },
   notesSection: {
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   notesHeader: {
     flexDirection: 'row',
@@ -464,28 +644,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   notesInput: {
-    backgroundColor: colors.backgroundCard,
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     color: colors.textPrimary,
     fontSize: 14,
     minHeight: 100,
     textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   notesText: {
-    fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 22,
-    backgroundColor: colors.backgroundCard,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
+    fontSize: 14,
+    lineHeight: 20,
   },
   disclaimerCard: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.xl,
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-    borderWidth: 1,
-    borderColor: colors.warning,
+    backgroundColor: colors.warning + '10',
+    padding: spacing.md,
   },
   disclaimerHeader: {
     flexDirection: 'row',
@@ -499,13 +675,110 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
   disclaimerText: {
-    fontSize: 13,
+    fontSize: 12,
     color: colors.textSecondary,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   errorText: {
-    fontSize: 18,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    color: colors.error,
+    fontSize: 16,
+    marginBottom: spacing.md,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  modalBody: {
+    padding: spacing.md,
+    maxHeight: 400,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+  },
+  pickerContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  picker: {
+    color: colors.textPrimary,
+    height: 50,
+  },
+  textInput: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.textPrimary,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  editNote: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.lg,
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: spacing.md,
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  submitButton: {
+    flex: 2,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  submitButtonText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });
