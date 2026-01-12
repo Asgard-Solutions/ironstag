@@ -67,6 +67,8 @@ export const authAPI = {
 
   verifyPasswordReset: (data: { email: string; code: string; new_password: string }) =>
     api.post('/auth/password-reset/verify', data),
+
+  deleteAccount: () => api.delete('/auth/account'),
 };
 
 // Scan API
