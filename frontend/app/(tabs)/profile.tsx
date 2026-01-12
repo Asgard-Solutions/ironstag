@@ -555,20 +555,31 @@ export default function ProfileScreen() {
             // Second confirmation
             Alert.alert(
               'Are you absolutely sure?',
-              'All your scan history, analysis results, and subscription data will be permanently deleted.',
+              'All your scan history, analysis results, and account data will be permanently deleted. This cannot be undone.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
                   text: 'Yes, Delete My Account',
                   style: 'destructive',
                   onPress: async () => {
-                    // In production, this would call DELETE /api/profile
-                    Alert.alert(
-                      'Account Deletion Requested',
-                      'Your account deletion request has been submitted. You will be signed out.'
-                    );
-                    await logout();
-                    router.replace('/');
+                    try {
+                      // Call the API to delete the account
+                      await authAPI.deleteAccount();
+                      
+                      // Clear local data
+                      await clearAllImages();
+                      
+                      // Sign out
+                      await logout();
+                      
+                      Alert.alert(
+                        'Account Deleted',
+                        'Your account and all associated data have been permanently deleted.'
+                      );
+                    } catch (error) {
+                      console.error('Failed to delete account:', error);
+                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
+                    }
                   },
                 },
               ]
