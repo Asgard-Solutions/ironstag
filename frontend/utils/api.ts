@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Use EXPO_PUBLIC_API_BASE_URL for native builds, fallback to EXPO_PUBLIC_BACKEND_URL for Expo Go
+const API_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
