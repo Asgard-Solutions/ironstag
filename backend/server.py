@@ -558,6 +558,39 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
         disclaimer_accepted_at=user.get("disclaimer_accepted_at")
     )
 
+# ============ ACCOUNT DELETION ============
+
+@api_router.delete("/auth/account")
+async def delete_account(user: dict = Depends(get_current_user)):
+    """
+    Permanently delete user account and all associated data.
+    This action cannot be undone.
+    """
+    user_id = user["id"]
+    
+    try:
+        # Delete all user's scans first
+        delete_scans_query = scans_table.delete().where(scans_table.c.user_id == user_id)
+        await database.execute(delete_scans_query)
+        logger.info(f"Deleted all scans for user {user_id}")
+        
+        # Delete any password reset codes
+        delete_reset_codes_query = password_reset_codes_table.delete().where(
+            password_reset_codes_table.c.user_id == user_id
+        )
+        await database.execute(delete_reset_codes_query)
+        
+        # Delete the user account
+        delete_user_query = users_table.delete().where(users_table.c.id == user_id)
+        await database.execute(delete_user_query)
+        logger.info(f"Deleted user account {user_id}")
+        
+        return {"message": "Account deleted successfully"}
+    
+    except Exception as e:
+        logger.error(f"Failed to delete account for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete account")
+
 # ============ PASSWORD RESET ============
 
 async def send_email_via_graph(to_email: str, subject: str, body: str):
