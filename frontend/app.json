@@ -11,9 +11,22 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "io.asgardsolution.ironstag",
+      "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Iron Stag needs camera access to scan and analyze deer photos for age estimation.",
-        "NSPhotoLibraryUsageDescription": "Iron Stag needs photo library access to select deer images for analysis."
+        "NSPhotoLibraryUsageDescription": "Iron Stag needs photo library access to select deer images for analysis.",
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "cstr6suwn9.skadnetwork"
+          }
+        ]
+      },
+      "entitlements": {
+        "com.apple.developer.applesignin": ["Default"]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
@@ -42,6 +55,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {
@@ -62,6 +76,20 @@
         {
           "photosPermission": "Iron Stag needs photo library access to select deer images for analysis."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 34,
+            "targetSdkVersion": 34,
+            "minSdkVersion": 24,
+            "buildToolsVersion": "34.0.0"
+          },
+          "ios": {
+            "deploymentTarget": "14.0"
+          }
+        }
       ]
     ],
     "experiments": {
@@ -70,7 +98,12 @@
     "extra": {
       "eas": {
         "projectId": "your-eas-project-id"
+      },
+      "revenueCat": {
+        "iosApiKey": "sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV",
+        "androidApiKey": "goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV"
       }
-    }
+    },
+    "owner": "asgardsolution"
   }
 }
