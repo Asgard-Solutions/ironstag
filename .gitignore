@@ -81,3 +81,7 @@ android-sdk/
 # Environment files - DO NOT IGNORE (needed for Emergent deployment)
 # *.env
 # *.env.*
+-e 
+# Environment files
+*.env
+*.env.*
