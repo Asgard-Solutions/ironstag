@@ -98,10 +98,6 @@
     "extra": {
       "eas": {
         "projectId": "your-eas-project-id"
-      },
-      "revenueCat": {
-        "iosApiKey": "sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV",
-        "androidApiKey": "goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV"
       }
     },
     "owner": "asgardsolution"
