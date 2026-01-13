@@ -1110,10 +1110,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
 # ============ SCANS ROUTES ============
 
 @api_router.get("/scans", response_model=List[DeerAnalysisResponse])
-async def get_user_scans(user: dict = Depends(get_current_user)):
+async def get_user_scans(
+    user: dict = Depends(get_current_user),
+    limit: int = 50,
+    skip: int = 0
+):
+    # Enforce maximum limit to prevent performance issues
+    limit = min(limit, 100)
+    
     query = scans_table.select().where(
         scans_table.c.user_id == user["id"]
-    ).order_by(scans_table.c.created_at.desc())
+    ).order_by(scans_table.c.created_at.desc()).limit(limit).offset(skip)
     scans = await database.fetch_all(query)
     
     return [DeerAnalysisResponse(
