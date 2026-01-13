@@ -28,9 +28,9 @@ export const PRODUCT_IDS = {
   ANNUAL: 'ironstag_annual_premium',
 };
 
-// RevenueCat Configuration
-const REVENUECAT_IOS_API_KEY = 'sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV';
-const REVENUECAT_ANDROID_API_KEY = 'goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV';
+// RevenueCat Configuration - Load from environment variables
+const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || '';
+const REVENUECAT_ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '';
 const ENTITLEMENT_ID = 'master_stag';
 
 /**
