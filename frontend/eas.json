@@ -7,7 +7,9 @@
     "base": {
       "node": "18.18.0",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://deer-tracker-1.preview.emergentagent.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://deer-tracker-1.preview.emergentagent.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV"
       }
     },
     "development": {
