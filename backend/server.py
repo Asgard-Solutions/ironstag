@@ -99,7 +99,7 @@ JWT_ALGORITHM = 'HS256'
 MS_GRAPH_CLIENT_ID = os.environ.get('MICROSOFT_GRAPH_CLIENT_ID', '')
 MS_GRAPH_CLIENT_SECRET = os.environ.get('MICROSOFT_GRAPH_CLIENT_SECRET', '')
 MS_GRAPH_TENANT_ID = os.environ.get('MICROSOFT_GRAPH_TENANT_ID', '')
-MS_GRAPH_SENDER_EMAIL = 'support@asgardsolution.io'
+MS_GRAPH_SENDER_EMAIL = os.environ.get('MS_GRAPH_SENDER_EMAIL', 'support@asgardsolution.io')
 
 # Initialize clients
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
