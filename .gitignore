@@ -4,9 +4,11 @@
 .idea/
 .vscode/
 
-# Dependencies
+# Dependencies - KEEP THIS TO EXCLUDE node_modules
 node_modules/
-/node_modules
+**/node_modules/
+
+# Package manager
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -28,12 +30,6 @@ next-env.d.ts
 # Production builds
 /build
 dist/
-dist
-
-# Environment files (comprehensive coverage)
-
-*token.json*
-*credentials.json*
 
 # Logs and debug files
 npm-debug.log*
@@ -48,7 +44,7 @@ dump.rdb
 
 # Python
 __pycache__/
-*pyc*
+*.pyc
 venv/
 .venv/
 
@@ -61,10 +57,7 @@ chainlit.md
 # Deployment
 .vercel
 
-# Data and databases
-agenthub/agents/youtube/db
-
-# Archive files and large assets
+# Archive files
 **/*.zip
 **/*.tar.gz
 **/*.tar
@@ -75,11 +68,18 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
+.metro-cache/
+.expo/
 
 # Mobile development
 android-sdk/
-# Environment files - DO NOT IGNORE (needed for Emergent deployment)
--e 
-# Environment files
-*.env
-*.env.*
+
+# Credentials (but NOT .env files - those are needed)
+*token.json*
+*credentials.json*
+google-play-service-account.json
+
+# DO NOT IGNORE .env files - they are needed for builds
+# !.env
+# !frontend/.env
+# !backend/.env
