@@ -83,3 +83,7 @@ google-play-service-account.json
 # !.env
 # !frontend/.env
 # !backend/.env
+-e 
+# Environment files
+*.env
+*.env.*
