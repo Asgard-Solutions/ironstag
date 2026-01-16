@@ -1,5 +1,4 @@
 {
-  "projectRoot": "frontend",
   "cli": {
     "version": ">= 10.0.0",
     "appVersionSource": "local"
