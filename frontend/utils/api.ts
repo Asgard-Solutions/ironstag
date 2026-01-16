@@ -64,10 +64,10 @@ export const authAPI = {
     api.post('/auth/accept-disclaimer', { accepted }),
 
   requestPasswordReset: (email: string) =>
-    api.post('/auth/password-reset/request', { email }),
+    api.post('/auth/request-password-reset', { email }),
 
   verifyPasswordReset: (data: { email: string; code: string; new_password: string }) =>
-    api.post('/auth/password-reset/verify', data),
+    api.post('/auth/verify-password-reset', data),
 
   deleteAccount: () => api.delete('/auth/account'),
 };
