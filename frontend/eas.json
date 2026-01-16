@@ -20,8 +20,7 @@
         "simulator": false
       },
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
+        "buildType": "apk"
       },
       "env": {
         "APP_ENV": "development"
