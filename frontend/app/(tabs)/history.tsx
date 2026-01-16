@@ -130,12 +130,27 @@ export default function HistoryScreen() {
     
     // Apply search query filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return (
-        scan.deer_type?.toLowerCase().includes(query) ||
-        scan.deer_sex?.toLowerCase().includes(query) ||
-        scan.notes?.toLowerCase().includes(query) ||
-        scan.body_condition?.toLowerCase().includes(query)
+      const query = searchQuery.toLowerCase().trim();
+      
+      // Search across multiple fields
+      const searchableFields = [
+        scan.deer_type,
+        scan.deer_sex,
+        scan.notes,
+        scan.body_condition,
+        scan.recommendation,
+        scan.deer_age?.toString(),
+        scan.antler_points?.toString(),
+        scan.antler_points_left?.toString(),
+        scan.antler_points_right?.toString(),
+        scan.confidence?.toString(),
+        // Format date for searching
+        scan.created_at ? format(new Date(scan.created_at), 'MMM d yyyy').toLowerCase() : null,
+      ];
+      
+      // Return true if any field contains the search query
+      return searchableFields.some(field => 
+        field?.toLowerCase().includes(query)
       );
     }
     
