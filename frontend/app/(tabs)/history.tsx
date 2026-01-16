@@ -95,18 +95,14 @@ export default function HistoryScreen() {
   const loadScans = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const params: any = {};
-      if (filters.deer_sex) params.deer_sex = filters.deer_sex;
-      if (filters.recommendation) params.recommendation = filters.recommendation;
-      
-      const response = await scanAPI.getScans(params);
+      const response = await scanAPI.getScans({});
       setScans(response.data);
     } catch (error) {
       console.error('Failed to load scans:', error);
     } finally {
       setLoading(false);
     }
-  }, [isAuthenticated, filters]);
+  }, [isAuthenticated]);
 
   // Refresh scans when screen comes into focus (e.g., after delete)
   useFocusEffect(
