@@ -36,11 +36,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0E1A14"
       },
-      "edgeToEdgeEnabled": true,
-      "navigationBar": {
-        "visible": "sticky",
-        "backgroundColor": "#0E1A14"
-      },
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -81,10 +76,11 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 34,
+            "compileSdkVersion": 35,
             "targetSdkVersion": 34,
             "minSdkVersion": 24,
-            "buildToolsVersion": "34.0.0"
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.24"
           },
           "ios": {
             "deploymentTarget": "15.1"
