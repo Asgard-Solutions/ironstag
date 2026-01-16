@@ -452,36 +452,31 @@ export default function ProfileScreen() {
             
             setIsCleaningUp(true);
             try {
-              // First, get all image IDs
-              const metadata = await LocalImageService.getAllImageIds();
-              const allImageIds = metadata.map(item => item.id);
-              
-              console.log('Deleting scans for local image IDs:', allImageIds);
-              
-              // Delete from database first
+              // Delete ALL scans from database (not just by local_image_id)
               let dbDeletedCount = 0;
-              if (allImageIds.length > 0) {
-                try {
-                  const response = await scanAPI.deleteByLocalImageIds(allImageIds);
-                  dbDeletedCount = response.data?.deleted_count || 0;
-                  console.log('Database deletion response:', response.data);
-                } catch (apiError: any) {
-                  console.error('Failed to delete scans from database:', apiError);
-                  console.error('API error details:', apiError.response?.data);
-                  // Show error to user but continue with local deletion
-                  Alert.alert(
-                    'Partial Deletion',
-                    'Could not delete scan history from server. Local images will still be cleared.'
-                  );
-                }
+              try {
+                const response = await scanAPI.deleteAllScans();
+                dbDeletedCount = response.data?.deleted_count || 0;
+                console.log('Database deletion response:', response.data);
+              } catch (apiError: any) {
+                console.error('Failed to delete all scans from database:', apiError);
+                console.error('API error details:', apiError.response?.data);
+                // Show error to user but continue with local deletion
+                Alert.alert(
+                  'Partial Deletion',
+                  'Could not delete scan history from server. Local images will still be cleared.'
+                );
               }
               
               // Then delete local images
               const deletedCount = await clearAllImages();
               Alert.alert(
-                'Data Cleared', 
+                'All Data Cleared', 
                 `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''} and ${dbDeletedCount} scan record${dbDeletedCount !== 1 ? 's' : ''} from history.`
               );
+              
+              // Refresh scan stats
+              fetchScanStats();
             } catch (error) {
               console.error('Clear all images error:', error);
               Alert.alert('Error', 'Failed to clear images.');
