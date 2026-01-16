@@ -23,7 +23,9 @@
         ]
       },
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -86,7 +88,9 @@
             "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
