@@ -60,7 +60,7 @@ export default function SplashScreen() {
           {/* Logo Section */}
           <View style={styles.logoSection}>
             <Image
-              source={require('../assets/images/IronStagLogo.png')}
+              source={require('../assets/images/iron_stag_logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />
@@ -101,7 +101,7 @@ export default function SplashScreen() {
       <View style={styles.container}>
         <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
           <Image
-            source={require('../assets/images/IronStagLogo.png')}
+            source={require('../assets/images/iron_stag_logo.png')}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -117,7 +117,7 @@ export default function SplashScreen() {
         {/* Logo Section */}
         <View style={styles.logoSection}>
           <Image
-            source={require('../assets/images/IronStagLogo.png')}
+            source={require('../assets/images/iron_stag_logo.png')}
             style={styles.logo}
             resizeMode="contain"
           />

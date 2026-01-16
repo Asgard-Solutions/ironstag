@@ -316,7 +316,7 @@ export default function ForgotPasswordScreen() {
           {/* Logo */}
           <View style={styles.logoContainer}>
             <Image
-              source={require('../../assets/images/IronStagLogo.png')}
+              source={require('../../assets/images/iron_stag_logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />

@@ -685,7 +685,7 @@ export default function ProfileScreen() {
         {/* Subscription Card */}
         <View style={[styles.subscriptionCard, isPremium && styles.subscriptionCardActive]}>
           <Image 
-            source={require('../../assets/images/StagIcon.png')} 
+            source={require('../../assets/images/stag_icon.png')} 
             style={styles.stagIcon}
             resizeMode="contain"
           />
@@ -1195,7 +1195,7 @@ export default function ProfileScreen() {
           <View style={styles.aboutModalContent}>
             {/* App Logo */}
             <Image 
-              source={require('../../assets/images/IronStagLogo.png')} 
+              source={require('../../assets/images/iron_stag_logo.png')} 
               style={styles.aboutLogo}
               resizeMode="contain"
             />
