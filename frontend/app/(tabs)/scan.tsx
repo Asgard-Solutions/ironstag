@@ -219,6 +219,23 @@ export default function ScanScreen() {
           return;
         }
       }
+      
+      // Check if this is a "not a deer" rejection
+      if (error.response?.status === 400) {
+        const detail = error.response?.data?.detail;
+        if (detail?.code === 'NOT_A_DEER') {
+          const detected = detail?.detected_subject || 'something other than a deer';
+          Alert.alert(
+            '🦌 Not a Deer',
+            `We detected "${detected}" in your image.\n\nThis app is designed specifically for analyzing Whitetail and Mule Deer. Please try again with a deer image.\n\nNo scan was used.`,
+            [{ text: 'OK', style: 'default' }]
+          );
+          setScanStep('main');
+          setCapturedImage(null);
+          return;
+        }
+      }
+      
       const message = error.response?.data?.detail?.message || error.response?.data?.detail || 'Analysis failed. Please try again.';
       Alert.alert('Error', typeof message === 'string' ? message : 'Analysis failed. Please try again.');
       setScanStep('main');
