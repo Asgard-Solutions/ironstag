@@ -1463,6 +1463,28 @@ async def delete_scans_by_local_image_ids(
     
     return {"deleted_count": deleted_count, "message": f"Deleted {deleted_count} scan(s)"}
 
+@api_router.delete("/scans/all")
+async def delete_all_scans(user: dict = Depends(get_current_user)):
+    """
+    Delete ALL scans for the current user.
+    Used when user wants to clear all scan history.
+    """
+    # Count scans before deletion
+    count_query = scans_table.select().where(scans_table.c.user_id == user["id"])
+    scans_to_delete = await database.fetch_all(count_query)
+    
+    if not scans_to_delete:
+        return {"deleted_count": 0, "message": "No scans to delete"}
+    
+    # Delete all scans for this user
+    delete_query = scans_table.delete().where(scans_table.c.user_id == user["id"])
+    await database.execute(delete_query)
+    
+    deleted_count = len(scans_to_delete)
+    logger.info(f"Deleted ALL {deleted_count} scans for user {user['id']}")
+    
+    return {"deleted_count": deleted_count, "message": f"Deleted all {deleted_count} scan(s)"}
+
 # ============ LEARN CONTENT ============
 
 @api_router.get("/learn/content")
