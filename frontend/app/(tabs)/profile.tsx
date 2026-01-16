@@ -85,6 +85,9 @@ export default function ProfileScreen() {
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
   const [restoreLoading, setRestoreLoading] = useState(false);
   
+  // Scan stats state
+  const [scanStats, setScanStats] = useState({ total_scans: 0, harvest_count: 0, pass_count: 0 });
+  
   // Edit Profile Modal State
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editFirstName, setEditFirstName] = useState('');
