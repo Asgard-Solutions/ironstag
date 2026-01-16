@@ -155,12 +155,12 @@ export default function LoginScreen() {
           <View style={styles.form}>
             <Input
               label="Email or Username"
-              placeholder="your@email.com or username"
+              placeholder="Enter email or username"
               value={email}
               onChangeText={setEmail}
-              keyboardType="email-address"
+              keyboardType="default"
               autoCapitalize="none"
-              autoComplete="email"
+              autoComplete="username"
               error={errors.email}
             />
 
