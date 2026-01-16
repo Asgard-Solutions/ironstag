@@ -275,28 +275,9 @@ export default function HistoryScreen() {
   );
 
   if (!isAuthenticated) {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <View style={styles.headerSpacer} />
-          <Text style={styles.title}>History</Text>
-          <View style={styles.headerRight} />
-        </View>
-        <View style={styles.authRequired}>
-          <HistoryIcon size={64} color={colors.textMuted} />
-          <Text style={styles.authTitle}>Sign In Required</Text>
-          <Text style={styles.authText}>
-            Please sign in to view your scan history.
-          </Text>
-          <TouchableOpacity 
-            style={styles.signInButton}
-            onPress={() => router.push('/(auth)/login')}
-          >
-            <Text style={styles.signInButtonText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
+    // Redirect to login instead of showing auth required view
+    router.replace('/(auth)/login');
+    return null;
   }
 
   return (
