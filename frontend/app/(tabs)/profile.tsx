@@ -110,19 +110,21 @@ export default function ProfileScreen() {
   }, []);
 
   // Fetch scan stats on mount and when screen is focused
-  useEffect(() => {
-    const fetchScanStats = async () => {
-      if (!isAuthenticated) return;
-      try {
-        const response = await scanAPI.getStats();
-        setScanStats(response.data);
-      } catch (error) {
-        console.error('Failed to fetch scan stats:', error);
-      }
-    };
-    
-    fetchScanStats();
+  const fetchScanStats = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const response = await scanAPI.getStats();
+      setScanStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch scan stats:', error);
+    }
   }, [isAuthenticated]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchScanStats();
+    }, [fetchScanStats])
+  );
 
   // Format date for display
   const formatDate = (date: Date | null): string | null => {
