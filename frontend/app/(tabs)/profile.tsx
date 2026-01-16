@@ -16,7 +16,7 @@ import {
   Image,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   User,
