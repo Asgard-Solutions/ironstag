@@ -456,20 +456,34 @@ export default function ProfileScreen() {
               const metadata = await LocalImageService.getAllImageIds();
               const allImageIds = metadata.map(item => item.id);
               
+              console.log('Deleting scans for local image IDs:', allImageIds);
+              
               // Delete from database first
+              let dbDeletedCount = 0;
               if (allImageIds.length > 0) {
                 try {
-                  await scanAPI.deleteByLocalImageIds(allImageIds);
-                } catch (apiError) {
+                  const response = await scanAPI.deleteByLocalImageIds(allImageIds);
+                  dbDeletedCount = response.data?.deleted_count || 0;
+                  console.log('Database deletion response:', response.data);
+                } catch (apiError: any) {
                   console.error('Failed to delete scans from database:', apiError);
-                  // Continue with local deletion even if API fails
+                  console.error('API error details:', apiError.response?.data);
+                  // Show error to user but continue with local deletion
+                  Alert.alert(
+                    'Partial Deletion',
+                    'Could not delete scan history from server. Local images will still be cleared.'
+                  );
                 }
               }
               
               // Then delete local images
               const deletedCount = await clearAllImages();
-              Alert.alert('All Data Cleared', `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''} and their scan history.`);
+              Alert.alert(
+                'Data Cleared', 
+                `Deleted ${deletedCount} local image${deletedCount !== 1 ? 's' : ''} and ${dbDeletedCount} scan record${dbDeletedCount !== 1 ? 's' : ''} from history.`
+              );
             } catch (error) {
+              console.error('Clear all images error:', error);
               Alert.alert('Error', 'Failed to clear images.');
             } finally {
               setIsCleaningUp(false);
