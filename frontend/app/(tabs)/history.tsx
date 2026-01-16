@@ -132,26 +132,34 @@ export default function HistoryScreen() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase().trim();
       
-      // Search across multiple fields
-      const searchableFields = [
+      // Build a combined searchable string that matches UI display
+      const searchableText = [
         scan.deer_type,
         scan.deer_sex,
         scan.notes,
         scan.body_condition,
         scan.recommendation,
-        scan.deer_age?.toString(),
+        // Match display format: "Age: 4 yrs" or "4 yrs"
+        scan.deer_age ? `${scan.deer_age} yrs` : null,
+        scan.deer_age ? `age ${scan.deer_age}` : null,
+        scan.deer_age ? `age: ${scan.deer_age}` : null,
+        // Match display format: "8 points"
+        scan.antler_points ? `${scan.antler_points} points` : null,
+        scan.antler_points ? `${scan.antler_points} point` : null,
         scan.antler_points?.toString(),
-        scan.antler_points_left?.toString(),
-        scan.antler_points_right?.toString(),
+        // Left/Right points
+        scan.antler_points_left ? `${scan.antler_points_left}L` : null,
+        scan.antler_points_right ? `${scan.antler_points_right}R` : null,
+        // Confidence
+        scan.confidence ? `${scan.confidence}%` : null,
         scan.confidence?.toString(),
-        // Format date for searching
-        scan.created_at ? format(new Date(scan.created_at), 'MMM d yyyy').toLowerCase() : null,
-      ];
+        // Date formats
+        scan.created_at ? format(new Date(scan.created_at), 'MMM d, yyyy') : null,
+        scan.created_at ? format(new Date(scan.created_at), 'MMM d yyyy') : null,
+        scan.created_at ? format(new Date(scan.created_at), 'MMMM') : null,
+      ].filter(Boolean).join(' ').toLowerCase();
       
-      // Return true if any field contains the search query
-      return searchableFields.some(field => 
-        field?.toLowerCase().includes(query)
-      );
+      return searchableText.includes(query);
     }
     
     return true;
