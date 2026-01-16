@@ -131,3 +131,7 @@ google-play-service-account.json
 # Environment files
 *.env
 *.env.*
+
+# Native generated folders (CNG/Prebuild)
+android/
+ios/
