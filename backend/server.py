@@ -567,6 +567,7 @@ async def delete_account(user: dict = Depends(get_current_user)):
     This action cannot be undone.
     """
     user_id = user["id"]
+    user_email = user["email"]
     
     try:
         # Delete all user's scans first
@@ -574,11 +575,12 @@ async def delete_account(user: dict = Depends(get_current_user)):
         await database.execute(delete_scans_query)
         logger.info(f"Deleted all scans for user {user_id}")
         
-        # Delete any password reset codes
+        # Delete any password reset codes (uses email, not user_id)
         delete_reset_codes_query = password_reset_codes_table.delete().where(
-            password_reset_codes_table.c.user_id == user_id
+            password_reset_codes_table.c.email == user_email
         )
         await database.execute(delete_reset_codes_query)
+        logger.info(f"Deleted password reset codes for {user_email}")
         
         # Delete the user account
         delete_user_query = users_table.delete().where(users_table.c.id == user_id)
