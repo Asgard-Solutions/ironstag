@@ -118,14 +118,28 @@ export default function HistoryScreen() {
   };
 
   const filteredScans = scans.filter((scan) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      scan.deer_type?.toLowerCase().includes(query) ||
-      scan.deer_sex?.toLowerCase().includes(query) ||
-      scan.notes?.toLowerCase().includes(query) ||
-      scan.body_condition?.toLowerCase().includes(query)
-    );
+    // Apply deer_sex filter
+    if (filters.deer_sex && scan.deer_sex?.toLowerCase() !== filters.deer_sex.toLowerCase()) {
+      return false;
+    }
+    
+    // Apply recommendation filter
+    if (filters.recommendation && scan.recommendation !== filters.recommendation) {
+      return false;
+    }
+    
+    // Apply search query filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      return (
+        scan.deer_type?.toLowerCase().includes(query) ||
+        scan.deer_sex?.toLowerCase().includes(query) ||
+        scan.notes?.toLowerCase().includes(query) ||
+        scan.body_condition?.toLowerCase().includes(query)
+      );
+    }
+    
+    return true;
   });
 
   const clearFilters = () => {
