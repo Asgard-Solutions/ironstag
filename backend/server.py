@@ -1015,11 +1015,24 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             messages=[
                 {
                     "role": "system",
-                    "content": """You are an expert wildlife biologist specializing in deer aging. 
-                    Analyze the deer image and return ONLY valid JSON:
+                    "content": """You are an expert wildlife biologist specializing in deer identification and aging.
+                    
+                    FIRST, determine what is in the image. Return ONLY valid JSON.
+                    
+                    If the image does NOT contain a deer (Whitetail or Mule Deer only), return:
                     {
+                        "is_valid_deer": false,
+                        "detected_subject": <string describing what you see - e.g., "Elk", "Moose", "Wild Hog", "Turkey", "Coyote", "Wolf", "Bobcat", "Bear", "Person", "Landscape", "Unknown Object", etc.>,
+                        "message": <friendly message explaining this app is for Whitetail and Mule Deer only>
+                    }
+                    
+                    Note: Elk and Moose are NOT deer for this app's purposes. Only Whitetail Deer and Mule Deer are valid.
+                    
+                    If the image DOES contain a valid deer (Whitetail or Mule Deer), return:
+                    {
+                        "is_valid_deer": true,
                         "deer_age": <number or null>,
-                        "deer_type": <string like "Whitetail", "Mule Deer", "Elk", etc.>,
+                        "deer_type": <"Whitetail" or "Mule Deer">,
                         "deer_sex": <"Buck" or "Doe" or "Unknown">,
                         "antler_points": <total number or null>,
                         "antler_points_left": <number of points on left antler or null>,
@@ -1034,7 +1047,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Analyze this deer:"},
+                        {"type": "text", "text": "Analyze this image:"},
                         {"type": "image_url", "image_url": {"url": image_data}}
                     ]
                 }
@@ -1054,12 +1067,26 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             analysis = json.loads(json_str.strip())
         except json.JSONDecodeError:
             analysis = {
-                "deer_age": None, "deer_type": "Unknown", "deer_sex": "Unknown",
-                "antler_points": None, "antler_points_left": None, "antler_points_right": None,
-                "body_condition": "Unknown",
-                "confidence": 0, "recommendation": "PASS",
-                "reasoning": f"Could not parse AI response: {response_text[:200]}"
+                "is_valid_deer": False,
+                "detected_subject": "Unknown",
+                "message": "Could not analyze the image. Please try again with a clearer photo."
             }
+        
+        # Check if this is a valid deer image
+        if not analysis.get("is_valid_deer", False):
+            detected = analysis.get("detected_subject", "Unknown")
+            message = analysis.get("message", f"This image appears to contain {detected}, not a deer.")
+            
+            # Return rejection without saving or using a scan
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "NOT_A_DEER",
+                    "detected_subject": detected,
+                    "message": message,
+                    "save_scan": False
+                }
+            )
         
         scan_id = str(uuid.uuid4())
         
