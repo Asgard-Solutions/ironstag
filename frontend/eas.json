@@ -6,7 +6,6 @@
   "build": {
     "base": {
       "env": {
-        "NODE_VERSION": "20.19.4",
         "EXPO_PUBLIC_API_BASE_URL": "https://deer-tracker-1.preview.emergentagent.com",
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV"
