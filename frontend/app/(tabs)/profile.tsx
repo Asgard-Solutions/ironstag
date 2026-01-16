@@ -867,7 +867,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.menuContent}>
               <Text style={styles.menuTitle}>Scan History</Text>
-              <Text style={styles.menuSubtitle}>0 total scans</Text>
+              <Text style={styles.menuSubtitle}>{scanStats.total_scans} total scan{scanStats.total_scans !== 1 ? 's' : ''}</Text>
             </View>
             <ChevronRight size={18} color={colors.textMuted} />
           </TouchableOpacity>
