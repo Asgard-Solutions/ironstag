@@ -6134,7 +6134,7 @@ react-native-purchases@^9.6.15:
     "@revenuecat/purchases-js-hybrid-mappings" "17.27.1"
     "@revenuecat/purchases-typescript-internal" "17.27.1"
 
-react-native-reanimated@^4.0.0:
+react-native-reanimated@^4.2.1:
   version "4.2.1"
   resolved "https://registry.yarnpkg.com/react-native-reanimated/-/react-native-reanimated-4.2.1.tgz#fbdee721bff0946a6e5ae67c8c38c37ca4a0a057"
   integrity sha512-/NcHnZMyOvsD/wYXug/YqSKw90P9edN0kEPL5lP4PFf1aQ4F1V7MKe/E0tvfkXKIajy3Qocp5EiEnlcrK/+BZg==
