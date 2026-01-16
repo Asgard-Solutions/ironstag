@@ -37,3 +37,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Native folders (CNG workflow)
+android/
+ios/
