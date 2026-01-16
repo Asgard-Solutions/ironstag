@@ -88,10 +88,9 @@ export default function LoginScreen() {
     const newErrors: { email?: string; password?: string } = {};
     
     if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Invalid email address';
+      newErrors.email = 'Email or username is required';
     }
+    // No email format validation - allow username too
     
     if (!password) {
       newErrors.password = 'Password is required';
