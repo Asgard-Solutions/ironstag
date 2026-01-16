@@ -752,38 +752,6 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
 
-  // Auth Required State
-  authRequired: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  authTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  authText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  signInButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    borderRadius: borderRadius.full,
-  },
-  signInButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.background,
-  },
-
   // No Results
   noResultsContainer: {
     alignItems: 'center',
