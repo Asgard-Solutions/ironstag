@@ -2447,4 +2447,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textMuted,
   },
+  // Biometric toggle styles
+  biometricToggle: {
+    width: 50,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.border,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  biometricToggleEnabled: {
+    backgroundColor: colors.primary,
+  },
+  biometricToggleCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  biometricToggleCircleEnabled: {
+    alignSelf: 'flex-end',
+  },
 });
