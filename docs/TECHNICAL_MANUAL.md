@@ -93,6 +93,7 @@ User Action → Expo App → API Gateway → FastAPI → Service Layer → Datab
 | Expo Camera | 16.x | Camera access |
 | Expo Image Picker | 16.x | Gallery access |
 | Expo Secure Store | 14.x | Secure credential storage |
+| Expo Local Authentication | 15.x | Biometric authentication (Face ID/Fingerprint) |
 | Expo File System | 18.x | Local file management |
 | react-native-purchases | 8.x | RevenueCat SDK |
 
