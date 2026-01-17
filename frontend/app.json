@@ -16,6 +16,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Iron Stag needs camera access to scan and analyze deer photos for age estimation.",
         "NSPhotoLibraryUsageDescription": "Iron Stag needs photo library access to select deer images for analysis.",
+        "NSFaceIDUsageDescription": "Enable Face ID for quick, secure login to Iron Stag.",
         "SKAdNetworkItems": [
           {
             "SKAdNetworkIdentifier": "cstr6suwn9.skadnetwork"
