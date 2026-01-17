@@ -690,6 +690,20 @@ A: No. Photos are processed and then stored only on your local device.
 **Q: Can I delete all my data?**
 A: Yes. Use "Delete Account" to permanently remove all data.
 
+### Biometric Login
+
+**Q: How do I enable fingerprint/Face ID login?**
+A: First login with your password, then go to Profile → Security and toggle on biometric login.
+
+**Q: Why isn't biometric showing on my login screen?**
+A: You must enable it first from Profile → Security. It also requires a native build (not Expo Go).
+
+**Q: Is biometric login secure?**
+A: Yes. We store a secure encrypted token, not your password. Only your biometric can unlock it.
+
+**Q: What if biometric stops working?**
+A: You can always use your email/password to login. If your session expired, login normally and re-enable biometric.
+
 ---
 
 ## 14. Contact & Support
