@@ -113,6 +113,7 @@ export default function ProfileScreen() {
   // Initialize image store on mount
   useEffect(() => {
     initialize();
+    checkBiometricAvailability();
   }, []);
 
   // Fetch scan stats on mount and when screen is focused
