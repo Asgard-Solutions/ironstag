@@ -103,6 +103,10 @@ export default function ProfileScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+
+  // Get biometric state from auth store
+  const { biometric, checkBiometricAvailability, enableBiometric, disableBiometric } = useAuthStore();
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
