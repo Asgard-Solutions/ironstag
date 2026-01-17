@@ -136,7 +136,7 @@ User Action → Expo App → API Gateway → FastAPI → Service Layer → Datab
 ### Base URL
 
 ```
-Production: https://deerai.preview.emergentagent.com/api
+Production: https://ironstag-production.up.railway.app/api
 Local: http://localhost:8001/api
 ```
 
@@ -1080,7 +1080,7 @@ await SecureStore.deleteItemAsync('auth_token');
   "build": {
     "base": {
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://deerai.preview.emergentagent.com",
+        "EXPO_PUBLIC_API_BASE_URL": "https://ironstag-production.up.railway.app",
         "EXPO_NO_DOCTOR": "1"
       }
     },
@@ -1156,8 +1156,8 @@ MS_GRAPH_SENDER_EMAIL=support@domain.com
 
 ```env
 # API
-EXPO_PUBLIC_API_BASE_URL=https://deerai.preview.emergentagent.com
-EXPO_PUBLIC_BACKEND_URL=https://deerai.preview.emergentagent.com/api
+EXPO_PUBLIC_API_BASE_URL=https://ironstag-production.up.railway.app
+EXPO_PUBLIC_BACKEND_URL=https://ironstag-production.up.railway.app/api
 
 # RevenueCat
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=sk_xxx
