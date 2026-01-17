@@ -653,6 +653,44 @@ export default function ProfileScreen() {
     }
   };
 
+  // Handle biometric toggle
+  const handleBiometricToggle = async () => {
+    if (biometricLoading) return;
+    
+    setBiometricLoading(true);
+    try {
+      if (biometric.isEnabled) {
+        // Disable biometric
+        await disableBiometric();
+        Alert.alert('Disabled', 'Biometric login has been disabled.');
+      } else {
+        // Enable biometric
+        const success = await enableBiometric();
+        if (success) {
+          Alert.alert(
+            'Enabled',
+            `${biometric.biometricType === 'facial' ? 'Face ID' : 'Fingerprint'} login has been enabled. You can now log in using biometrics.`
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Biometric toggle error:', error);
+      Alert.alert('Error', 'Failed to update biometric settings.');
+    } finally {
+      setBiometricLoading(false);
+    }
+  };
+
+  // Get biometric label
+  const getBiometricLabel = () => {
+    if (biometric.biometricType === 'facial') {
+      return 'Face ID';
+    } else if (biometric.biometricType === 'fingerprint') {
+      return 'Fingerprint';
+    }
+    return 'Biometric';
+  };
+
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
