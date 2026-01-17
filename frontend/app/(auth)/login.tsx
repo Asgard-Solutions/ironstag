@@ -13,6 +13,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { Fingerprint, ScanFace } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { useAuthStore } from '../../stores/authStore';
@@ -21,10 +22,11 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuthStore();
+  const { login, biometric, checkBiometricAvailability, authenticateWithBiometric } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
   const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
@@ -37,7 +39,49 @@ export default function LoginScreen() {
       }
     };
     checkAppleAuth();
+    
+    // Check biometric availability
+    checkBiometricAvailability();
   }, []);
+
+  // Handle biometric login
+  const handleBiometricLogin = async () => {
+    setBiometricLoading(true);
+    try {
+      const result = await authenticateWithBiometric();
+      
+      if (result.success && result.token) {
+        // Verify the token is still valid by fetching user
+        try {
+          const response = await authAPI.getMe(result.token);
+          await login(result.token, response.data);
+          
+          // Check if disclaimer accepted
+          if (!response.data.disclaimer_accepted) {
+            router.replace('/(auth)/onboarding');
+          } else {
+            router.replace('/(tabs)');
+          }
+        } catch (error) {
+          // Token expired or invalid
+          Alert.alert(
+            'Session Expired',
+            'Please login with your password to continue.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else if (result.error === 'cancelled') {
+        // User cancelled, do nothing
+      } else {
+        Alert.alert('Authentication Failed', result.error || 'Please try again or use your password.');
+      }
+    } catch (error) {
+      console.error('Biometric login error:', error);
+      Alert.alert('Error', 'Biometric authentication failed. Please use your password.');
+    } finally {
+      setBiometricLoading(false);
+    }
+  };
 
   const handleAppleSignIn = async () => {
     try {
@@ -122,6 +166,16 @@ export default function LoginScreen() {
     }
   };
 
+  // Get biometric button text and icon
+  const getBiometricLabel = () => {
+    if (biometric.biometricType === 'facial') {
+      return 'Login with Face ID';
+    }
+    return 'Login with Fingerprint';
+  };
+
+  const BiometricIcon = biometric.biometricType === 'facial' ? ScanFace : Fingerprint;
+
   return (
     <View style={styles.container}>
       <KeyboardAvoidingView
@@ -150,6 +204,29 @@ export default function LoginScreen() {
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to continue tracking your ethical hunting journey</Text>
           </View>
+
+          {/* Biometric Login Button - Show if enabled */}
+          {biometric.isEnabled && (
+            <View style={styles.biometricContainer}>
+              <TouchableOpacity
+                style={styles.biometricButton}
+                onPress={handleBiometricLogin}
+                disabled={biometricLoading}
+                activeOpacity={0.7}
+              >
+                <BiometricIcon size={32} color={colors.primary} />
+                <Text style={styles.biometricText}>
+                  {biometricLoading ? 'Authenticating...' : getBiometricLabel()}
+                </Text>
+              </TouchableOpacity>
+              
+              <View style={styles.dividerContainer}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or use password</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            </View>
+          )}
 
           {/* Form */}
           <View style={styles.form}>
@@ -263,6 +340,26 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  biometricContainer: {
+    marginBottom: spacing.md,
+  },
+  biometricButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  biometricText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.primary,
   },
   form: {
     marginBottom: spacing.lg,
