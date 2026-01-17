@@ -940,6 +940,47 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Security Section - Biometric Login */}
+        {biometric.isAvailable && (Platform.OS === 'ios' || Platform.OS === 'android') && (
+          <>
+            <Text style={styles.sectionHeader}>Security</Text>
+            <View style={styles.menuSection}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.menuItemLast]} 
+                onPress={handleBiometricToggle}
+                disabled={biometricLoading}
+              >
+                <View style={[styles.menuIcon, styles.menuIconGold]}>
+                  {biometric.biometricType === 'facial' ? (
+                    <ScanFace size={18} color={colors.primary} />
+                  ) : (
+                    <Fingerprint size={18} color={colors.primary} />
+                  )}
+                </View>
+                <View style={styles.menuContent}>
+                  <Text style={styles.menuTitle}>{getBiometricLabel()} Login</Text>
+                  <Text style={styles.menuSubtitle}>
+                    {biometric.isEnabled ? 'Enabled - tap to disable' : 'Tap to enable quick login'}
+                  </Text>
+                </View>
+                {biometricLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <View style={[
+                    styles.biometricToggle,
+                    biometric.isEnabled && styles.biometricToggleEnabled
+                  ]}>
+                    <View style={[
+                      styles.biometricToggleCircle,
+                      biometric.isEnabled && styles.biometricToggleCircleEnabled
+                    ]} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
         {/* Privacy & Legal */}
         <Text style={styles.sectionHeader}>Privacy & Legal</Text>
         <View style={styles.menuSection}>
