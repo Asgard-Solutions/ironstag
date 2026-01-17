@@ -50,7 +50,18 @@ export const authAPI = {
     full_name?: string; 
   }) => api.post('/auth/apple', data),
 
-  getMe: () => api.get('/auth/me'),
+  getMe: (token?: string) => {
+    // If token provided, use it directly (for biometric login)
+    if (token) {
+      return axios.get(`${API_URL}/api/auth/me`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+    }
+    return api.get('/auth/me');
+  },
 
   updateProfile: (data: { 
     name?: string; 
