@@ -157,7 +157,68 @@ You can sign in using:
 
 ---
 
-## 4. Scanning Deer
+## 4. Biometric Login
+
+### Overview
+
+Iron Stag supports biometric authentication for quick, secure login using:
+- **Face ID** (iPhone X and newer, iPad Pro)
+- **Touch ID** (iPhone 5S-8, older iPads)
+- **Fingerprint** (Android devices with fingerprint sensors)
+- **Face Unlock** (Android devices with face recognition)
+
+### Enabling Biometric Login
+
+1. **Sign in** with your email/username and password first
+2. Go to the **Profile** tab
+3. Scroll to the **Security** section
+4. Tap **"Face ID Login"** or **"Fingerprint Login"** toggle
+5. Authenticate with your biometric to confirm
+6. Biometric login is now enabled!
+
+### Using Biometric Login
+
+Once enabled, the next time you open Iron Stag:
+
+1. On the login screen, you'll see a **"Login with Face ID"** or **"Login with Fingerprint"** button
+2. Tap the button
+3. Authenticate with your face or fingerprint
+4. You're instantly logged in!
+
+### Disabling Biometric Login
+
+1. Go to **Profile** → **Security**
+2. Tap the biometric toggle to turn it **off**
+3. Biometric login is now disabled
+
+### Important Notes
+
+| Note | Details |
+|------|---------|
+| **First login required** | You must log in with password at least once before enabling biometric |
+| **Token expiration** | If your session expires (30 days), you'll need to re-enter your password |
+| **Device-specific** | Biometric is tied to your device; set up again on new devices |
+| **Security** | Your password is NOT stored; only a secure token is saved |
+| **Fallback** | You can always use your password if biometric fails |
+
+### Troubleshooting Biometric
+
+**"Biometric not available"**
+- Ensure your device has Face ID/Touch ID/Fingerprint hardware
+- Check that biometrics are set up in your device settings
+- Some older devices may not support biometric authentication
+
+**"Please login with password"**
+- Your stored token has expired
+- Log in with your password and re-enable biometric
+
+**Biometric doesn't appear on login screen**
+- You haven't enabled it yet; go to Profile → Security first
+- Only appears on iOS/Android native apps (not Expo Go)
+
+---
+
+## 5. Scanning Deer
 
 ### How to Scan
 
