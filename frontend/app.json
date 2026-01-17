@@ -53,6 +53,7 @@
     "plugins": [
       "expo-router",
       "expo-apple-authentication",
+      "expo-local-authentication",
       [
         "expo-splash-screen",
         {
