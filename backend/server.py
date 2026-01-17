@@ -24,7 +24,8 @@ import sqlalchemy
 from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Text, JSON
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+if os.getenv("RAILWAY_ENVIRONMENT") is None:
+    load_dotenv(ROOT_DIR / ".env")
 
 # PostgreSQL connection (Neon DB)
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
@@ -1508,9 +1509,13 @@ async def get_learn_content():
 
 # ============ HEALTH CHECK ============
 
-@api_router.get("/health")
-async def health_check():
-    return {"status": "healthy", "database": "postgresql", "timestamp": datetime.utcnow().isoformat()}
+@app.get("/health")
+async def root_health():
+    return {
+        "status": "ok",
+        "service": "iron-stag-api",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 # ============ TEST/ADMIN ENDPOINTS ============
 
@@ -1522,6 +1527,7 @@ async def admin_upgrade_user(user: dict = Depends(get_current_user)):
     ).values(subscription_tier="master_stag", scans_remaining=-1)
     await database.execute(query)
     return {"status": "upgraded", "tier": "master_stag"}
+    
 
 # Include router
 app.include_router(api_router)
@@ -1536,5 +1542,8 @@ app.add_middleware(
 )
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
