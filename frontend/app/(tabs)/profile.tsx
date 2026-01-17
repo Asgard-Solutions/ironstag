@@ -41,6 +41,8 @@ import {
   EyeOff,
   Save,
   RefreshCw,
+  Fingerprint,
+  ScanFace,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
