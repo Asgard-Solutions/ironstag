@@ -275,7 +275,7 @@ For the most accurate analysis:
 
 ---
 
-## 5. Scan Results
+## 6. Scan Results
 
 ### Understanding Your Results
 
@@ -332,7 +332,7 @@ If you believe the AI made an error, you can edit and re-analyze:
 
 ---
 
-## 6. Scan History
+## 7. Scan History
 
 ### Viewing History
 
@@ -385,7 +385,7 @@ Tap the filter dropdown buttons:
 
 ---
 
-## 7. Learn Section
+## 8. Learn Section
 
 ### Educational Content
 
@@ -406,7 +406,7 @@ The **Learn** tab provides educational resources about:
 
 ---
 
-## 8. Profile & Settings
+## 9. Profile & Settings
 
 ### Profile Overview
 
@@ -490,7 +490,7 @@ For GDPR/privacy compliance:
 
 ---
 
-## 9. Subscription Plans
+## 10. Subscription Plans
 
 ### Tracker (Free)
 
@@ -547,7 +547,7 @@ For GDPR/privacy compliance:
 
 ---
 
-## 10. Data & Privacy
+## 11. Data & Privacy
 
 ### What Data We Collect
 
@@ -587,7 +587,7 @@ View our full privacy policy at:
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 ### Common Issues
 
@@ -647,7 +647,7 @@ View our full privacy policy at:
 
 ---
 
-## 12. FAQ
+## 13. FAQ
 
 ### General
 
@@ -692,7 +692,7 @@ A: Yes. Use "Delete Account" to permanently remove all data.
 
 ---
 
-## 13. Contact & Support
+## 14. Contact & Support
 
 ### Customer Support
 
