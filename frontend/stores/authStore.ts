@@ -71,11 +71,23 @@ const storage = {
 
 // Helper to get biometric type name
 const getBiometricTypeName = (types: LocalAuthentication.AuthenticationType[]): 'fingerprint' | 'facial' | 'iris' | 'none' => {
-  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-    return 'facial';
-  }
-  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-    return 'fingerprint';
+  // On Android, prioritize fingerprint as it's more common
+  // On iOS, Face ID takes precedence
+  if (Platform.OS === 'android') {
+    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+      return 'fingerprint';
+    }
+    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+      return 'facial';
+    }
+  } else {
+    // iOS - Face ID takes precedence
+    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+      return 'facial';
+    }
+    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+      return 'fingerprint';
+    }
   }
   if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) {
     return 'iris';
