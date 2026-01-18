@@ -168,10 +168,20 @@ export default function LoginScreen() {
 
   // Get biometric button text and icon
   const getBiometricLabel = () => {
-    if (biometric.biometricType === 'facial') {
-      return 'Login with Face ID';
+    if (Platform.OS === 'ios') {
+      if (biometric.biometricType === 'facial') {
+        return 'Login with Face ID';
+      }
+      return 'Login with Touch ID';
+    } else if (Platform.OS === 'android') {
+      if (biometric.biometricType === 'fingerprint') {
+        return 'Login with Fingerprint';
+      } else if (biometric.biometricType === 'facial') {
+        return 'Login with Face Unlock';
+      }
+      return 'Login with Biometrics';
     }
-    return 'Login with Fingerprint';
+    return 'Login with Biometrics';
   };
 
   const BiometricIcon = biometric.biometricType === 'facial' ? ScanFace : Fingerprint;
