@@ -13,6 +13,7 @@
         "EXPO_NO_DOCTOR": "1"
       }
     },
+
     "development": {
       "extends": "base",
       "developmentClient": true,
@@ -29,19 +30,17 @@
         "APP_ENV": "development"
       }
     },
+
     "development-simulator": {
       "extends": "development",
       "ios": {
         "simulator": true
       }
     },
+
     "preview": {
       "extends": "base",
       "distribution": "internal",
-      "prebuildCommand": "npx expo prebuild --clean",
-      "ios": {
-        "resourceClass": "m-medium"
-      },
       "android": {
         "buildType": "apk"
       },
@@ -49,6 +48,7 @@
         "APP_ENV": "preview"
       }
     },
+
     "production": {
       "extends": "base",
       "autoIncrement": true,
@@ -66,6 +66,7 @@
       }
     }
   },
+
   "submit": {
     "production": {
       "android": {
