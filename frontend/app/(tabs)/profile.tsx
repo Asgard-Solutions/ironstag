@@ -681,12 +681,24 @@ export default function ProfileScreen() {
     }
   };
 
-  // Get biometric label
+  // Get biometric label - use generic "Biometrics" on Android since it could be fingerprint or face
   const getBiometricLabel = () => {
-    if (biometric.biometricType === 'facial') {
-      return 'Face ID';
-    } else if (biometric.biometricType === 'fingerprint') {
-      return 'Fingerprint';
+    if (Platform.OS === 'ios') {
+      // iOS has specific Face ID vs Touch ID
+      if (biometric.biometricType === 'facial') {
+        return 'Face ID';
+      } else if (biometric.biometricType === 'fingerprint') {
+        return 'Touch ID';
+      }
+    } else if (Platform.OS === 'android') {
+      // Android - use generic term or specific based on detection
+      if (biometric.biometricType === 'fingerprint') {
+        return 'Fingerprint';
+      } else if (biometric.biometricType === 'facial') {
+        return 'Face Unlock';
+      }
+      // Default to generic for Android
+      return 'Biometric';
     }
     return 'Biometric';
   };
