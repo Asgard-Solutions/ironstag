@@ -773,6 +773,100 @@ Health check endpoint.
 - **Key:** `auth_token`
 - **Encryption:** Platform-provided secure storage
 
+### Biometric Authentication
+
+Iron Stag supports biometric authentication (Face ID, Touch ID, Fingerprint) for quick login.
+
+#### Supported Biometric Types
+
+| Type | Platform | Detection |
+|------|----------|-----------|
+| Face ID | iOS (iPhone X+) | `AuthenticationType.FACIAL_RECOGNITION` |
+| Touch ID | iOS (iPhone 5S-8) | `AuthenticationType.FINGERPRINT` |
+| Fingerprint | Android | `AuthenticationType.FINGERPRINT` |
+| Face Unlock | Android | `AuthenticationType.FACIAL_RECOGNITION` |
+
+#### Implementation Flow
+
+```
+Enable Biometric:
+1. User logged in with password (has valid token)
+2. User taps "Enable Face ID/Fingerprint" in Profile → Security
+3. App calls LocalAuthentication.authenticateAsync() to verify identity
+4. On success, token stored in SecureStore with key 'biometric_auth_token'
+5. Flag 'biometric_enabled' set to 'true' in SecureStore
+
+Login with Biometric:
+1. App checks if biometric is enabled and available
+2. User taps "Login with Face ID/Fingerprint"
+3. App calls LocalAuthentication.authenticateAsync()
+4. On success, retrieve token from SecureStore
+5. Validate token with backend (/auth/me)
+6. If valid, user is logged in
+7. If expired, prompt for password login
+```
+
+#### Storage Keys
+
+| Key | Purpose | Value |
+|-----|---------|-------|
+| `auth_token` | Current session token | JWT string |
+| `biometric_auth_token` | Token for biometric login | JWT string |
+| `biometric_enabled` | User preference | 'true' or 'false' |
+
+#### AuthStore Methods
+
+```typescript
+interface AuthState {
+  biometric: {
+    isAvailable: boolean;    // Device has biometric hardware
+    isEnabled: boolean;      // User has enabled biometric login
+    biometricType: 'fingerprint' | 'facial' | 'iris' | 'none';
+  };
+  
+  // Check device capabilities
+  checkBiometricAvailability: () => Promise<void>;
+  
+  // Enable biometric (stores token after auth)
+  enableBiometric: () => Promise<boolean>;
+  
+  // Disable biometric (removes stored token)
+  disableBiometric: () => Promise<void>;
+  
+  // Authenticate and return stored token
+  authenticateWithBiometric: () => Promise<{
+    success: boolean;
+    token?: string;
+    error?: string;
+  }>;
+}
+```
+
+#### Security Considerations
+
+- **No password storage:** Only the JWT token is stored, never the password
+- **Secure storage:** Token encrypted using platform-native secure storage
+- **Token expiration:** If token expires, user must re-authenticate with password
+- **Device binding:** Biometric setup is device-specific, not synced across devices
+- **Fallback:** Password login always available if biometric fails
+
+#### iOS Configuration (app.json)
+
+```json
+{
+  "expo": {
+    "ios": {
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Enable Face ID for quick, secure login to Iron Stag."
+      }
+    },
+    "plugins": [
+      "expo-local-authentication"
+    ]
+  }
+}
+```
+
 ---
 
 ## 6. AI Integration
