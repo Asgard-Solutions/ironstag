@@ -13,7 +13,6 @@
         "EXPO_NO_DOCTOR": "1"
       }
     },
-
     "development": {
       "extends": "base",
       "developmentClient": true,
@@ -30,14 +29,12 @@
         "APP_ENV": "development"
       }
     },
-
     "development-simulator": {
       "extends": "development",
       "ios": {
         "simulator": true
       }
     },
-
     "preview": {
       "extends": "base",
       "distribution": "internal",
@@ -48,7 +45,6 @@
         "APP_ENV": "preview"
       }
     },
-
     "production": {
       "extends": "base",
       "autoIncrement": true,
@@ -66,7 +62,6 @@
       }
     }
   },
-
   "submit": {
     "production": {
       "android": {

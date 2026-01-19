@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "io.asgardsolution.ironstag",
-      "buildNumber": "1",
+      "buildNumber": "2",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Iron Stag needs camera access to scan and analyze deer photos for age estimation.",
@@ -34,9 +34,9 @@
     },
     "android": {
       "package": "io.asgardsolution.ironstag",
-      "versionCode": 1,
+      "versionCode": 5,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/stag_icon.png",
         "backgroundColor": "#0E1A14"
       },
       "permissions": [
