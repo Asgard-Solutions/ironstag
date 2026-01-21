@@ -742,8 +742,7 @@ Environment Variables:
         sys.exit(0)
     
     # Override API URL if provided
-    global API_URL
-    API_URL = args.api_url
+    api_url = args.api_url
     
     # Print banner
     print()
@@ -751,7 +750,7 @@ Environment Variables:
     print(color("║       Phase 3 Adaptive Calibration CLI Tool              ║", Colors.CYAN))
     print(color("║       ADVISORY ONLY - No Automatic Changes               ║", Colors.CYAN))
     print(color("╚══════════════════════════════════════════════════════════╝", Colors.CYAN))
-    print(f"  API: {API_URL}")
+    print(f"  API: {api_url}")
     print(f"  Environment: {ENVIRONMENT}")
     print(f"  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
