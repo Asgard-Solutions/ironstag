@@ -1798,7 +1798,7 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
 
-  // Stats Card
+  // Stats Card (legacy - keeping for reference)
   statsCard: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
@@ -1832,6 +1832,68 @@ const styles = StyleSheet.create({
     width: 1,
     height: 40,
     backgroundColor: colors.border,
+  },
+
+  // Home State Card (new prominent position)
+  homeStateCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  homeStateLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  homeStateIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(212, 165, 116, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  homeStateContent: {
+    flex: 1,
+  },
+  homeStateTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  homeStateSubtitle: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  homeStateBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  homeStateBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  homeStateSetButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  homeStateSetButtonText: {
+    color: '#1a1a1a',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   // Storage Card
