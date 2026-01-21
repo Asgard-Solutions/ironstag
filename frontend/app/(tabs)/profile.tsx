@@ -2586,4 +2586,57 @@ const styles = StyleSheet.create({
   biometricToggleCircleEnabled: {
     alignSelf: 'flex-end',
   },
+  // App Version section styles
+  versionSection: {
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  versionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  versionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  versionInfo: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  versionNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  buildNumber: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  checkUpdateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: 'rgba(200, 162, 74, 0.1)',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  checkUpdateBtnText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+  },
 });
