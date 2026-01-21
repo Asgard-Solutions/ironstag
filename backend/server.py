@@ -23,6 +23,9 @@ from databases import Database
 import sqlalchemy
 from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Text, JSON
 
+# Import confidence calibration module
+from calibration import calibrate_from_dict, get_calibration_metadata, CalibrationConfig
+
 ROOT_DIR = Path(__file__).parent
 if os.getenv("RAILWAY_ENVIRONMENT") is None:
     load_dotenv(ROOT_DIR / ".env")
