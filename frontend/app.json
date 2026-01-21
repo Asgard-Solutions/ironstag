@@ -92,7 +92,9 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/android-large-screen-plugin.js",
+      "./plugins/android-large-screen-main-activity.js"
     ],
     "experiments": {
       "typedRoutes": true
