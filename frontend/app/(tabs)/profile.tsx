@@ -1002,28 +1002,6 @@ export default function ProfileScreen() {
             <ChevronRight size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/learn')}>
-            <View style={styles.menuIcon}>
-              <BookOpen size={18} color={colors.textPrimary} />
-            </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Deer Aging Guide</Text>
-              <Text style={styles.menuSubtitle}>Learn to age deer</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/(tabs)/history')}>
-            <View style={styles.menuIcon}>
-              <Camera size={18} color={colors.textPrimary} />
-            </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Scan History</Text>
-              <Text style={styles.menuSubtitle}>{scanStats.total_scans} total scan{scanStats.total_scans !== 1 ? 's' : ''}</Text>
-            </View>
-            <ChevronRight size={18} color={colors.textMuted} />
-          </TouchableOpacity>
-
           <TouchableOpacity style={styles.menuItem} onPress={() => setShowAboutModal(true)}>
             <View style={styles.menuIcon}>
               <Info size={18} color={colors.textPrimary} />
