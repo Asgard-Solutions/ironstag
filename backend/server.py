@@ -269,6 +269,14 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_left INTEGER")
         # Add antler_points_right column if it doesn't exist
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_right INTEGER")
+        
+        # Confidence calibration columns (added for v1-heuristic calibration)
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_confidence INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_confidence INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS recommendation_confidence INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_uncertain BOOLEAN DEFAULT FALSE")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_version VARCHAR(50)")
+        
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
