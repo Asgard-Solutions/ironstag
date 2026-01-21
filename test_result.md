@@ -269,15 +269,18 @@ backend:
 
   - task: "Calibration Database Tables"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Created scan_labels and calibration_curves tables via migrations in startup event. Tables support empirical calibration curve building and storage."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Calibration database tables working correctly. Tables scan_labels and calibration_curves created successfully via migrations. Database schema supports empirical calibration system. Confirmed through admin API endpoints that can query these tables (curves endpoint returns empty array as expected for new system). Table structure supports curve building, activation, and recalibration workflows."
 
   - task: "Authentication Security & Token Validation"
     implemented: true
