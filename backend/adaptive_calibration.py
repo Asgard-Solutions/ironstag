@@ -834,7 +834,7 @@ async def compute_region_maturity(
                     region_maturity_table.c.region_key == record.region_key
                 ).values(**record.to_db_dict())
                 
-                result_update = await database.execute(update_query)
+                await database.execute(update_query)
                 
                 # If no rows updated, insert
                 # Note: This is a simple approach; production would use UPSERT
