@@ -510,7 +510,8 @@ async def register(data: UserRegister):
             subscription_tier="tracker",
             scans_remaining=3,
             total_scans_used=0,
-            disclaimer_accepted=False
+            disclaimer_accepted=False,
+            state=None
         )
     )
 
