@@ -437,18 +437,20 @@ def apply_uncertainty_gate(
 # MAIN CALIBRATION FUNCTION
 # ============================================================================
 
-def calibrate_with_region(input_data: RegionCalibrationInput) -> RegionCalibrationOutput:
+def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Optional[Dict] = None) -> RegionCalibrationOutput:
     """
     Main entry point for region-aware confidence calibration.
     
     Implements fallback chain:
-    1. curve_region (if enabled and mature) - NOT IMPLEMENTED YET
-    2. curve_global (if enabled and mature) - NOT IMPLEMENTED YET
+    1. curve_region (if enabled and mature curve exists)
+    2. curve_global (if enabled and mature curve exists)
     3. heuristic_region (default)
     4. legacy (passthrough if all else fails)
     
     Args:
         input_data: RegionCalibrationInput with all scan data
+        active_curves: Optional dict of active curves from database
+                       Key: (curve_type, region_key), Value: curve data dict
         
     Returns:
         RegionCalibrationOutput with calibrated values
@@ -483,46 +485,82 @@ def calibrate_with_region(input_data: RegionCalibrationInput) -> RegionCalibrati
     # Determine calibration strategy (fallback chain)
     calibration_strategy = CalibrationStrategy.HEURISTIC_REGION
     fallback_reason = None
+    age_confidence = None
+    recommendation_confidence = None
+    calibration_version = config.CALIBRATION_VERSION
     
-    # Phase 2: Check for curve_region
-    if config.CALIBRATION_CURVES_ENABLED:
-        # TODO: Check if region curve exists and is mature
-        # For now, fall back to heuristic
-        fallback_reason = "region_curve_not_implemented"
+    # Phase 2: Check for curve-based calibration
+    if config.CALIBRATION_CURVES_ENABLED and active_curves:
+        # Try region-specific age curve first
+        region_age_key = ("region_age", region_key.value)
+        global_age_key = ("global_age", None)
+        
+        region_rec_key = ("region_recommendation", region_key.value)
+        global_rec_key = ("global_recommendation", None)
+        
+        # Age calibration via curves
+        if region_age_key in active_curves:
+            curve = active_curves[region_age_key]
+            age_confidence = _apply_curve(input_data.raw_confidence, curve)
+            calibration_strategy = CalibrationStrategy.CURVE_REGION
+            calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
+            logger.info(f"Using region age curve for {region_key.value}")
+        elif global_age_key in active_curves:
+            curve = active_curves[global_age_key]
+            age_confidence = _apply_curve(input_data.raw_confidence, curve)
+            calibration_strategy = CalibrationStrategy.CURVE_GLOBAL
+            calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
+            fallback_reason = "region_curve_missing"
+            logger.info(f"Using global age curve (region {region_key.value} not available)")
+        
+        # Recommendation calibration via curves
+        if region_rec_key in active_curves:
+            curve = active_curves[region_rec_key]
+            recommendation_confidence = _apply_curve(input_data.raw_confidence, curve)
+        elif global_rec_key in active_curves:
+            curve = active_curves[global_rec_key]
+            recommendation_confidence = _apply_curve(input_data.raw_confidence, curve)
     
-    # Compute calibrated age confidence
-    if config.CALIBRATION_REGION_ENABLED:
-        age_confidence = compute_age_confidence_with_region(
+    # Fall back to heuristic if no curve calibration was applied
+    if age_confidence is None:
+        if config.CALIBRATION_CURVES_ENABLED:
+            fallback_reason = fallback_reason or "no_active_curves"
+        
+        # Compute calibrated age confidence with heuristics
+        if config.CALIBRATION_REGION_ENABLED:
+            age_confidence = compute_age_confidence_with_region(
+                raw_confidence=input_data.raw_confidence,
+                predicted_age=input_data.predicted_age,
+                deer_sex=input_data.deer_sex,
+                antler_points=input_data.antler_points,
+                antler_points_left=input_data.antler_points_left,
+                antler_points_right=input_data.antler_points_right,
+                region_key=region_key
+            )
+            calibration_strategy = CalibrationStrategy.HEURISTIC_REGION
+        else:
+            # Fall back to global heuristic (no region multiplier)
+            calibration_strategy = CalibrationStrategy.HEURISTIC_GLOBAL
+            age_confidence = compute_age_confidence_with_region(
+                raw_confidence=input_data.raw_confidence,
+                predicted_age=input_data.predicted_age,
+                deer_sex=input_data.deer_sex,
+                antler_points=input_data.antler_points,
+                antler_points_left=input_data.antler_points_left,
+                antler_points_right=input_data.antler_points_right,
+                region_key=RegionKey.MIDWEST  # Use midwest (1.0 multiplier) for global
+            )
+            fallback_reason = fallback_reason or "region_calibration_disabled"
+    
+    if recommendation_confidence is None:
+        # Compute calibrated recommendation confidence with heuristics
+        recommendation_confidence = compute_recommendation_confidence_with_region(
             raw_confidence=input_data.raw_confidence,
+            recommendation=input_data.recommendation,
             predicted_age=input_data.predicted_age,
             deer_sex=input_data.deer_sex,
-            antler_points=input_data.antler_points,
-            antler_points_left=input_data.antler_points_left,
-            antler_points_right=input_data.antler_points_right,
             region_key=region_key
         )
-    else:
-        # Fall back to global heuristic (no region multiplier)
-        calibration_strategy = CalibrationStrategy.HEURISTIC_GLOBAL
-        age_confidence = compute_age_confidence_with_region(
-            raw_confidence=input_data.raw_confidence,
-            predicted_age=input_data.predicted_age,
-            deer_sex=input_data.deer_sex,
-            antler_points=input_data.antler_points,
-            antler_points_left=input_data.antler_points_left,
-            antler_points_right=input_data.antler_points_right,
-            region_key=RegionKey.MIDWEST  # Use midwest (1.0 multiplier) for global
-        )
-        fallback_reason = "region_calibration_disabled"
-    
-    # Compute calibrated recommendation confidence
-    recommendation_confidence = compute_recommendation_confidence_with_region(
-        raw_confidence=input_data.raw_confidence,
-        recommendation=input_data.recommendation,
-        predicted_age=input_data.predicted_age,
-        deer_sex=input_data.deer_sex,
-        region_key=region_key
-    )
     
     # Apply uncertainty gate
     age_uncertain, adjusted_age = apply_uncertainty_gate(
@@ -552,12 +590,45 @@ def calibrate_with_region(input_data: RegionCalibrationInput) -> RegionCalibrati
         calibrated_recommendation_confidence=calibrated_recommendation_confidence_pct,
         age_uncertain=age_uncertain,
         adjusted_age=adjusted_age,
-        calibration_version=config.CALIBRATION_VERSION,
+        calibration_version=calibration_version,
         calibration_strategy=calibration_strategy.value,
         calibration_fallback_reason=fallback_reason,
         raw_age_confidence=int(input_data.raw_age_confidence) if input_data.raw_age_confidence else None,
         raw_recommendation_confidence=int(input_data.raw_recommendation_confidence) if input_data.raw_recommendation_confidence else None
     )
+
+
+def _apply_curve(raw_confidence: float, curve: Dict[str, Any]) -> float:
+    """
+    Apply curve-based calibration to a raw confidence value.
+    
+    Args:
+        raw_confidence: Raw confidence (0-100 scale)
+        curve: Curve data dict with bins
+        
+    Returns:
+        Calibrated confidence as 0-1 float
+    """
+    bins = curve.get("bins", [])
+    if not bins:
+        # No bins, fall back to scaled raw
+        return (raw_confidence or 0) / 100.0
+    
+    # Find the appropriate bin
+    conf = raw_confidence or 0
+    bin_idx = min(int(conf // 10), 9)  # 0-9
+    
+    if bin_idx < len(bins):
+        bin_data = bins[bin_idx]
+        sample_count = bin_data.get("sample_count", 0)
+        
+        # Use calibrated value if bin has enough samples
+        min_bin_samples = int(os.environ.get('BIN_MIN_SAMPLES', '20'))
+        if sample_count >= min_bin_samples:
+            return bin_data.get("calibrated_confidence", conf / 100.0)
+    
+    # Fallback: return raw confidence scaled
+    return conf / 100.0
 
 
 def calibrate_from_dict_with_region(
