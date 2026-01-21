@@ -1,0 +1,146 @@
+<analysis>
+<original_problem_statement>
+The user has requested a series of features to be added to the Iron Stag application. The work has progressed through several major tasks:
+
+1.  **Android 15 & 16 Compliance:** Migrated deprecated edge-to-edge APIs and removed orientation/resizability restrictions to support large-screen devices, ensuring future compatibility.
+2.  **In-App Update System:** Implemented a full-stack system to notify users of new app versions, with backend-driven logic for both soft prompts and forced updates.
+3.  **Confidence & Age UX Improvements:** Enhanced the UI on the History and Scan Detail pages to provide clearer information when the AI model is uncertain about a deer's age, including capping the displayed confidence score to prevent misleading users.
+4.  **Backend Confidence Calibration (Phase 1 - Heuristics):** Implemented a multi-stage backend system to make confidence scores more reliable. This included:
+    *   A baseline heuristic calibration layer.
+    *   A region-aware calibration layer that applies different rules based on the user's geographical region, acknowledging that deer phenotypes and photo conditions vary by location.
+5.  **User State/Region Selection UI:** Added UI elements to the Profile screen (to set a Home State) and the Scan screen (for a per-scan override) to capture the location data needed for region-aware calibration.
+6.  **Backend Confidence Calibration (Phase 2 - Empirical):** The current and final request is to replace the heuristic-based calibration with a data-driven, empirical system. This involves building calibration curves from historical data where the outcome is known, making the confidence scores statistically grounded.
+</original_problem_statement>
+
+**User's preferred language**: English
+
+**what currently exists?**
+- A full-stack Expo (React Native) and FastAPI application.
+- The app includes user authentication, AI-powered deer scan analysis, scan history, and user profile management.
+- **Backend Calibration:** A sophisticated, multi-layered confidence calibration system is in place. It currently uses region-specific heuristics to adjust AI confidence scores. The database schema has been extended significantly to support this and the upcoming empirical calibration phase.
+- **Frontend Region Selection:** The UI is complete for users to set a Home State in their profile and override it on a per-scan basis.
+- **In-App Updates:** A complete, backend-driven in-app update notification system is functional.
+- **Android Compliance:** The native Android project is compliant with Android 15 (edge-to-edge) and Android 16 (large-screen resizability) requirements, implemented via Expo config plugins.
+
+**Last working item**:
+    - Last item agent was working: Starting the implementation of **Phase 2 - Empirical Confidence Calibration** for the backend. The goal is to replace the current heuristic-based confidence adjustments with a data-driven system that learns from historical scan outcomes. The agent had just created the  module to house the batch processing logic for building calibration curves and was about to modify  to integrate the new functionality.
+    - Status: IN PROGRESS
+    - Agent Testing Done: N
+    - Which testing method agent to use? backend testing agent. The agent should test the new admin endpoints for building/recalibrating curves using  with  first, before testing actual database modifications.
+    - User Testing Done: N
+
+**All Pending/In progress Issue list**:
+  - There are no outstanding bugs or issues. The only pending item is the large feature task currently in progress.
+
+**In progress Task List**:
+  - Task 1:  Implement Phase 2 - Empirical Confidence Calibration (P0)
+
+ Task Detail:
+  - Task 1: 
+     - Where to resume: The agent has created . The next step is to modify  to incorporate the logic for applying empirical curves and update its fallback chain. Following that, the agent must implement the curve-building and recalibration logic within  and expose them via new admin endpoints in .
+     - What will be achieved with this? This will upgrade the AI's honesty from heuristic rules to statistically-backed reliability, making confidence scores a true measure of historical accuracy. This completes a major product requirement for user trust.
+     - Status:  IN PROGRESS
+     - Should Test frontend/backend/both after fix? Backend
+     - Blocked on something: None
+
+**Upcoming and Future Tasks**
+    Future Tasks:
+    - **P1 - Backfill Existing Scans:** Once the empirical calibration system is stable and validated, a decision can be made on whether to run the  job on all historical data. The user has deferred this for now.
+    - **P2 - Enable Scheduled Curve Building:** The user requested that the curve-building job be implemented with a scheduler capability but disabled by default. A future task would be to enable and monitor this scheduled job.
+
+**Completed work in this session**
+- **Region-Specific Calibration (Phase 1 & UI):**
+  - **Backend:** Implemented a region-aware heuristic calibration system. This involved adding numerous fields to the  and  tables, creating , and updating all analysis and data retrieval endpoints.
+  - **Frontend:** Implemented the full UI for users to set a Home State in their profile and a Hunting Location on the scan screen, including a reusable  component and updates to .
+- **In-App Update System:**
+  - **Backend:** Added  endpoint and server-side configuration for managing app versions.
+  - **Frontend:** Created , , and integrated the update check on app launch () and the profile page ().
+- **Confidence Calibration UX:**
+  - Updated the  and  screens to cap misleadingly high confidence scores and clarify the language around uncertain age estimates.
+- **Android 16 Compliance:**
+  - Removed orientation and resizability restrictions by changing  and creating Expo config plugins () to modify the native project during prebuild, following the correct CNG workflow.
+- **Android 15 Compliance:**
+  - Verified that the migration for edge-to-edge APIs was already complete and committed.
+- **Emergent Dependency Check:**
+  - Confirmed that while the development environment uses Emergent preview URLs, the production builds configured in  correctly point to the user's Railway deployment, meaning there is no production dependency on Emergent.
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+- **Backend**: FastAPI, SQLAlchemy, PostgreSQL. A sophisticated, feature-flagged, multi-layered calibration architecture has been built for processing AI results.
+- **Frontend**: React Native, Expo (SDK 54), Expo Router, Zustand.
+- **Native Android Modification**: Continuous Native Generation (CNG) workflow using Expo Config Plugins to programmatically modify , , and  during the build process.
+- **Batch Processing**: The current task involves creating backend jobs for data processing (curve building, recalibration) that are designed to be triggered manually via API and are idempotent.
+
+**key DB schema**
+  - **users**:
+    - : , nullable. Stores the user's two-letter home state code.
+  - **scans**: (Heavily extended)
+    - , , , , , , , , : Fields for Phase 1 heuristic calibration.
+    - , , : Fields for region-aware calibration.
+  - **scan_labels** (Planned): To store ground truth data for training empirical curves.
+  - **calibration_curves** (Planned): To store the generated empirical calibration curves.
+
+**All files of reference**
+- **Newly Created**:
+  - : For Phase 2 batch jobs.
+  - : For region-aware calibration logic.
+  - : UI for state selection.
+  - : UI for app update prompts.
+  - : Frontend logic for update checks.
+  - : For Android 16 compliance.
+- **Heavily Modified**:
+  - : Major changes to add migrations, new endpoints, and integrate all calibration and version-check logic.
+  - : Integrated update checks and the home state selector.
+  - : Integrated the per-scan state override.
+
+**Critical Info for New Agent**
+- **You are in Phase 2 of a large backend feature.** The task is to implement empirical calibration. The user has provided extremely detailed requirements and clarifications (Messages 499 & 502). **You must follow them precisely.**
+- **Key decisions from the user for this task:**
+  - Do not seed production data; use test fixtures or dev-only scripts for testing.
+  - The curve-building job should be triggered manually via an admin endpoint by default.
+  - Curve activation must be manual via an admin endpoint.
+  - Implement safety features:  mode for jobs and locking to prevent concurrent builds.
+- **The architecture is designed to be modular and safe.** The fallback chain ( ->  -> ) is critical. Ensure your implementation respects this and that feature flags can disable the new curve-based logic cleanly.
+- The  and  directories are gitignored. Do not edit them directly. Use config plugins for any future native changes.
+
+**documents created in this job**
+- None.
+
+**Last 10 User Messages and any pending HUMAN messages** 
+1.  **User**: Approved the plan for Phase 2 Empirical Calibration with detailed instructions. **Status: IN PROGRESS**.
+2.  **User**: Asked to proceed with Phase 2 implementation. **Status: IN PROGRESS**.
+3.  **User**: Provided a detailed PRD for Phase 2 (Empirical Calibration). **Status: IN PROGRESS**.
+4.  **User**: Confirmed completion of the UI integration for state selection. **Status: Completed**.
+5.  **User**: Responded to a question about where users set their state, choosing Option C (Profile + per-scan override). **Status: Completed**.
+6.  **User**: Asked where the user sets their state/region. **Status: Completed**.
+7.  **User**: Approved the plan for region-specific calibration (Phase 1). **Status: Completed**.
+8.  **User**: Responded to a question about Phase 1 implementation details. **Status: Completed**.
+9.  **User**: Provided a detailed PRD for Region-Specific Calibration. **Status: Completed**.
+10. **User**: Approved the plan for Backend Confidence Calibration (Heuristics). **Status: Completed**.
+
+**Project Health Check:**
+- **Broken**: The backend is in an active state of development. The new DB tables/columns exist, but the logic to populate and use them for empirical calibration is incomplete. The app is functional but does not yet have the Phase 2 feature.
+- **Mocked**: No new mocks were introduced.
+
+**3rd Party Integrations**
+- **OpenAI GPT-4o Vision**: For deer analysis.
+- **RevenueCat**: For in-app subscriptions.
+- **PostgreSQL (Neon)**: Main database.
+- **Microsoft Graph**: For sending password reset emails.
+- **Expo (SDK 54)**: Core framework.
+- **Railway**: Target deployment platform for the backend.
+
+**Testing status**
+  - Testing agent used after significant changes: NO
+  - Troubleshoot agent used after agent stuck in loop: NO
+  - Test files created: []
+  - Known regressions: None known.
+
+**Credentials to test flow:**
+User account exists with Email:  and Username: . The password is unknown, but the password reset flow is functional.
+
+**What agent forgot to execute**
+The agent has been very thorough and has not overlooked any user requests or instructions identified in the conversation history.
+</analysis>
