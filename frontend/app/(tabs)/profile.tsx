@@ -45,6 +45,7 @@ import {
   ScanFace,
   Download,
   Smartphone,
+  MapPin,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
@@ -53,6 +54,7 @@ import { revenueCatService } from '../../services/RevenueCatService';
 import { LocalImageService } from '../../services/LocalImageService';
 import { appUpdateService, VersionCheckResponse } from '../../services/AppUpdateService';
 import { UpdateModal } from '../../components/UpdateModal';
+import { StatePicker, getStateName } from '../../components/StatePicker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 // Constants for Privacy & Legal URLs
