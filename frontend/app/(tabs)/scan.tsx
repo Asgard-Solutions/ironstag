@@ -30,12 +30,16 @@ import {
   FileText,
   ArrowLeft,
   Crown,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
+import { StatePicker, getStateName } from '../../components/StatePicker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
@@ -57,6 +61,11 @@ export default function ScanScreen() {
   const [scanStep, setScanStep] = useState<ScanStep>('main');
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+  
+  // Hunting location state (per-scan override)
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [huntingLocation, setHuntingLocation] = useState<string | null>(null);
+  const [locationExpanded, setLocationExpanded] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
