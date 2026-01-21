@@ -28,9 +28,13 @@ logger = logging.getLogger(__name__)
 class CalibrationJobConfig:
     """Configuration for calibration jobs."""
     
-    # Feature flags
-    CALIBRATION_CURVES_ENABLED: bool = os.environ.get('CALIBRATION_CURVES_ENABLED', 'false').lower() == 'true'
-    CALIBRATION_CURVE_SCHEDULE_ENABLED: bool = os.environ.get('CALIBRATION_CURVE_SCHEDULE_ENABLED', 'false').lower() == 'true'
+    @staticmethod
+    def get_curves_enabled() -> bool:
+        return os.environ.get('CALIBRATION_CURVES_ENABLED', 'false').lower() == 'true'
+    
+    @staticmethod
+    def get_schedule_enabled() -> bool:
+        return os.environ.get('CALIBRATION_CURVE_SCHEDULE_ENABLED', 'false').lower() == 'true'
     
     # Maturity gates
     GLOBAL_CURVE_MIN_SAMPLES: int = int(os.environ.get('GLOBAL_CURVE_MIN_SAMPLES', '500'))
@@ -45,6 +49,15 @@ class CalibrationJobConfig:
     
     # Recalibration batch size
     RECALIBRATION_BATCH_SIZE: int = int(os.environ.get('RECALIBRATION_BATCH_SIZE', '100'))
+    
+    # Keep as property for backward compatibility
+    @property
+    def CALIBRATION_CURVES_ENABLED(self) -> bool:
+        return self.get_curves_enabled()
+    
+    @property
+    def CALIBRATION_CURVE_SCHEDULE_ENABLED(self) -> bool:
+        return self.get_schedule_enabled()
 
 
 # ============================================================================
