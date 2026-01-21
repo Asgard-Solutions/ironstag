@@ -1279,16 +1279,25 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             notes=data.notes,
             raw_response=analysis,  # Preserve original for debugging
             created_at=datetime.utcnow(),
-            # New calibration fields
+            # Calibration fields
             raw_confidence=calibrated_analysis.get("raw_confidence"),
             age_confidence=calibrated_analysis.get("age_confidence"),
             recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
             age_uncertain=calibrated_analysis.get("age_uncertain", False),
-            calibration_version=calibrated_analysis.get("calibration_version")
+            calibration_version=calibrated_analysis.get("calibration_version"),
+            # Region fields (always persist, feature-flag controls response visibility)
+            region_key=calibrated_analysis.get("region_key"),
+            region_source=calibrated_analysis.get("region_source"),
+            region_state=calibrated_analysis.get("region_state"),
+            calibration_strategy=calibrated_analysis.get("calibration_strategy"),
+            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason")
         )
         await database.execute(query)
         
         await use_scan(user)
+        
+        # Build response with feature-flagged fields
+        config = RegionCalibrationConfig
         
         return DeerAnalysisResponse(
             id=scan_id,
@@ -1306,13 +1315,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
             created_at=datetime.utcnow(),
-            # New calibration fields
+            # Calibration fields
             age_uncertain=calibrated_analysis.get("age_uncertain"),
             confidence_breakdown={
                 "age": calibrated_analysis.get("age_confidence", 0),
                 "recommendation": calibrated_analysis.get("recommendation_confidence", 0)
             },
-            calibration_version=calibrated_analysis.get("calibration_version")
+            calibration_version=calibrated_analysis.get("calibration_version"),
+            # Region fields (feature-flagged)
+            region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
+            calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
+            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None
         )
         
     except openai.OpenAIError as e:
