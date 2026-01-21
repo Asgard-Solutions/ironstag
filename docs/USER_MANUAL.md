@@ -2,7 +2,7 @@
 
 ![Iron Stag Logo](../frontend/assets/images/iron_stag_logo.png)
 
-**Version 1.0.0**  
+**Version 1.1.0**  
 **Last Updated: January 2026**
 
 ---
@@ -13,16 +13,17 @@
 2. [Getting Started](#2-getting-started)
 3. [Account Management](#3-account-management)
 4. [Biometric Login](#4-biometric-login)
-5. [Scanning Deer](#5-scanning-deer)
-6. [Scan Results](#6-scan-results)
-7. [Scan History](#7-scan-history)
-8. [Learn Section](#8-learn-section)
-9. [Profile & Settings](#9-profile--settings)
-10. [Subscription Plans](#10-subscription-plans)
-11. [Data & Privacy](#11-data--privacy)
-12. [Troubleshooting](#12-troubleshooting)
-13. [FAQ](#13-faq)
-14. [Contact & Support](#14-contact--support)
+5. [Home State & Regional Calibration](#5-home-state--regional-calibration)
+6. [Scanning Deer](#6-scanning-deer)
+7. [Scan Results](#7-scan-results)
+8. [Scan History](#8-scan-history)
+9. [Learn Section](#9-learn-section)
+10. [Profile & Settings](#10-profile--settings)
+11. [Subscription Plans](#11-subscription-plans)
+12. [Data & Privacy](#12-data--privacy)
+13. [Troubleshooting](#13-troubleshooting)
+14. [FAQ](#14-faq)
+15. [Contact & Support](#15-contact--support)
 
 ---
 
@@ -39,6 +40,7 @@ Iron Stag is an AI-powered deer analysis application designed for hunters, wildl
 - **Body Condition Assessment** - Overall health evaluation
 - **Harvest Recommendation** - AI-powered HARVEST or PASS recommendation
 - **Confidence Score** - How certain the AI is about its analysis
+- **Regional Calibration** - Confidence adjusted for your hunting region
 
 ### Supported Deer Species
 
@@ -61,13 +63,15 @@ If you upload an image that isn't a Whitetail or Mule Deer, the app will notify 
 ### System Requirements
 
 **iOS:**
-- iOS 15.0 or later
+- iOS 13.0 or later
 - iPhone 8 or newer recommended
 - Camera access for photo capture
 - Internet connection required for AI analysis
 
 **Android:**
 - Android 10 (API 29) or later
+- Android 15 Edge-to-Edge compliant
+- Android 16 Large Screen / Foldable ready
 - 4GB RAM recommended
 - Camera access for photo capture
 - Internet connection required for AI analysis
@@ -94,7 +98,8 @@ When you first open Iron Stag:
 2. **Account Creation** - Create an account or sign in
 3. **Legal Disclaimer** - Accept the terms of use
 4. **Permissions** - Grant camera and photo library access
-5. **Ready to Scan** - Start analyzing deer!
+5. **Set Home State** - Configure your hunting region for better accuracy
+6. **Ready to Scan** - Start analyzing deer!
 
 ---
 
@@ -114,18 +119,11 @@ When you first open Iron Stag:
 4. Accept the legal disclaimer
 5. You're ready to start scanning!
 
-#### Sign in with Apple (iOS only)
-1. Tap "Sign in with Apple"
-2. Authenticate with Face ID, Touch ID, or your Apple ID password
-3. Choose to share or hide your email
-4. Your account is automatically created
-
 ### Signing In
 
 You can sign in using:
 - **Email Address** + Password
 - **Username** + Password
-- **Sign in with Apple** (iOS)
 
 ### Forgot Password
 
@@ -141,7 +139,7 @@ You can sign in using:
 ### Editing Your Profile
 
 1. Go to the **Profile** tab
-2. Tap "Edit Profile"
+2. Tap "Edit Profile" (pencil icon)
 3. You can update:
    - First Name
    - Last Name
@@ -218,23 +216,72 @@ Once enabled, the next time you open Iron Stag:
 
 ---
 
-## 5. Scanning Deer
+## 5. Home State & Regional Calibration
+
+### Why Set Your Home State?
+
+Deer vary significantly by region. A 3.5-year-old buck in Texas looks different from one in Wisconsin. By setting your **Home State**, Iron Stag calibrates its confidence scores specifically for your region's deer population.
+
+### Benefits of Regional Calibration
+
+- **More Accurate Confidence Scores** - Calibrated for your region's deer characteristics
+- **Better Age Estimates** - Accounts for regional body size variations
+- **Honest Uncertainty** - When the AI is unsure, it tells you clearly
+
+### Setting Your Home State
+
+Your Home State is prominently displayed in your Profile:
+
+1. Go to the **Profile** tab
+2. Find the **Home State** card (near the top)
+3. Tap to open the state selector
+4. Scroll or search for your state
+5. Tap your state to select it
+6. Your selection is saved automatically
+
+### Regional Calibration Zones
+
+Iron Stag groups states into calibration regions:
+
+| Region | States |
+|--------|--------|
+| **Midwest** | IA, IL, IN, KS, MI, MN, MO, NE, ND, OH, SD, WI |
+| **Southeast** | AL, AR, FL, GA, KY, LA, MS, NC, SC, TN, VA, WV |
+| **Northeast** | CT, DE, MA, MD, ME, NH, NJ, NY, PA, RI, VT |
+| **Plains** | CO, MT, NM, OK, WY |
+| **South Texas** | TX (southern region) |
+| **Northern** | AK, ID, OR, WA |
+
+### Per-Scan Location Override
+
+If you're hunting in a different state than your home state:
+
+1. On the **Scan** screen, look for "Hunting Location"
+2. Tap to select the state where you're currently hunting
+3. This overrides your home state for this scan only
+4. Your home state remains unchanged for future scans
+
+---
+
+## 6. Scanning Deer
 
 ### How to Scan
 
 Navigate to the **Scan** tab (center icon) to analyze a deer.
 
 #### Method 1: Take a Photo
-1. Tap "Open Camera"
+1. Tap "Scan Deer" or "Open Camera"
 2. Point your camera at the deer
 3. Tap the capture button
 4. Review the photo
-5. Tap "Analyze" to process
+5. Optionally set a different hunting location
+6. Tap "Analyze" to process
 
 #### Method 2: Upload from Gallery
 1. Tap "Choose from Library"
 2. Select a deer photo from your device
-3. Tap "Analyze" to process
+3. Optionally set a different hunting location
+4. Tap "Analyze" to process
 
 ### Best Practices for Accurate Results
 
@@ -246,6 +293,7 @@ For the most accurate analysis:
 - Include the full body if possible
 - Ensure the deer is in focus
 - Take photos during daylight or with good artificial lighting
+- Set your home state for calibrated results
 
 #### ❌ DON'T:
 - Use blurry or out-of-focus images
@@ -269,13 +317,14 @@ For the most accurate analysis:
 
 1. Your image is securely uploaded
 2. AI processes the image (typically 5-15 seconds)
-3. Results are displayed on the Scan Result screen
-4. Data is saved to your Scan History
-5. Image is stored locally on your device
+3. Regional calibration is applied based on your location
+4. Results are displayed on the Scan Result screen
+5. Data is saved to your Scan History
+6. Image is stored locally on your device
 
 ---
 
-## 6. Scan Results
+## 7. Scan Results
 
 ### Understanding Your Results
 
@@ -290,6 +339,16 @@ After a successful scan, you'll see:
 | **Recommendation** | HARVEST (green) or PASS (red) |
 | **Confidence** | AI certainty percentage (0-100%) |
 
+#### Understanding Confidence Scores
+
+Iron Stag uses a sophisticated confidence calibration system:
+
+- **High Confidence (70%+)** - The AI is confident in its assessment
+- **Moderate Confidence (50-70%)** - Reasonable certainty, but some uncertainty
+- **Low Confidence (<50%)** - The AI is uncertain; consider this a rough estimate
+
+**Age Uncertain Indicator:** When confidence is low, you may see "Age Uncertain" displayed. This means the AI acknowledges it's not sure about the age estimate.
+
 #### Antler Details (Bucks Only)
 | Field | Description |
 |-------|-------------|
@@ -302,6 +361,7 @@ After a successful scan, you'll see:
 |-------|-------------|
 | **Body Condition** | Health assessment (Excellent, Good, Fair, Poor) |
 | **Reasoning** | AI's explanation for the recommendation |
+| **Region** | The calibration region used for this scan |
 
 ### Editing Scan Results
 
@@ -326,13 +386,9 @@ If you believe the AI made an error, you can edit and re-analyze:
    - Any other relevant details
 3. Notes are saved automatically
 
-### Sharing Results
-
-(Coming in future update)
-
 ---
 
-## 7. Scan History
+## 8. Scan History
 
 ### Viewing History
 
@@ -343,6 +399,7 @@ If you believe the AI made an error, you can edit and re-analyze:
    - Deer type and sex
    - Age and point count
    - HARVEST/PASS recommendation
+   - Confidence score
    - Date scanned
 
 ### Searching & Filtering
@@ -385,71 +442,85 @@ Tap the filter dropdown buttons:
 
 ---
 
-## 8. Learn Section
+## 9. Learn Section
 
 ### Educational Content
 
 The **Learn** tab provides educational resources about:
 
-- **Deer Aging Techniques** - How to estimate deer age
-- **Antler Scoring** - Understanding the Boone & Crockett system
-- **Body Condition Indicators** - What to look for
+- **Deer Aging Techniques** - How to estimate deer age by body characteristics
+- **Antler Development** - Understanding antler growth patterns
+- **Body Condition Indicators** - What to look for in healthy deer
+- **Regional Variations** - How deer differ by geography
 - **Best Practices** - Tips for better photos and analysis
-- **Deer Management** - Conservation and management principles
 
 ### Content Categories
 
 - Beginner guides
 - Advanced techniques
-- Video tutorials (coming soon)
 - Seasonal tips
+- Deer management principles
 
 ---
 
-## 9. Profile & Settings
+## 10. Profile & Settings
 
 ### Profile Overview
 
 Your profile displays:
 - Name and username
+- Email address
+- Member since date
 - Current subscription tier
-- Account email
-- Membership since date
+- Home State setting
+
+### Home State
+
+Prominently displayed at the top of your profile:
+- Shows your currently selected state
+- Shows "Calibrated for your region" when set
+- Tap to change your home state
 
 ### Subscription Status
 
 View your current plan:
-- **Tracker** (Free) - Limited scans
+- **Tracker** (Free) - 3 scans
 - **Master Stag** (Premium) - Unlimited scans
 
 ### Storage Management
 
 Iron Stag stores scan images locally on your device.
 
-#### Automatic Cleanup
-Set an automatic cleanup interval:
+#### Cleanup Settings
+Set a cleanup interval:
 1. Go to Profile → Local Storage
 2. Select cleanup interval:
    - 30 days
    - 60 days
-   - 90 days
+   - 90 days (recommended)
    - 180 days
-   - Never
-3. Images older than the interval are automatically removed
+3. Images older than the interval can be cleaned up
 
 #### Manual Cleanup
 
 **Clean Up Old Images:**
-1. Tap "Clean Up Now"
+1. Tap "Clean Up Old Images"
 2. Images older than your set interval are deleted
 3. Associated scan history is also removed
 
 **Clear All Local Images:**
-1. Tap "Clear All Local Images"
-2. Confirm twice (destructive action)
+1. Tap "Clear All"
+2. Confirm (destructive action)
 3. ALL local images AND scan history are deleted
 
 ⚠️ **Warning:** Clearing images also deletes all your scan history from the database. This cannot be undone.
+
+### About Iron Stag
+
+View app information including:
+- Current app version
+- Check for updates
+- Legal information
 
 ### Restore Purchases
 
@@ -464,15 +535,6 @@ Use this when:
 - You reinstalled the app
 - You switched to a new device
 - Your subscription isn't being recognized
-
-### Request Data Deletion
-
-For GDPR/privacy compliance:
-
-1. Tap "Request Data Deletion"
-2. Choose to:
-   - Delete via the app (Delete Account)
-   - Email support for manual deletion
 
 ### Delete Account
 
@@ -490,7 +552,7 @@ For GDPR/privacy compliance:
 
 ---
 
-## 10. Subscription Plans
+## 11. Subscription Plans
 
 ### Tracker (Free)
 
@@ -498,7 +560,7 @@ For GDPR/privacy compliance:
 
 **Features:**
 - 3 lifetime scans
-- Basic AI analysis
+- Full AI analysis with regional calibration
 - Scan history
 - Local image storage
 
@@ -508,11 +570,12 @@ For GDPR/privacy compliance:
 
 ### Master Stag (Premium)
 
-**Price:** $9.99/month or $99.99/year
+**Price:** $9.99/month or $89.99/year (Save $30!)
 
 **Features:**
 - ✅ Unlimited scans
 - ✅ Full AI analysis with detailed reasoning
+- ✅ Regional calibration for accurate confidence
 - ✅ Scan history with search/filter
 - ✅ Edit and re-analyze scans
 - ✅ Priority support
@@ -521,8 +584,8 @@ For GDPR/privacy compliance:
 ### How to Subscribe
 
 1. Use all 3 free scans, OR
-2. Go to Profile → "Upgrade to Master Stag"
-3. Select Monthly or Annual plan
+2. Go to Profile → tap subscription card
+3. Select Monthly ($9.99/mo) or Annual ($89.99/yr)
 4. Complete purchase through App Store/Play Store
 5. Subscription activates immediately
 
@@ -547,7 +610,7 @@ For GDPR/privacy compliance:
 
 ---
 
-## 11. Data & Privacy
+## 12. Data & Privacy
 
 ### What Data We Collect
 
@@ -555,6 +618,7 @@ For GDPR/privacy compliance:
 |-----------|---------|----------|
 | Email | Account identification | Server |
 | Name | Personalization | Server |
+| Home State | Regional calibration | Server |
 | Deer Photos | AI analysis | Processed, not stored on server |
 | Scan Results | History feature | Server |
 | Device Info | App functionality | Local only |
@@ -562,7 +626,7 @@ For GDPR/privacy compliance:
 ### Image Handling
 
 1. **Upload:** Your image is sent to our secure server
-2. **Analysis:** AI processes the image
+2. **Analysis:** AI processes the image with regional calibration
 3. **Storage:** Image is stored locally on YOUR device only
 4. **Server:** We do NOT store your original images on our servers
 
@@ -576,18 +640,18 @@ For GDPR/privacy compliance:
 ### Your Rights
 
 - **Access:** View all your data in the app
-- **Export:** Download your scan history (coming soon)
 - **Delete:** Remove all your data via Delete Account
 - **Opt-out:** Cancel subscription anytime
 
 ### Privacy Policy
 
 View our full privacy policy at:
-`https://asgardsolution.io/privacy`
+- In-app: Profile → Privacy Policy
+- Web: https://asgardsolution.io/iron-stag/privacy
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### Common Issues
 
@@ -647,18 +711,21 @@ View our full privacy policy at:
 
 ---
 
-## 13. FAQ
+## 14. FAQ
 
 ### General
 
 **Q: Is Iron Stag accurate?**
-A: Our AI achieves approximately 85-95% accuracy depending on image quality. Results should be used as a guide, not definitive determination.
+A: Our AI achieves approximately 85-95% accuracy depending on image quality. The confidence score tells you how certain the AI is. Results should be used as a guide, not definitive determination.
 
 **Q: Does it work offline?**
 A: No. Internet connection is required for AI analysis.
 
 **Q: Can I use trail camera photos?**
 A: Yes! Trail camera photos work well, especially if they're clear and well-lit.
+
+**Q: Why should I set my home state?**
+A: Setting your home state enables regional calibration, making confidence scores more accurate for deer in your area.
 
 ### Scanning
 
@@ -671,6 +738,9 @@ A: Typically 5-15 seconds depending on your connection speed.
 **Q: Can I scan the same deer twice?**
 A: Yes, each scan uses one of your scan credits.
 
+**Q: What does "Age Uncertain" mean?**
+A: When the AI's confidence is low, it honestly tells you it's uncertain about the age estimate. Use such results as rough guidance.
+
 ### Subscription
 
 **Q: Do free scans refresh?**
@@ -681,6 +751,9 @@ A: Refunds are handled by Apple/Google according to their policies.
 
 **Q: What happens if I cancel?**
 A: You keep access until the end of your billing period, then revert to Tracker tier.
+
+**Q: What's the difference between monthly and annual?**
+A: Annual ($89.99/yr) saves you $30 compared to monthly ($9.99/mo × 12 = $119.88/yr).
 
 ### Privacy
 
@@ -701,12 +774,9 @@ A: You must enable it first from Profile → Security. It also requires a native
 **Q: Is biometric login secure?**
 A: Yes. We store a secure encrypted token, not your password. Only your biometric can unlock it.
 
-**Q: What if biometric stops working?**
-A: You can always use your email/password to login. If your session expired, login normally and re-enable biometric.
-
 ---
 
-## 14. Contact & Support
+## 15. Contact & Support
 
 ### Customer Support
 
@@ -738,23 +808,12 @@ support@asgardsolution.io
 
 ### Legal
 
-- **Terms of Service:** https://asgardsolution.io/terms
-- **Privacy Policy:** https://asgardsolution.io/privacy
+- **Terms of Service:** https://asgardsolution.io/iron-stag/terms
+- **Privacy Policy:** https://asgardsolution.io/iron-stag/privacy
 
 ---
 
-## Appendix A: Keyboard Shortcuts (Web)
-
-If using the web version:
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl/Cmd + U` | Upload image |
-| `Escape` | Close modal |
-
----
-
-## Appendix B: Supported Image Formats
+## Appendix A: Supported Image Formats
 
 | Format | Supported |
 |--------|-----------|
@@ -770,7 +829,7 @@ If using the web version:
 
 ---
 
-## Appendix C: Age Estimation Guide
+## Appendix B: Age Estimation Guide
 
 The AI considers multiple factors:
 
@@ -781,6 +840,19 @@ The AI considers multiple factors:
 | 3.5 yrs | Muscular, developed chest, full antler potential |
 | 4.5 yrs | Heavy body, thick neck, may have belly sag |
 | 5.5+ yrs | Swayed back, loose skin, pot belly, thick body |
+
+---
+
+## Appendix C: Regional Calibration Zones
+
+| Region | Characteristics | States |
+|--------|-----------------|--------|
+| **Midwest** | Large-bodied deer, consistent conditions | IA, IL, IN, KS, MI, MN, MO, NE, ND, OH, SD, WI |
+| **Southeast** | Varied terrain, longer seasons | AL, AR, FL, GA, KY, LA, MS, NC, SC, TN, VA, WV |
+| **Northeast** | Dense cover, cold winters | CT, DE, MA, MD, ME, NH, NJ, NY, PA, RI, VT |
+| **Plains** | Open country, mule deer mix | CO, MT, NM, OK, WY |
+| **South Texas** | Late rut, unique genetics | TX |
+| **Northern** | Short seasons, large deer | AK, ID, OR, WA |
 
 ---
 
