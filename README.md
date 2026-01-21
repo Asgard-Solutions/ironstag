@@ -20,11 +20,10 @@ Iron Stag is a mobile application that uses GPT-4 Vision to analyze deer photos,
 - **User Profiles** - Set your home state for calibrated regional analysis
 
 ### Subscription Tiers
-| Tier | Scans | Features |
-|------|-------|----------|
-| **Tracker** (Free) | 3 scans | Basic analysis |
-| **Hunter** | 15/month | Full analysis + history |
-| **Outfitter** | Unlimited | All features + priority |
+| Tier | Price | Scans |
+|------|-------|-------|
+| **Tracker** (Free) | Free | 3 scans |
+| **Master Stag** | $9.99/month or $89.99/year | Unlimited |
 
 ### Platform Support
 - iOS 13+
