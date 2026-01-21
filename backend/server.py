@@ -201,11 +201,15 @@ class DeerAnalysisResponse(BaseModel):
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
     body_condition: Optional[str] = None
-    confidence: Optional[int] = None
+    confidence: Optional[int] = None  # Legacy field - holds recommendation_confidence for backward compat
     recommendation: Optional[str] = None
     reasoning: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime
+    # New calibration fields (optional for backward compatibility)
+    age_uncertain: Optional[bool] = None
+    confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
+    calibration_version: Optional[str] = None
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
