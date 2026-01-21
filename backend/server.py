@@ -32,6 +32,21 @@ from region_calibration import (
     RegionCalibrationConfig
 )
 
+# Import calibration jobs module for Phase 2 empirical calibration
+from calibration_jobs import (
+    build_curves_from_labels,
+    activate_curve,
+    deactivate_curve,
+    recalibrate_scans,
+    get_curves_summary,
+    get_curve_details,
+    get_job_status,
+    acquire_job_lock,
+    release_job_lock,
+    is_job_running,
+    CalibrationJobConfig
+)
+
 ROOT_DIR = Path(__file__).parent
 if os.getenv("RAILWAY_ENVIRONMENT") is None:
     load_dotenv(ROOT_DIR / ".env")
