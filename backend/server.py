@@ -377,9 +377,13 @@ def verify_token(token: str) -> str:
 
 def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     """
-    Helper to build DeerAnalysisResponse with calibration fields.
+    Helper to build DeerAnalysisResponse with calibration and region fields.
     Handles both new scans (with calibration data) and legacy scans (without).
+    
+    Region fields are feature-flagged in response but always persisted internally.
     """
+    config = RegionCalibrationConfig
+    
     # Build confidence breakdown if we have calibration data
     confidence_breakdown = None
     if scan.get("age_confidence") is not None or scan.get("recommendation_confidence") is not None:
@@ -387,6 +391,11 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
             "age": scan.get("age_confidence") or 0,
             "recommendation": scan.get("recommendation_confidence") or scan.get("confidence") or 0
         }
+    
+    # Region fields (feature-flagged)
+    region_key = scan.get("region_key") if config.CALIBRATION_SHOW_REGION else None
+    calibration_strategy = scan.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None
+    calibration_fallback_reason = scan.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None
     
     return DeerAnalysisResponse(
         id=scan["id"],
@@ -404,10 +413,14 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         reasoning=scan["reasoning"],
         notes=scan["notes"],
         created_at=scan["created_at"],
-        # Calibration fields (None for legacy scans)
+        # Calibration fields
         age_uncertain=scan.get("age_uncertain"),
         confidence_breakdown=confidence_breakdown,
-        calibration_version=scan.get("calibration_version")
+        calibration_version=scan.get("calibration_version"),
+        # Region fields (feature-flagged)
+        region_key=region_key,
+        calibration_strategy=calibration_strategy,
+        calibration_fallback_reason=calibration_fallback_reason
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
