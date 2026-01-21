@@ -1133,25 +1133,34 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 }
             )
         
+        # Apply confidence calibration
+        calibration_result, calibrated_analysis = calibrate_from_dict(analysis)
+        
         scan_id = str(uuid.uuid4())
         
         query = scans_table.insert().values(
             id=scan_id,
             user_id=user["id"],
             local_image_id=data.local_image_id,
-            deer_age=analysis.get("deer_age"),
-            deer_type=analysis.get("deer_type"),
-            deer_sex=analysis.get("deer_sex"),
-            antler_points=analysis.get("antler_points"),
-            antler_points_left=analysis.get("antler_points_left"),
-            antler_points_right=analysis.get("antler_points_right"),
-            body_condition=analysis.get("body_condition"),
-            confidence=analysis.get("confidence"),
-            recommendation=analysis.get("recommendation"),
-            reasoning=analysis.get("reasoning"),
+            deer_age=calibrated_analysis.get("deer_age"),  # May be null if age_uncertain
+            deer_type=calibrated_analysis.get("deer_type"),
+            deer_sex=calibrated_analysis.get("deer_sex"),
+            antler_points=calibrated_analysis.get("antler_points"),
+            antler_points_left=calibrated_analysis.get("antler_points_left"),
+            antler_points_right=calibrated_analysis.get("antler_points_right"),
+            body_condition=calibrated_analysis.get("body_condition"),
+            confidence=calibrated_analysis.get("confidence"),  # Now holds recommendation_confidence
+            recommendation=calibrated_analysis.get("recommendation"),
+            reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
-            raw_response=analysis,
-            created_at=datetime.utcnow()
+            raw_response=analysis,  # Preserve original for debugging
+            created_at=datetime.utcnow(),
+            # New calibration fields
+            raw_confidence=calibrated_analysis.get("raw_confidence"),
+            age_confidence=calibrated_analysis.get("age_confidence"),
+            recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
+            age_uncertain=calibrated_analysis.get("age_uncertain", False),
+            calibration_version=calibrated_analysis.get("calibration_version")
         )
         await database.execute(query)
         
@@ -1161,18 +1170,25 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             id=scan_id,
             user_id=user["id"],
             local_image_id=data.local_image_id,
-            deer_age=analysis.get("deer_age"),
-            deer_type=analysis.get("deer_type"),
-            deer_sex=analysis.get("deer_sex"),
-            antler_points=analysis.get("antler_points"),
-            antler_points_left=analysis.get("antler_points_left"),
-            antler_points_right=analysis.get("antler_points_right"),
-            body_condition=analysis.get("body_condition"),
-            confidence=analysis.get("confidence"),
-            recommendation=analysis.get("recommendation"),
-            reasoning=analysis.get("reasoning"),
+            deer_age=calibrated_analysis.get("deer_age"),
+            deer_type=calibrated_analysis.get("deer_type"),
+            deer_sex=calibrated_analysis.get("deer_sex"),
+            antler_points=calibrated_analysis.get("antler_points"),
+            antler_points_left=calibrated_analysis.get("antler_points_left"),
+            antler_points_right=calibrated_analysis.get("antler_points_right"),
+            body_condition=calibrated_analysis.get("body_condition"),
+            confidence=calibrated_analysis.get("confidence"),  # Recommendation confidence for backward compat
+            recommendation=calibrated_analysis.get("recommendation"),
+            reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            # New calibration fields
+            age_uncertain=calibrated_analysis.get("age_uncertain"),
+            confidence_breakdown={
+                "age": calibrated_analysis.get("age_confidence", 0),
+                "recommendation": calibrated_analysis.get("recommendation_confidence", 0)
+            },
+            calibration_version=calibrated_analysis.get("calibration_version")
         )
         
     except openai.OpenAIError as e:
