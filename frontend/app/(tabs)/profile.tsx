@@ -1227,6 +1227,16 @@ export default function ProfileScreen() {
         />
       )}
 
+      {/* State Picker Modal */}
+      <StatePicker
+        visible={showStatePicker}
+        selectedState={user?.state || null}
+        onSelect={handleStateSelect}
+        onClose={() => setShowStatePicker(false)}
+        title="Select Home State"
+        allowClear={true}
+      />
+
       {/* Cleanup Interval Picker Modal */}
       <Modal
         visible={showIntervalPicker}
