@@ -108,6 +108,13 @@ export default function ProfileScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
+  
+  // App Update state
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<VersionCheckResponse | null>(null);
+  const currentAppVersion = appUpdateService.getCurrentVersion();
+  const buildNumber = appUpdateService.getBuildNumber();
 
   // Get biometric state from auth store
   const { biometric, checkBiometricAvailability, enableBiometric, disableBiometric } = useAuthStore();
@@ -136,6 +143,53 @@ export default function ProfileScreen() {
       fetchScanStats();
     }, [fetchScanStats])
   );
+
+  // Handle manual check for updates
+  const handleCheckForUpdates = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Not Available', 'App updates are only available on mobile devices.');
+      return;
+    }
+    
+    setIsCheckingUpdate(true);
+    try {
+      // Clear any previously dismissed version to force showing update
+      await appUpdateService.clearDismissedVersion();
+      
+      const result = await appUpdateService.checkForUpdates(true);
+      
+      if (result && result.update_available) {
+        setUpdateInfo(result);
+        setUpdateModalVisible(true);
+      } else {
+        Alert.alert(
+          'Up to Date',
+          `You're running the latest version (v${currentAppVersion}).`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Check for updates error:', error);
+      Alert.alert('Error', 'Unable to check for updates. Please try again later.');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  // Handle update button press
+  const handleUpdate = async () => {
+    if (updateInfo?.store_url) {
+      await appUpdateService.openStore(updateInfo.store_url);
+    }
+  };
+
+  // Handle dismiss button press
+  const handleUpdateDismiss = async () => {
+    if (updateInfo) {
+      await appUpdateService.dismissVersion(updateInfo.latest_version);
+    }
+    setUpdateModalVisible(false);
+  };
 
   // Format date for display
   const formatDate = (date: Date | null): string | null => {
