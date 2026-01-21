@@ -306,6 +306,41 @@ def verify_token(token: str) -> str:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+def build_scan_response(scan: dict) -> DeerAnalysisResponse:
+    """
+    Helper to build DeerAnalysisResponse with calibration fields.
+    Handles both new scans (with calibration data) and legacy scans (without).
+    """
+    # Build confidence breakdown if we have calibration data
+    confidence_breakdown = None
+    if scan.get("age_confidence") is not None or scan.get("recommendation_confidence") is not None:
+        confidence_breakdown = {
+            "age": scan.get("age_confidence") or 0,
+            "recommendation": scan.get("recommendation_confidence") or scan.get("confidence") or 0
+        }
+    
+    return DeerAnalysisResponse(
+        id=scan["id"],
+        user_id=scan["user_id"],
+        local_image_id=scan["local_image_id"],
+        deer_age=scan["deer_age"],
+        deer_type=scan["deer_type"],
+        deer_sex=scan["deer_sex"],
+        antler_points=scan["antler_points"],
+        antler_points_left=scan.get("antler_points_left"),
+        antler_points_right=scan.get("antler_points_right"),
+        body_condition=scan["body_condition"],
+        confidence=scan["confidence"],
+        recommendation=scan["recommendation"],
+        reasoning=scan["reasoning"],
+        notes=scan["notes"],
+        created_at=scan["created_at"],
+        # Calibration fields (None for legacy scans)
+        age_uncertain=scan.get("age_uncertain"),
+        confidence_breakdown=confidence_breakdown,
+        calibration_version=scan.get("calibration_version")
+    )
+
 async def get_current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
