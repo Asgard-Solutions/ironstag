@@ -114,3 +114,7 @@ chainlit.md
 .ipynb_checkpoints/
 .vercel
 android-sdk/
+-e 
+# Environment files
+*.env
+*.env.*
