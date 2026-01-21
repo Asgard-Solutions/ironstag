@@ -257,10 +257,14 @@ class DeerAnalysisResponse(BaseModel):
     reasoning: Optional[str] = None
     notes: Optional[str] = None
     created_at: datetime
-    # New calibration fields (optional for backward compatibility)
+    # Calibration fields
     age_uncertain: Optional[bool] = None
     confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
     calibration_version: Optional[str] = None
+    # Region fields (feature-flagged in response, always persisted)
+    region_key: Optional[str] = None
+    calibration_strategy: Optional[str] = None
+    calibration_fallback_reason: Optional[str] = None
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
