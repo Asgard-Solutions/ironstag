@@ -1116,6 +1116,34 @@ export default function ProfileScreen() {
           <Text style={styles.deleteAccountBtnText}>Delete Account</Text>
         </TouchableOpacity>
 
+        {/* App Version Section */}
+        <View style={styles.versionSection}>
+          <View style={styles.versionHeader}>
+            <Smartphone size={18} color={colors.textMuted} />
+            <Text style={styles.versionTitle}>App Version</Text>
+          </View>
+          <View style={styles.versionInfo}>
+            <Text style={styles.versionNumber}>v{currentAppVersion}</Text>
+            <Text style={styles.buildNumber}>Build {buildNumber}</Text>
+          </View>
+          {(Platform.OS === 'ios' || Platform.OS === 'android') && (
+            <TouchableOpacity 
+              style={styles.checkUpdateBtn}
+              onPress={handleCheckForUpdates}
+              disabled={isCheckingUpdate}
+            >
+              {isCheckingUpdate ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <Download size={16} color={colors.primary} />
+                  <Text style={styles.checkUpdateBtnText}>Check for Updates</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* Footer */}
         <View style={styles.footer}>
           <Shield size={20} color={colors.textMuted} />
@@ -1123,6 +1151,21 @@ export default function ProfileScreen() {
           <Text style={styles.footerCopyright}>© 2026 Asgard Solutions LLC</Text>
         </View>
       </ScrollView>
+
+      {/* App Update Modal */}
+      {updateInfo && (
+        <UpdateModal
+          visible={updateModalVisible}
+          updateMode={updateInfo.update_mode as 'soft' | 'force'}
+          latestVersion={updateInfo.latest_version}
+          currentVersion={currentAppVersion}
+          releaseNotes={updateInfo.release_notes}
+          message={updateInfo.message}
+          storeName={appUpdateService.getStoreName()}
+          onUpdate={handleUpdate}
+          onDismiss={handleUpdateDismiss}
+        />
+      )}
 
       {/* Cleanup Interval Picker Modal */}
       <Modal
