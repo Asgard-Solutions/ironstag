@@ -58,6 +58,8 @@ users_table = Table(
     Column("revenuecat_id", String(100)),
     Column("subscription_expires_at", DateTime),
     Column("apple_user_id", String(100), nullable=True),
+    # User profile state for region fallback
+    Column("state", String(2), nullable=True),  # Two-letter state code (e.g., IA, TX)
 )
 
 scans_table = Table(
@@ -79,12 +81,50 @@ scans_table = Table(
     Column("notes", Text),
     Column("raw_response", JSON),
     Column("created_at", DateTime, default=datetime.utcnow),
-    # New columns for confidence calibration
+    # Confidence calibration fields
     Column("raw_confidence", Integer),  # Original model confidence (preserved for analysis)
     Column("age_confidence", Integer),  # Calibrated age estimation confidence
     Column("recommendation_confidence", Integer),  # Calibrated recommendation confidence
     Column("age_uncertain", Boolean, default=False),  # True if age confidence below threshold
-    Column("calibration_version", String(50)),  # e.g., "v1-heuristic"
+    Column("calibration_version", String(50)),  # e.g., "v2-region-heuristic"
+    # Region-specific calibration fields
+    Column("region_key", String(50)),  # e.g., midwest, southeast, south_texas
+    Column("region_source", String(50)),  # scan_input, user_profile, fallback_unknown
+    Column("region_state", String(2)),  # Two-letter state code when available
+    Column("raw_age_confidence", Integer),  # Raw age confidence from model (if separate)
+    Column("raw_recommendation_confidence", Integer),  # Raw recommendation confidence from model
+    Column("calibration_strategy", String(50)),  # heuristic, global_curve, region_curve
+    Column("calibration_fallback_reason", String(100)),  # Why fallback was used
+)
+
+# Scan labels table for future empirical calibration (Phase 2)
+scan_labels_table = Table(
+    "scan_labels",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("scan_id", String(36), nullable=False),
+    Column("label_source", String(50)),  # expert, user_self_report, admin_review
+    Column("true_age_bucket", String(20)),  # Age range bucket
+    Column("age_correct", Boolean),  # Was age estimation correct
+    Column("recommendation_correct", Boolean),  # Was recommendation correct
+    Column("created_at", DateTime, default=datetime.utcnow),
+)
+
+# Calibration curves table for future empirical calibration (Phase 2)
+calibration_curves_table = Table(
+    "calibration_curves",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("calibration_version", String(50), nullable=False),  # e.g., v2-curve
+    Column("curve_type", String(50), nullable=False),  # global_age, global_reco, region_age, region_reco
+    Column("region_key", String(50)),  # nullable for global curves
+    Column("method", String(50)),  # binning, isotonic, platt
+    Column("bins", JSON),  # Bin data for binning method
+    Column("min_samples_required", Integer, default=200),
+    Column("sample_count", Integer, default=0),
+    Column("is_active", Boolean, default=False),
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("updated_at", DateTime, default=datetime.utcnow),
 )
 
 password_reset_codes_table = Table(
