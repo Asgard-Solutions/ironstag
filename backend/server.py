@@ -1449,23 +1449,7 @@ async def edit_scan_with_reanalysis(
     query = scans_table.select().where(scans_table.c.id == scan_id)
     updated_scan = await database.fetch_one(query)
     
-    return DeerAnalysisResponse(
-        id=updated_scan["id"],
-        user_id=updated_scan["user_id"],
-        local_image_id=updated_scan["local_image_id"],
-        deer_age=updated_scan["deer_age"],
-        deer_type=updated_scan["deer_type"],
-        deer_sex=updated_scan["deer_sex"],
-        antler_points=updated_scan["antler_points"],
-        antler_points_left=updated_scan["antler_points_left"],
-        antler_points_right=updated_scan["antler_points_right"],
-        body_condition=updated_scan["body_condition"],
-        confidence=updated_scan["confidence"],
-        recommendation=updated_scan["recommendation"],
-        reasoning=updated_scan["reasoning"],
-        notes=updated_scan["notes"],
-        created_at=updated_scan["created_at"]
-    )
+    return build_scan_response(dict(updated_scan))
 
 @api_router.delete("/scans/{scan_id}")
 async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
