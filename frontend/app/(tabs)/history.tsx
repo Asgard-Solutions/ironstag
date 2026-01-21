@@ -13,7 +13,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -22,6 +22,10 @@ import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format } from 'date-fns';
+
+// ============ CONFIDENCE CALIBRATION CONSTANTS ============
+// Cap confidence at this value when age is uncertain/unknown
+const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 
 interface Scan {
   id: string;
@@ -37,6 +41,45 @@ interface Scan {
   recommendation: string | null;
   notes: string | null;
   created_at: string;
+}
+
+// ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
+
+/**
+ * Check if the age is uncertain/unknown
+ * Age is considered uncertain if:
+ * - It's null or undefined
+ * - It's 0 (invalid age)
+ * - It's a very low value that indicates estimation failure
+ */
+function isAgeUncertain(age: number | null | undefined): boolean {
+  return age === null || age === undefined || age === 0;
+}
+
+/**
+ * Get display-calibrated confidence value
+ * If age is uncertain, cap confidence at UNCERTAIN_AGE_CONFIDENCE_CAP
+ * This is a UI-level guardrail - does not modify backend data
+ */
+function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
+  const confidence = rawConfidence || 0;
+  
+  if (isAgeUncertain(age)) {
+    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
+  }
+  
+  return confidence;
+}
+
+/**
+ * Get age display text with uncertainty handling
+ * Returns user-friendly text instead of "? yrs"
+ */
+function getAgeDisplayText(age: number | null): string {
+  if (isAgeUncertain(age)) {
+    return 'Uncertain';
+  }
+  return `${age} yrs`;
 }
 
 // Component to handle async image loading
