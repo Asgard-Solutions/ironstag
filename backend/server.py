@@ -1665,6 +1665,16 @@ async def get_version_config():
     """
     return APP_VERSION_CONFIG
 
+# ============ CALIBRATION ADMIN ENDPOINTS ============
+
+@api_router.get("/admin/calibration-config")
+async def get_calibration_config():
+    """
+    Get current confidence calibration configuration.
+    Useful for debugging and verifying calibration settings.
+    """
+    return get_calibration_metadata()
+
 # ============ HEALTH CHECK ============
 
 @app.get("/health")
