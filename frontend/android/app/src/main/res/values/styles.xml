@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-  <!-- Main App Theme - Android 15 Edge-to-Edge Compatible -->
+  <!-- Main App Theme - Android 15/16 Edge-to-Edge & Multi-Window Compatible -->
   <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
     <!-- Remove deprecated statusBarColor - handled in MainActivity with WindowInsetsController -->
     <!-- <item name="android:statusBarColor">@android:color/transparent</item> -->
@@ -23,6 +23,10 @@
     
     <!-- Window background -->
     <item name="android:windowBackground">@color/activityBackground</item>
+    
+    <!-- Android 16+ Multi-Window & Resizability Support -->
+    <!-- Allow activity to be resized for split-screen, foldables, and tablets -->
+    <item name="android:resizeableActivity">true</item>
   </style>
   
   <!-- Splash Screen Theme -->
