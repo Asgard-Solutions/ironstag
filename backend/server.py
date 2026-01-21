@@ -23,8 +23,14 @@ from databases import Database
 import sqlalchemy
 from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Text, JSON
 
-# Import confidence calibration module
-from calibration import calibrate_from_dict, get_calibration_metadata, CalibrationConfig
+# Import region-aware confidence calibration module (replaces basic calibration)
+from region_calibration import (
+    calibrate_from_dict_with_region,
+    get_region_calibration_metadata,
+    get_calibration_status,
+    get_all_regions,
+    RegionCalibrationConfig
+)
 
 ROOT_DIR = Path(__file__).parent
 if os.getenv("RAILWAY_ENVIRONMENT") is None:
