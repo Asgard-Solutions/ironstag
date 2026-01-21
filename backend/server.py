@@ -1528,6 +1528,127 @@ async def get_learn_content():
         ]
     }
 
+# ============ APP VERSION CHECK ============
+
+# Version configuration - Update these values when releasing new versions
+# This can also be moved to environment variables or database for dynamic updates
+APP_VERSION_CONFIG = {
+    "ios": {
+        "latest_version": "1.0.0",
+        "min_supported_version": "1.0.0",
+        "store_url": "https://apps.apple.com/app/iron-stag/id6757864977"
+    },
+    "android": {
+        "latest_version": "1.0.0",
+        "min_supported_version": "1.0.0",
+        "store_url": "https://play.google.com/store/apps/details?id=io.asgardsolution.ironstag"
+    },
+    # Global settings
+    "update_mode": "none",  # 'none', 'soft', 'force' - Override for all platforms
+    "release_notes": None,  # Optional release notes to show users
+    "force_update_message": "A critical update is required to continue using Iron Stag. Please update now for the best experience.",
+    "soft_update_message": "A new version of Iron Stag is available with improvements and bug fixes."
+}
+
+def compare_versions(current: str, target: str) -> int:
+    """
+    Compare two semantic version strings.
+    Returns: -1 if current < target, 0 if equal, 1 if current > target
+    """
+    def parse_version(v: str) -> tuple:
+        # Handle versions like "1.0.0" or "1.0.0-beta.1"
+        parts = v.split('-')[0].split('.')
+        return tuple(int(p) for p in parts)
+    
+    try:
+        current_parts = parse_version(current)
+        target_parts = parse_version(target)
+        
+        # Pad with zeros if needed
+        max_len = max(len(current_parts), len(target_parts))
+        current_parts = current_parts + (0,) * (max_len - len(current_parts))
+        target_parts = target_parts + (0,) * (max_len - len(target_parts))
+        
+        for c, t in zip(current_parts, target_parts):
+            if c < t:
+                return -1
+            elif c > t:
+                return 1
+        return 0
+    except Exception:
+        return 0  # If parsing fails, assume versions are equal
+
+@api_router.post("/app/version-check", response_model=VersionCheckResponse)
+async def check_app_version(request: VersionCheckRequest):
+    """
+    Check if the app needs to be updated.
+    
+    Returns update_mode:
+    - 'none': App is up to date
+    - 'soft': Update available but optional
+    - 'force': Update required (current version below minimum supported)
+    
+    Logic:
+    1. If current < min_supported → force update
+    2. If current < latest → soft update (unless global update_mode is 'force')
+    3. Otherwise → no update needed
+    """
+    platform = request.platform.lower()
+    current_version = request.current_version
+    
+    # Get platform-specific config
+    if platform not in ['ios', 'android']:
+        raise HTTPException(status_code=400, detail="Invalid platform. Use 'ios' or 'android'")
+    
+    platform_config = APP_VERSION_CONFIG.get(platform, {})
+    latest_version = platform_config.get("latest_version", "1.0.0")
+    min_supported_version = platform_config.get("min_supported_version", "1.0.0")
+    store_url = platform_config.get("store_url", "")
+    
+    global_update_mode = APP_VERSION_CONFIG.get("update_mode", "none")
+    release_notes = APP_VERSION_CONFIG.get("release_notes")
+    
+    # Determine update status
+    is_below_minimum = compare_versions(current_version, min_supported_version) < 0
+    is_below_latest = compare_versions(current_version, latest_version) < 0
+    
+    # Determine update_mode
+    if is_below_minimum:
+        # Force update - version is too old
+        update_mode = "force"
+        message = APP_VERSION_CONFIG.get("force_update_message")
+        update_available = True
+    elif is_below_latest:
+        # Update available - use global setting or default to soft
+        update_mode = global_update_mode if global_update_mode != "none" else "soft"
+        message = APP_VERSION_CONFIG.get("soft_update_message")
+        update_available = True
+    else:
+        # Up to date
+        update_mode = "none"
+        message = None
+        update_available = False
+    
+    logger.info(f"Version check: platform={platform}, current={current_version}, "
+                f"latest={latest_version}, min={min_supported_version}, mode={update_mode}")
+    
+    return VersionCheckResponse(
+        update_available=update_available,
+        update_mode=update_mode,
+        latest_version=latest_version,
+        min_supported_version=min_supported_version,
+        release_notes=release_notes,
+        store_url=store_url,
+        message=message
+    )
+
+@api_router.get("/app/version-config")
+async def get_version_config():
+    """
+    Get current version configuration (for admin/debugging).
+    """
+    return APP_VERSION_CONFIG
+
 # ============ HEALTH CHECK ============
 
 @app.get("/health")
