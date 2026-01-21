@@ -2709,4 +2709,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.primary,
   },
+  // State picker styles
+  stateCodeBadge: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+  },
+  stateCodeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.background,
+  },
+  regionHelpText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+    lineHeight: 18,
+  },
 });
