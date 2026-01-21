@@ -260,11 +260,13 @@ export default function HistoryScreen() {
             </View>
             
             {/* Right side - Confidence */}
-            <View style={styles.confidenceContainer}>
-              <Text style={styles.confidenceValue}>
-                {item.confidence || 0}%
+            <View style={[styles.confidenceContainer, ageIsUncertain && styles.confidenceContainerUncertain]}>
+              <Text style={[styles.confidenceValue, ageIsUncertain && styles.confidenceValueUncertain]}>
+                {displayConfidence}%
               </Text>
-              <Text style={styles.confidenceLabel}>confidence</Text>
+              <Text style={[styles.confidenceLabel, ageIsUncertain && styles.confidenceLabelUncertain]}>
+                Model confidence
+              </Text>
             </View>
           </View>
         </View>
