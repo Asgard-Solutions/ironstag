@@ -47,6 +47,24 @@ from calibration_jobs import (
     CalibrationJobConfig
 )
 
+# Import Phase 3 adaptive calibration module
+from adaptive_calibration import (
+    AdaptiveCalibrationConfig,
+    detect_calibration_drift,
+    compute_region_maturity,
+    generate_model_recommendations,
+    get_phase3_status,
+    get_drift_summary,
+    get_maturity_summary,
+    get_recommendations_summary,
+    acquire_phase3_lock,
+    release_phase3_lock,
+    TrustSource,
+    DriftSeverity,
+    MaturityLevel,
+    RecommendationType
+)
+
 ROOT_DIR = Path(__file__).parent
 if os.getenv("RAILWAY_ENVIRONMENT") is None:
     load_dotenv(ROOT_DIR / ".env")
