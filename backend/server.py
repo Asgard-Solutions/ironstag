@@ -1882,6 +1882,236 @@ async def get_calibration_regions():
     """
     return get_all_regions()
 
+# ============ PHASE 2: EMPIRICAL CALIBRATION ADMIN ENDPOINTS ============
+
+class BuildCurvesRequest(BaseModel):
+    dry_run: bool = True  # Default to dry run for safety
+
+class ActivateCurveRequest(BaseModel):
+    curve_id: str
+    deactivate_others: bool = True  # Deactivate other curves of same type/region
+
+class RecalibrateScansRequest(BaseModel):
+    dry_run: bool = True  # Default to dry run for safety
+    curve_version: Optional[str] = None  # Optional specific version
+    since: Optional[datetime] = None  # Only scans after this date
+    region: Optional[str] = None  # Only scans in this region
+
+@api_router.get("/admin/calibration/curves")
+async def get_calibration_curves():
+    """
+    Get summary of all calibration curves.
+    Returns:
+    - Total curves count
+    - Active curves count
+    - Mature curves count
+    - List of all curves with their status
+    """
+    try:
+        return await get_curves_summary(database, calibration_curves_table)
+    except Exception as e:
+        logger.error(f"Error fetching curves summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/calibration/curves/{curve_id}")
+async def get_calibration_curve_details(curve_id: str):
+    """
+    Get detailed information about a specific curve.
+    Includes:
+    - All bin data
+    - Sample counts
+    - Maturity status
+    """
+    try:
+        curve = await get_curve_details(database, calibration_curves_table, curve_id)
+        if not curve:
+            raise HTTPException(status_code=404, detail="Curve not found")
+        return curve
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching curve details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/calibration/jobs/status")
+async def get_calibration_jobs_status():
+    """
+    Get status of calibration jobs.
+    Returns:
+    - Whether build_curves job is running
+    - Whether recalibrate_scans job is running
+    - Current configuration
+    """
+    return get_job_status()
+
+@api_router.post("/admin/calibration/build-curves")
+async def build_calibration_curves(data: BuildCurvesRequest):
+    """
+    Build calibration curves from labeled scan data.
+    
+    This job:
+    - Reads all scan_labels joined with scans
+    - Groups by curve type and region
+    - Computes empirical correctness per confidence bin
+    - Creates new curves (inactive by default)
+    
+    Safety features:
+    - dry_run mode (default) previews results without DB changes
+    - Locking prevents concurrent builds
+    - All new curves are inactive until explicitly activated
+    """
+    # Check feature flag
+    if not CalibrationJobConfig.CALIBRATION_CURVES_ENABLED:
+        raise HTTPException(
+            status_code=400, 
+            detail="Empirical calibration curves are not enabled. Set CALIBRATION_CURVES_ENABLED=true to enable."
+        )
+    
+    # Acquire job lock
+    if not acquire_job_lock("build_curves"):
+        raise HTTPException(
+            status_code=409,
+            detail="A curve build job is already running. Please wait for it to complete."
+        )
+    
+    try:
+        result = await build_curves_from_labels(
+            database=database,
+            scans_table=scans_table,
+            scan_labels_table=scan_labels_table,
+            calibration_curves_table=calibration_curves_table,
+            dry_run=data.dry_run
+        )
+        
+        return {
+            "success": True,
+            "dry_run": result.dry_run,
+            "version": result.version,
+            "curves_built": result.curves_built,
+            "curves_mature": result.curves_mature,
+            "curves_immature": result.curves_immature,
+            "total_labels_processed": result.total_labels_processed,
+            "regions_processed": result.regions_processed,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors,
+            "message": "Dry run completed - no changes saved" if result.dry_run else f"Built {result.curves_built} curves"
+        }
+    finally:
+        release_job_lock("build_curves")
+
+@api_router.post("/admin/calibration/activate-curve")
+async def activate_calibration_curve(data: ActivateCurveRequest):
+    """
+    Activate a calibration curve.
+    
+    This makes the curve available for use in the calibration fallback chain.
+    
+    Safety features:
+    - Only mature curves can be activated
+    - Optionally deactivates other curves of the same type/region
+    """
+    # Check feature flag
+    if not CalibrationJobConfig.CALIBRATION_CURVES_ENABLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Empirical calibration curves are not enabled. Set CALIBRATION_CURVES_ENABLED=true to enable."
+        )
+    
+    try:
+        result = await activate_curve(
+            database=database,
+            calibration_curves_table=calibration_curves_table,
+            curve_id=data.curve_id,
+            deactivate_others=data.deactivate_others
+        )
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "Activation failed"))
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating curve: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/calibration/deactivate-curve/{curve_id}")
+async def deactivate_calibration_curve(curve_id: str):
+    """
+    Deactivate a calibration curve.
+    
+    The curve remains in the database but is no longer used for calibration.
+    """
+    try:
+        result = await deactivate_curve(
+            database=database,
+            calibration_curves_table=calibration_curves_table,
+            curve_id=curve_id
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error deactivating curve: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/calibration/recalibrate-scans")
+async def recalibrate_scans_endpoint(data: RecalibrateScansRequest):
+    """
+    Recalibrate existing scans using active curves.
+    
+    This job:
+    - Does NOT re-run ML inference
+    - Only recomputes calibrated confidence values
+    - Updates calibration metadata
+    
+    Safety features:
+    - dry_run mode (default) previews results without DB changes
+    - Locking prevents concurrent recalibration
+    - Batch processing with safety limits
+    
+    Filters:
+    - curve_version: Use specific curve version (default: active curves)
+    - since: Only process scans created after this date
+    - region: Only process scans in this region
+    """
+    # Check feature flag
+    if not CalibrationJobConfig.CALIBRATION_CURVES_ENABLED:
+        raise HTTPException(
+            status_code=400,
+            detail="Empirical calibration curves are not enabled. Set CALIBRATION_CURVES_ENABLED=true to enable."
+        )
+    
+    # Acquire job lock
+    if not acquire_job_lock("recalibrate_scans"):
+        raise HTTPException(
+            status_code=409,
+            detail="A recalibration job is already running. Please wait for it to complete."
+        )
+    
+    try:
+        result = await recalibrate_scans(
+            database=database,
+            scans_table=scans_table,
+            calibration_curves_table=calibration_curves_table,
+            curve_version=data.curve_version,
+            since=data.since,
+            region=data.region,
+            dry_run=data.dry_run
+        )
+        
+        return {
+            "success": True,
+            "dry_run": result.dry_run,
+            "curve_version": result.curve_version,
+            "scans_processed": result.scans_processed,
+            "scans_updated": result.scans_updated,
+            "scans_skipped": result.scans_skipped,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors,
+            "message": "Dry run completed - no changes saved" if result.dry_run else f"Recalibrated {result.scans_updated} scans"
+        }
+    finally:
+        release_job_lock("recalibrate_scans")
+
 # ============ HEALTH CHECK ============
 
 @app.get("/health")
