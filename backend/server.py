@@ -651,7 +651,8 @@ async def apple_sign_in(data: AppleSignInRequest):
             scans_remaining=3,
             total_scans_used=0,
             disclaimer_accepted=False,
-            disclaimer_accepted_at=None
+            disclaimer_accepted_at=None,
+            state=None
         )
     )
 
@@ -667,7 +668,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False),
-        disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+        disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
+        state=user.get("state")
     )
 
 @api_router.put("/auth/profile", response_model=UserResponse)
