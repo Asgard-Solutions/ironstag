@@ -701,6 +701,16 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         updates["password"] = ph.hash(data.new_password)
     
+    # Handle state update for region calibration
+    if data.state is not None:
+        # Validate state code (must be 2 letters or empty to clear)
+        if data.state == "":
+            updates["state"] = None
+        elif len(data.state) == 2 and data.state.isalpha():
+            updates["state"] = data.state.upper()
+        else:
+            raise HTTPException(status_code=400, detail="State must be a 2-letter code (e.g., TX, IA)")
+    
     if updates:
         query = users_table.update().where(users_table.c.id == user["id"]).values(**updates)
         await database.execute(query)
@@ -716,7 +726,8 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False),
-        disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+        disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
+        state=user.get("state")
     )
 
 # ============ ACCOUNT DELETION ============
