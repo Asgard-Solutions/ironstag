@@ -252,6 +252,30 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: Password reset flow working correctly. POST /auth/password-reset/request generates 6-digit code with 15-minute expiration. POST /auth/password-reset/verify validates code and updates password. Proper security measures in place"
 
+  - task: "Phase 2 Empirical Calibration Admin APIs"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented Phase 2 empirical calibration system with new admin endpoints: GET /api/admin/calibration/curves (list all curves), GET /api/admin/calibration/curves/{id} (curve details), GET /api/admin/calibration/jobs/status (job status), POST /api/admin/calibration/build-curves (build curves with dry_run), POST /api/admin/calibration/activate-curve (activate a curve), POST /api/admin/calibration/deactivate-curve/{id} (deactivate), POST /api/admin/calibration/recalibrate-scans (recalibrate with dry_run). Feature flag CALIBRATION_CURVES_ENABLED controls access. Initial curl tests passed."
+
+  - task: "Calibration Database Tables"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Created scan_labels and calibration_curves tables via migrations in startup event. Tables support empirical calibration curve building and storage."
+
   - task: "Authentication Security & Token Validation"
     implemented: true
     working: true
