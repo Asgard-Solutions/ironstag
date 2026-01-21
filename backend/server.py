@@ -305,6 +305,9 @@ async def startup():
     
     # Run migrations for new columns
     try:
+        # User profile state for region fallback
+        await database.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS state VARCHAR(2)")
+        
         # Add antler_points_left column if it doesn't exist
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_left INTEGER")
         # Add antler_points_right column if it doesn't exist
@@ -316,6 +319,20 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS recommendation_confidence INTEGER")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_uncertain BOOLEAN DEFAULT FALSE")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_version VARCHAR(50)")
+        
+        # Region-specific calibration columns (v2)
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS region_key VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS region_source VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS region_state VARCHAR(2)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_age_confidence INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_recommendation_confidence INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_strategy VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_fallback_reason VARCHAR(100)")
+        
+        # Create indexes for region calibration queries
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_region_key ON scans(region_key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_calibration_version ON scans(calibration_version)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_age_uncertain ON scans(age_uncertain)")
         
         logger.info("Database migrations completed")
     except Exception as e:
