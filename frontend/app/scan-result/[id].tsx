@@ -344,12 +344,21 @@ export default function ScanResultScreen() {
           <Text style={styles.summaryTitle}>
             {scan.deer_type || 'Unknown Deer'} • {scan.deer_sex || 'Unknown'}
           </Text>
-          <Text style={styles.summarySubtitle}>
-            Est. Age: {scan.deer_age || '?'} years
-            {scan.antler_points !== null && ` • ${scan.antler_points} points`}
-            {(scan.antler_points_left !== null || scan.antler_points_right !== null) && 
-              ` (${scan.antler_points_left || 0}L / ${scan.antler_points_right || 0}R)`}
-          </Text>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summarySubtitle, ageIsUncertain && styles.summarySubtitleUncertain]}>
+              Est. Age: {ageDisplayText}
+            </Text>
+            {ageIsUncertain && (
+              <AlertCircle size={14} color={colors.textMuted} style={styles.uncertainIconSmall} />
+            )}
+          </View>
+          {scan.antler_points !== null && (
+            <Text style={styles.summarySubtitle}>
+              {scan.antler_points} points
+              {(scan.antler_points_left !== null || scan.antler_points_right !== null) && 
+                ` (${scan.antler_points_left || 0}L / ${scan.antler_points_right || 0}R)`}
+            </Text>
+          )}
         </Card>
 
         {/* AI Insight */}
