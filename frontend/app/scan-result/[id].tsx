@@ -639,9 +639,20 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   summarySubtitle: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+  summarySubtitleUncertain: {
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  uncertainIconSmall: {
+    marginLeft: 4,
   },
   insightCard: {
     marginBottom: spacing.md,
