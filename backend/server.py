@@ -1246,23 +1246,7 @@ async def get_user_scans(
     ).order_by(scans_table.c.created_at.desc()).limit(limit).offset(skip)
     scans = await database.fetch_all(query)
     
-    return [DeerAnalysisResponse(
-        id=s["id"],
-        user_id=s["user_id"],
-        local_image_id=s["local_image_id"],
-        deer_age=s["deer_age"],
-        deer_type=s["deer_type"],
-        deer_sex=s["deer_sex"],
-        antler_points=s["antler_points"],
-        antler_points_left=s["antler_points_left"],
-        antler_points_right=s["antler_points_right"],
-        body_condition=s["body_condition"],
-        confidence=s["confidence"],
-        recommendation=s["recommendation"],
-        reasoning=s["reasoning"],
-        notes=s["notes"],
-        created_at=s["created_at"]
-    ) for s in scans]
+    return [build_scan_response(dict(s)) for s in scans]
 
 @api_router.get("/scans/stats/summary")
 async def get_scan_stats(user: dict = Depends(get_current_user)):
