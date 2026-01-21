@@ -1208,17 +1208,39 @@ async def create_checkout_session(data: CheckoutRequest, user: dict = Depends(ge
         raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.post("/subscription/webhook")
-async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events for subscription management."""
     try:
-        event = stripe.Webhook.construct_event(
-            request_body,
-            request_body.headers.get("stripe-signature"),
-            STRIPE_WEBHOOK_SECRET
-        )
+        # Get raw body and signature header
+        payload = await request.body()
+        sig_header = request.headers.get("stripe-signature")
+        
+        if not sig_header:
+            logger.error("Missing stripe-signature header")
+            raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+        
+        if not STRIPE_WEBHOOK_SECRET:
+            logger.error("STRIPE_WEBHOOK_SECRET not configured")
+            raise HTTPException(status_code=500, detail="Webhook secret not configured")
+        
+        # Verify webhook signature
+        try:
+            event = stripe.Webhook.construct_event(
+                payload,
+                sig_header,
+                STRIPE_WEBHOOK_SECRET
+            )
+        except stripe.error.SignatureVerificationError as e:
+            logger.error(f"Webhook signature verification failed: {e}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+        
+        logger.info(f"Received Stripe webhook: {event['type']}")
         
         if event["type"] == "checkout.session.completed":
             session = event["data"]["object"]
             user_id = session.get("metadata", {}).get("user_id")
+            
+            logger.info(f"Checkout completed for user_id: {user_id}")
             
             if user_id:
                 query = users_table.update().where(
@@ -1229,6 +1251,7 @@ async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
                     scans_remaining=-1
                 )
                 await database.execute(query)
+                logger.info(f"Updated user {user_id} to master_stag subscription")
         
         elif event["type"] == "customer.subscription.deleted":
             subscription = event["data"]["object"]
@@ -1246,8 +1269,17 @@ async def stripe_webhook(request_body: bytes = Depends(lambda r: r.body())):
                     scans_remaining=3
                 )
                 await database.execute(query)
+                logger.info(f"Downgraded user {user['id']} to tracker after subscription deletion")
+        
+        elif event["type"] == "invoice.payment_failed":
+            # Handle failed payment
+            invoice = event["data"]["object"]
+            subscription_id = invoice.get("subscription")
+            logger.warning(f"Payment failed for subscription: {subscription_id}")
         
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
