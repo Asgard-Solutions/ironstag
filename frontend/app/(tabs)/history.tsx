@@ -216,6 +216,11 @@ export default function HistoryScreen() {
   const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery;
 
   const renderScanCard = ({ item }: { item: Scan }) => {
+    // Calculate calibrated confidence and check age uncertainty
+    const ageIsUncertain = isAgeUncertain(item.deer_age);
+    const displayConfidence = getCalibratedConfidence(item.confidence, item.deer_age);
+    const ageDisplayText = getAgeDisplayText(item.deer_age);
+    
     return (
       <TouchableOpacity
         activeOpacity={0.8}
@@ -236,9 +241,14 @@ export default function HistoryScreen() {
                   {item.recommendation || 'PASS'}
                 </Text>
               </View>
-              <Text style={styles.ageText}>
-                Age: {item.deer_age || '?'} yrs
-              </Text>
+              <View style={styles.ageRow}>
+                <Text style={[styles.ageText, ageIsUncertain && styles.ageTextUncertain]}>
+                  Age: {ageDisplayText}
+                </Text>
+                {ageIsUncertain && (
+                  <AlertCircle size={12} color={colors.textMuted} style={styles.uncertainIcon} />
+                )}
+              </View>
               <Text style={styles.pointsText}>
                 {item.antler_points || 0} points
                 {(item.antler_points_left !== null || item.antler_points_right !== null) && 
