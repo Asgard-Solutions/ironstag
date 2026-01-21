@@ -238,6 +238,8 @@ class DeerAnalysisRequest(BaseModel):
     image_base64: str
     local_image_id: str
     notes: Optional[str] = None
+    # Optional state for region-specific calibration (two-letter code)
+    state: Optional[str] = None  # e.g., "TX", "IA", "GA"
 
 class DeerAnalysisResponse(BaseModel):
     id: str
