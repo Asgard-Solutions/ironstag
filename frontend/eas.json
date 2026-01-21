@@ -3,6 +3,7 @@
     "version": ">= 10.0.0",
     "appVersionSource": "local"
   },
+
   "build": {
     "base": {
       "env": {
@@ -13,14 +14,14 @@
         "EXPO_NO_DOCTOR": "1"
       }
     },
+
     "development": {
       "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
       "prebuildCommand": "npx expo prebuild --clean",
       "ios": {
-        "resourceClass": "m-medium",
-        "simulator": false
+        "resourceClass": "m-medium"
       },
       "android": {
         "buildType": "apk"
@@ -29,15 +30,20 @@
         "APP_ENV": "development"
       }
     },
+
     "development-simulator": {
       "extends": "development",
       "ios": {
         "simulator": true
       }
     },
+
     "preview": {
       "extends": "base",
       "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
       "android": {
         "buildType": "apk"
       },
@@ -45,6 +51,7 @@
         "APP_ENV": "preview"
       }
     },
+
     "production": {
       "extends": "base",
       "autoIncrement": true,
@@ -56,12 +63,11 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "APP_ENV": "production",
-        "EXPO_PUBLIC_API_BASE_URL": "https://ironstag-production.up.railway.app",
-        "EXPO_PUBLIC_BACKEND_URL": "https://ironstag-production.up.railway.app/api"
+        "APP_ENV": "production"
       }
     }
   },
+
   "submit": {
     "production": {
       "android": {
@@ -70,9 +76,9 @@
         "releaseStatus": "draft"
       },
       "ios": {
-        "appleId": "YOUR_APPLE_ID@email.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+        "appleId": "pjacobsen@asgardsolution.io",
+        "ascAppId": "6757864977",
+        "appleTeamId": "ZV72Y5MSJA"
       }
     }
   }
