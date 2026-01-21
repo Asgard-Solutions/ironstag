@@ -3,6 +3,11 @@ import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -13,14 +18,51 @@ import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
-    // Set the theme to AppTheme BEFORE onCreate to support
-    // coloring the background, status bar, and navigation bar.
-    // This is required for expo-splash-screen.
-    // setTheme(R.style.AppTheme);
     // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
+    
+    // Apply modern edge-to-edge handling for Android 15+
+    setupEdgeToEdge()
+  }
+
+  /**
+   * Sets up edge-to-edge display using modern AndroidX APIs.
+   * This replaces deprecated Window.setStatusBarColor() and Window.setNavigationBarColor() APIs.
+   */
+  private fun setupEdgeToEdge() {
+    // Enable edge-to-edge display
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    
+    // Get the WindowInsetsController for controlling system bars appearance
+    val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+    
+    // Configure system bars appearance using modern APIs
+    windowInsetsController.apply {
+      // Use light status bar icons on dark background (false = light icons)
+      isAppearanceLightStatusBars = false
+      // Use light navigation bar icons on dark background (false = light icons)
+      isAppearanceLightNavigationBars = false
+    }
+    
+    // For Android 15+ (API 35), avoid using deprecated color APIs
+    // Instead, let the system handle the colors via themes and WindowInsetsController
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+      // Android 15+ - use transparent system bars with edge-to-edge
+      window.setDecorFitsSystemWindows(false)
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      // Android 11-14 - use WindowInsetsController
+      window.setDecorFitsSystemWindows(false)
+    } else {
+      // Android 10 and below - use legacy flags with compat library
+      @Suppress("DEPRECATION")
+      window.decorView.systemUiVisibility = (
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+      )
+    }
   }
 
   /**
