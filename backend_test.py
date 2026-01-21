@@ -84,7 +84,7 @@ def test_phase3_status_endpoint(results: TestResults):
             
             # Verify jobs structure
             jobs = data.get("jobs", {})
-            expected_job_fields = ["drift_running", "maturity_running", "recommendations_running"]
+            expected_job_fields = ["drift_detection_running", "maturity_computation_running", "recommendation_generation_running"]
             missing_job_fields = [field for field in expected_job_fields if field not in jobs]
             
             if missing_job_fields:
