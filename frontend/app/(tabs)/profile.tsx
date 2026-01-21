@@ -879,25 +879,38 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Stats Row */}
-        <View style={styles.statsCard}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>
-              {isPremium ? '∞' : user?.scans_remaining ?? 3}
-            </Text>
-            <Text style={styles.statLabel}>{isPremium ? 'Unlimited' : 'Free Scans'}{'\n'}{isPremium ? 'Scans' : 'Left'}</Text>
+        {/* Home State Card - Prominent Position */}
+        <TouchableOpacity 
+          style={styles.homeStateCard}
+          onPress={() => setShowStatePicker(true)}
+          disabled={isSavingState}
+          activeOpacity={0.7}
+        >
+          <View style={styles.homeStateLeft}>
+            <View style={styles.homeStateIconContainer}>
+              <MapPin size={22} color={colors.primary} />
+            </View>
+            <View style={styles.homeStateContent}>
+              <Text style={styles.homeStateTitle}>Home State</Text>
+              <Text style={styles.homeStateSubtitle}>
+                {user?.state 
+                  ? `${getStateName(user.state)} - Calibrated for your region`
+                  : 'Set for better age accuracy'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, styles.harvestValue]}>0</Text>
-            <Text style={styles.statLabel}>Harvest{'\n'}Recs</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, styles.passValue]}>0</Text>
-            <Text style={styles.statLabel}>Pass{'\n'}Recs</Text>
-          </View>
-        </View>
+          {isSavingState ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : user?.state ? (
+            <View style={styles.homeStateBadge}>
+              <Text style={styles.homeStateBadgeText}>{user.state}</Text>
+            </View>
+          ) : (
+            <View style={styles.homeStateSetButton}>
+              <Text style={styles.homeStateSetButtonText}>Set</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Local Storage Card */}
         <View style={styles.storageCard}>
