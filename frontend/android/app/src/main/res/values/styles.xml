@@ -1,14 +1,35 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
+  <!-- Main App Theme - Android 15 Edge-to-Edge Compatible -->
   <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
-    <item name="android:enforceNavigationBarContrast" tools:targetApi="29">true</item>
+    <!-- Remove deprecated statusBarColor - handled in MainActivity with WindowInsetsController -->
+    <!-- <item name="android:statusBarColor">@android:color/transparent</item> -->
+    
+    <!-- Navigation bar contrast enforcement for gesture navigation -->
+    <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+    <item name="android:enforceStatusBarContrast" tools:targetApi="29">false</item>
+    
+    <!-- Enable edge-to-edge for Android 15+ -->
+    <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">false</item>
+    
+    <!-- Standard React Native edit text background -->
     <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+    
+    <!-- Primary brand color -->
     <item name="colorPrimary">@color/colorPrimary</item>
-    <item name="android:statusBarColor">#0E1A14</item>
+    
+    <!-- Make system bars transparent for edge-to-edge -->
+    <item name="android:windowTranslucentStatus">false</item>
+    <item name="android:windowTranslucentNavigation">false</item>
+    
+    <!-- Window background -->
+    <item name="android:windowBackground">@color/activityBackground</item>
   </style>
+  
+  <!-- Splash Screen Theme -->
   <style name="Theme.App.SplashScreen" parent="Theme.SplashScreen">
     <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
     <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
     <item name="postSplashScreenTheme">@style/AppTheme</item>
-    <item name="android:windowSplashScreenBehavior">icon_preferred</item>
+    <item name="android:windowSplashScreenBehavior" tools:targetApi="33">icon_preferred</item>
   </style>
 </resources>
