@@ -118,6 +118,10 @@ export default function ProfileScreen() {
   const currentAppVersion = appUpdateService.getCurrentVersion();
   const buildNumber = appUpdateService.getBuildNumber();
 
+  // State picker state
+  const [showStatePicker, setShowStatePicker] = useState(false);
+  const [isSavingState, setIsSavingState] = useState(false);
+
   // Get biometric state from auth store
   const { biometric, checkBiometricAvailability, enableBiometric, disableBiometric } = useAuthStore();
 
@@ -145,6 +149,26 @@ export default function ProfileScreen() {
       fetchScanStats();
     }, [fetchScanStats])
   );
+
+  // Handle home state selection
+  const handleStateSelect = async (stateCode: string | null) => {
+    setIsSavingState(true);
+    try {
+      const response = await authAPI.updateProfile({ state: stateCode || '' });
+      updateUser({ state: stateCode || undefined });
+      Alert.alert(
+        'Success',
+        stateCode 
+          ? `Home state set to ${getStateName(stateCode)}` 
+          : 'Home state cleared'
+      );
+    } catch (error: any) {
+      console.error('Failed to update state:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to update home state');
+    } finally {
+      setIsSavingState(false);
+    }
+  };
 
   // Handle manual check for updates
   const handleCheckForUpdates = async () => {
