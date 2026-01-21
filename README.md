@@ -196,6 +196,51 @@ Iron Stag features a sophisticated 3-phase confidence calibration system that en
 - Automated recommendation generation
 - **Advisory only** - no automatic changes
 
+### 🟢 When to Enable Phase 3 (Admin Guidance)
+
+Phase 3 is **disabled by default** and should be enabled manually by an admin.  
+It is not tied to releases — it is tied to **data readiness**.
+
+#### ✅ Enable Phase 3 When:
+
+- You have accumulated **meaningful labeled data** in `scan_labels`
+  - ~100+ labeled scans globally → early signal
+  - 300–500+ labeled scans → reliable signal
+  - Region-level labels → strongest value
+- You are seeing questions or inconsistencies around confidence or age estimates
+- You are preparing to:
+  - Rebuild calibration curves (Phase 2)
+  - Adjust uncertainty thresholds
+  - Evaluate whether retraining is justified
+- You want **evidence-based insight** before making model changes
+
+#### ❌ Do NOT Enable Phase 3 When:
+
+- Immediately at public launch
+- You have little or no labeled data
+- You are still validating basic product-market fit
+- You are not prepared to review and act on admin-only recommendations
+
+#### 🔐 How Phase 3 Is Used
+
+- Phase 3 is **advisory only**
+- It **never** changes predictions, confidence, or calibration automatically
+- It produces **signals and recommendations**, not actions
+- A quiet Phase 3 system indicates healthy, stable confidence
+
+#### ▶️ Enabling Phase 3
+
+When ready, enable via environment variable:
+
+```bash
+CALIBRATION_ADAPTIVE_ENABLED=true
+```
+
+Restart the backend and use the Phase 3 CLI tool to run analysis jobs in **dry-run mode first**.
+
+> **One-Line Rule of Thumb:**  
+> Enable Phase 3 when you want **evidence** — not curiosity — to drive model decisions.
+
 ### Phase 3 CLI Tool
 
 ```bash
