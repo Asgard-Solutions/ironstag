@@ -196,10 +196,14 @@ export default function ScanScreen() {
       const localImageId = await saveImageFromBase64(capturedImage);
       console.log('Image saved with ID:', localImageId);
 
-      console.log('Sending to analyze-deer API...');
+      // Determine state to send (per-scan override or user profile default)
+      const stateToSend = huntingLocation || user?.state || undefined;
+      console.log('Sending to analyze-deer API with state:', stateToSend);
+      
       const response = await scanAPI.analyzeDeer({
         image_base64: capturedImage,
         local_image_id: localImageId,
+        state: stateToSend,
       });
       console.log('API response:', response.data);
 
@@ -212,6 +216,10 @@ export default function ScanScreen() {
           total_scans_used: (user?.total_scans_used || 0) + 1
         });
       }
+      
+      // Reset hunting location override after successful scan
+      setHuntingLocation(null);
+      setLocationExpanded(false);
 
       router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
