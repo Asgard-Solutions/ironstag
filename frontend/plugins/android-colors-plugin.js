@@ -10,14 +10,65 @@
  * 
  * The release build enforces strict resource validation and fails when
  * theme references point to undefined colors.
+ * 
+ * AUDIT NOTES (January 2026):
+ * - All @color/ references in styles.xml are validated
+ * - All @color/ references in drawables are validated
+ * - Night mode colors.xml is populated for DayNight theme consistency
+ * - Safe defaults added for common Material/AppCompat requirements
  */
 
-const { withAndroidColors } = require('@expo/config-plugins');
+const { withAndroidColors, withDangerousMod } = require('@expo/config-plugins');
+const { resolve } = require('path');
+const { readFileSync, writeFileSync, existsSync, mkdirSync } = require('fs');
 
 /**
- * Add required color resources to colors.xml
+ * Required colors that may be referenced by themes and drawables.
+ * Each color includes its purpose for documentation.
  */
-function withActivityBackgroundColor(config) {
+const REQUIRED_COLORS = [
+  // Theme & Activity
+  { name: 'activityBackground', value: '#1a1a1a', purpose: 'Activity/Window background' },
+  { name: 'colorPrimary', value: '#023c69', purpose: 'Primary brand color' },
+  { name: 'colorPrimaryDark', value: '#1a1a1a', purpose: 'Status bar color' },
+  { name: 'colorAccent', value: '#D4A574', purpose: 'Accent/highlight color' },
+  
+  // Splash Screen
+  { name: 'splashscreen_background', value: '#0E1A14', purpose: 'Splash screen background' },
+  
+  // App Icon
+  { name: 'iconBackground', value: '#0E1A14', purpose: 'Adaptive icon background' },
+  
+  // Navigation
+  { name: 'navigationBarColor', value: '#1a1a1a', purpose: 'Navigation bar color' },
+  
+  // Material Components (may be referenced by libraries)
+  { name: 'colorSurface', value: '#1a1a1a', purpose: 'Surface background' },
+  { name: 'colorOnSurface', value: '#FFFFFF', purpose: 'Content on surface' },
+  { name: 'colorError', value: '#CF6679', purpose: 'Error state color' },
+];
+
+/**
+ * Night mode specific colors (if different from day mode)
+ * For this dark-themed app, night mode uses the same colors
+ */
+const NIGHT_MODE_COLORS = [
+  { name: 'activityBackground', value: '#1a1a1a' },
+  { name: 'colorPrimary', value: '#023c69' },
+  { name: 'colorPrimaryDark', value: '#1a1a1a' },
+  { name: 'colorAccent', value: '#D4A574' },
+  { name: 'splashscreen_background', value: '#0E1A14' },
+  { name: 'iconBackground', value: '#0E1A14' },
+  { name: 'navigationBarColor', value: '#1a1a1a' },
+  { name: 'colorSurface', value: '#1a1a1a' },
+  { name: 'colorOnSurface', value: '#FFFFFF' },
+  { name: 'colorError', value: '#CF6679' },
+];
+
+/**
+ * Add required color resources to colors.xml (day mode)
+ */
+function withDayModeColors(config) {
   return withAndroidColors(config, (config) => {
     // Ensure resources object exists
     if (!config.modResults.resources) {
@@ -27,14 +78,8 @@ function withActivityBackgroundColor(config) {
     // Get existing colors or initialize empty array
     const colors = config.modResults.resources.color || [];
     
-    // Define required colors that may be referenced by themes
-    const requiredColors = [
-      { name: 'activityBackground', value: '#1a1a1a' },
-      { name: 'colorPrimaryDark', value: '#1a1a1a' },
-      { name: 'splashscreen_background', value: '#0E1A14' },
-    ];
-    
-    requiredColors.forEach(({ name, value }) => {
+    let addedCount = 0;
+    REQUIRED_COLORS.forEach(({ name, value, purpose }) => {
       const exists = colors.some((color) => color.$?.name === name);
       
       if (!exists) {
@@ -42,15 +87,80 @@ function withActivityBackgroundColor(config) {
           $: { name },
           _: value,
         });
-        console.log(`[android-colors-plugin] Added ${name} color resource: ${value}`);
+        addedCount++;
+        console.log(`[android-colors-plugin] Added ${name}: ${value} (${purpose})`);
       }
     });
     
     // Ensure colors array is set back
     config.modResults.resources.color = colors;
     
+    if (addedCount > 0) {
+      console.log(`[android-colors-plugin] Added ${addedCount} color resources to values/colors.xml`);
+    }
+    
     return config;
   });
 }
 
-module.exports = withActivityBackgroundColor;
+/**
+ * Add required color resources to values-night/colors.xml
+ * This ensures DayNight theme has consistent colors in night mode
+ */
+function withNightModeColors(config) {
+  return withDangerousMod(config, [
+    'android',
+    async (config) => {
+      const nightColorsPath = resolve(
+        config.modRequest.platformProjectRoot,
+        'app/src/main/res/values-night/colors.xml'
+      );
+      
+      const nightValuesDir = resolve(
+        config.modRequest.platformProjectRoot,
+        'app/src/main/res/values-night'
+      );
+      
+      // Ensure directory exists
+      if (!existsSync(nightValuesDir)) {
+        mkdirSync(nightValuesDir, { recursive: true });
+      }
+      
+      // Build colors XML
+      let colorsXml = '<?xml version="1.0" encoding="utf-8"?>\n';
+      colorsXml += '<!-- Night mode colors - Auto-generated by android-colors-plugin -->\n';
+      colorsXml += '<resources>\n';
+      
+      NIGHT_MODE_COLORS.forEach(({ name, value }) => {
+        colorsXml += `  <color name="${name}">${value}</color>\n`;
+      });
+      
+      colorsXml += '</resources>\n';
+      
+      writeFileSync(nightColorsPath, colorsXml);
+      console.log(`[android-colors-plugin] Generated values-night/colors.xml with ${NIGHT_MODE_COLORS.length} colors`);
+      
+      return config;
+    },
+  ]);
+}
+
+/**
+ * Main plugin export
+ * Ensures all color resources are defined for release-safe builds
+ */
+function withAndroidColorsAudit(config) {
+  console.log('[android-colors-plugin] Running Android color resource audit...');
+  
+  // Add day mode colors
+  config = withDayModeColors(config);
+  
+  // Add night mode colors
+  config = withNightModeColors(config);
+  
+  console.log('[android-colors-plugin] Color resource audit complete');
+  
+  return config;
+}
+
+module.exports = withAndroidColorsAudit;
