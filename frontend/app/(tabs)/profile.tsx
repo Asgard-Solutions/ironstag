@@ -1067,40 +1067,6 @@ export default function ProfileScreen() {
           </>
         )}
 
-        {/* Hunting Region Section */}
-        <Text style={styles.sectionHeader}>Hunting Region</Text>
-        <View style={styles.menuSection}>
-          <TouchableOpacity 
-            style={[styles.menuItem, styles.menuItemLast]} 
-            onPress={() => setShowStatePicker(true)}
-            disabled={isSavingState}
-          >
-            <View style={[styles.menuIcon, styles.menuIconGold]}>
-              <MapPin size={18} color={colors.primary} />
-            </View>
-            <View style={styles.menuContent}>
-              <Text style={styles.menuTitle}>Home State</Text>
-              <Text style={styles.menuSubtitle}>
-                {user?.state 
-                  ? getStateName(user.state)
-                  : 'Set your primary hunting state'}
-              </Text>
-            </View>
-            {isSavingState ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : user?.state ? (
-              <View style={styles.stateCodeBadge}>
-                <Text style={styles.stateCodeText}>{user.state}</Text>
-              </View>
-            ) : (
-              <ChevronRight size={18} color={colors.textMuted} />
-            )}
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.regionHelpText}>
-          Setting your home state helps improve age estimation accuracy for your region's deer population.
-        </Text>
-
         {/* Privacy & Legal */}
         <Text style={styles.sectionHeader}>Privacy & Legal</Text>
         <View style={styles.menuSection}>
