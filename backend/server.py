@@ -220,6 +220,27 @@ class PasswordResetVerify(BaseModel):
     code: str
     new_password: str
 
+# ============ APP VERSION CHECK MODELS ============
+
+class VersionCheckRequest(BaseModel):
+    platform: str  # 'ios' or 'android'
+    current_version: str  # e.g., "1.0.0"
+    build_number: Optional[str] = None  # iOS build number or Android versionCode
+
+class PlatformVersionInfo(BaseModel):
+    latest_version: str
+    min_supported_version: str
+    store_url: str
+
+class VersionCheckResponse(BaseModel):
+    update_available: bool
+    update_mode: str  # 'none', 'soft', 'force'
+    latest_version: str
+    min_supported_version: str
+    release_notes: Optional[str] = None
+    store_url: str
+    message: Optional[str] = None
+
 # ============ DATABASE INITIALIZATION ============
 
 @app.on_event("startup")
