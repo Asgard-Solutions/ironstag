@@ -1250,8 +1250,15 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 }
             )
         
-        # Apply confidence calibration
-        calibration_result, calibrated_analysis = calibrate_from_dict(analysis)
+        # Apply region-aware confidence calibration
+        # Get user's profile state for fallback
+        user_profile_state = user.get("state")
+        
+        calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
+            analysis=analysis,
+            state=data.state,  # From request
+            user_profile_state=user_profile_state  # Fallback from user profile
+        )
         
         scan_id = str(uuid.uuid4())
         
