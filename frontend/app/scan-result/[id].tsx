@@ -253,15 +253,29 @@ export default function ScanResultScreen() {
   }
 
   // Build analysis data with left/right antler points
+  // Apply confidence calibration for uncertain ages
+  const ageIsUncertain = isAgeUncertain(scan.deer_age);
+  const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+  const ageDisplayText = getAgeDisplayText(scan.deer_age);
+  
   const analysisData = [
-    { label: 'Age Estimate', value: scan.deer_age ? `${scan.deer_age} years` : 'Unknown' },
+    { 
+      label: 'Age Estimate', 
+      value: ageDisplayText,
+      isUncertain: ageIsUncertain,
+    },
     { label: 'Deer Type', value: scan.deer_type || 'Unknown' },
     { label: 'Sex', value: scan.deer_sex || 'Unknown' },
     { label: 'Antler Points (Total)', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
     { label: 'Left Antler', value: scan.antler_points_left !== null ? `${scan.antler_points_left} pts` : 'N/A' },
     { label: 'Right Antler', value: scan.antler_points_right !== null ? `${scan.antler_points_right} pts` : 'N/A' },
     { label: 'Body Condition', value: scan.body_condition || 'Unknown' },
-    { label: 'Confidence', value: scan.confidence ? `${scan.confidence}%` : 'N/A' },
+    { 
+      label: 'Model Confidence', 
+      value: `${displayConfidence}%`,
+      isUncertain: ageIsUncertain,
+      helpText: ageIsUncertain ? 'Capped due to age uncertainty' : undefined,
+    },
   ];
 
   return (
