@@ -1,7 +1,7 @@
 /**
  * Expo Config Plugin: Android Colors Resource Fix
  * 
- * This plugin ensures that the `activityBackground` color resource is defined
+ * This plugin ensures that required color resources are defined
  * in the Android colors.xml file to prevent release build failures.
  * 
  * Error this fixes:
@@ -19,35 +19,32 @@ const { withAndroidColors } = require('@expo/config-plugins');
  */
 function withActivityBackgroundColor(config) {
   return withAndroidColors(config, (config) => {
+    // Ensure resources object exists
+    if (!config.modResults.resources) {
+      config.modResults.resources = {};
+    }
+    
     // Get existing colors or initialize empty array
     const colors = config.modResults.resources.color || [];
     
-    // Check if activityBackground already exists
-    const hasActivityBackground = colors.some(
-      (color) => color.$?.name === 'activityBackground'
-    );
+    // Define required colors that may be referenced by themes
+    const requiredColors = [
+      { name: 'activityBackground', value: '#1a1a1a' },
+      { name: 'colorPrimaryDark', value: '#1a1a1a' },
+      { name: 'splashscreen_background', value: '#0E1A14' },
+    ];
     
-    // Add activityBackground if not present
-    if (!hasActivityBackground) {
-      colors.push({
-        $: { name: 'activityBackground' },
-        _: '#1a1a1a', // Dark background matching app theme
-      });
-      console.log('[android-colors-plugin] Added activityBackground color resource');
-    }
-    
-    // Check if colorPrimaryDark exists (sometimes needed)
-    const hasColorPrimaryDark = colors.some(
-      (color) => color.$?.name === 'colorPrimaryDark'
-    );
-    
-    if (!hasColorPrimaryDark) {
-      colors.push({
-        $: { name: 'colorPrimaryDark' },
-        _: '#1a1a1a',
-      });
-      console.log('[android-colors-plugin] Added colorPrimaryDark color resource');
-    }
+    requiredColors.forEach(({ name, value }) => {
+      const exists = colors.some((color) => color.$?.name === name);
+      
+      if (!exists) {
+        colors.push({
+          $: { name },
+          _: value,
+        });
+        console.log(`[android-colors-plugin] Added ${name} color resource: ${value}`);
+      }
+    });
     
     // Ensure colors array is set back
     config.modResults.resources.color = colors;
