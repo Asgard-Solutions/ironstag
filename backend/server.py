@@ -2232,6 +2232,257 @@ async def recalibrate_scans_endpoint(data: RecalibrateScansRequest):
     finally:
         release_job_lock("recalibrate_scans")
 
+# ============ PHASE 3: ADAPTIVE CALIBRATION ADMIN ENDPOINTS ============
+
+class RunDriftRequest(BaseModel):
+    dry_run: bool = True
+    time_window_days: int = 30
+    include_seasons: bool = True
+
+class RunMaturityRequest(BaseModel):
+    dry_run: bool = True
+
+class RunRecommendationsRequest(BaseModel):
+    dry_run: bool = True
+
+
+@api_router.get("/admin/calibration/phase3/status")
+async def get_phase3_calibration_status():
+    """
+    Get Phase 3 (Adaptive Calibration) system status.
+    Returns:
+    - Whether adaptive calibration is enabled
+    - Job running states
+    - Configuration values
+    """
+    return get_phase3_status()
+
+
+@api_router.get("/admin/calibration/drift")
+async def get_calibration_drift(days: int = 30):
+    """
+    Get summary of drift events.
+    
+    Returns recent drift events with statistics grouped by severity and region.
+    
+    NOTE: Returns 400 if CALIBRATION_ADAPTIVE_ENABLED=false
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    try:
+        return await get_drift_summary(database, calibration_drift_events_table, days)
+    except Exception as e:
+        logger.error(f"Error getting drift summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/calibration/maturity")
+async def get_calibration_maturity():
+    """
+    Get region maturity summary.
+    
+    Returns maturity levels for all regions with labeled data.
+    
+    NOTE: Returns 400 if CALIBRATION_ADAPTIVE_ENABLED=false
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    try:
+        return await get_maturity_summary(database, region_maturity_table)
+    except Exception as e:
+        logger.error(f"Error getting maturity summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/calibration/recommendations")
+async def get_calibration_recommendations(days: int = 30):
+    """
+    Get model action recommendations.
+    
+    Returns advisory recommendations based on drift patterns.
+    
+    NOTE: Returns 400 if CALIBRATION_ADAPTIVE_ENABLED=false
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    try:
+        return await get_recommendations_summary(database, model_action_recommendations_table, days)
+    except Exception as e:
+        logger.error(f"Error getting recommendations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/calibration/phase3/run-drift")
+async def run_drift_detection(data: RunDriftRequest):
+    """
+    Manually trigger drift detection job.
+    
+    Detects confidence drift by comparing expected vs observed accuracy.
+    
+    ADVISORY ONLY - Does not modify calibration behavior.
+    
+    Safety features:
+    - dry_run mode (default) previews results without DB changes
+    - Locking prevents concurrent runs
+    - Feature flag must be enabled
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    if not acquire_phase3_lock("drift_detection"):
+        raise HTTPException(
+            status_code=409,
+            detail="A drift detection job is already running. Please wait for it to complete."
+        )
+    
+    try:
+        result = await detect_calibration_drift(
+            database=database,
+            scans_table=scans_table,
+            scan_labels_table=scan_labels_table,
+            calibration_curves_table=calibration_curves_table,
+            drift_events_table=calibration_drift_events_table,
+            time_window_days=data.time_window_days,
+            include_seasons=data.include_seasons,
+            dry_run=data.dry_run
+        )
+        
+        return {
+            "success": True,
+            "dry_run": result.dry_run,
+            "events_detected": result.events_detected,
+            "warnings": result.warnings,
+            "criticals": result.criticals,
+            "regions_analyzed": result.regions_analyzed,
+            "time_windows_used": result.time_windows_used,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors,
+            "message": "Dry run completed - no changes saved" if result.dry_run else f"Detected {result.events_detected} drift events"
+        }
+    finally:
+        release_phase3_lock("drift_detection")
+
+
+@api_router.post("/admin/calibration/phase3/run-maturity")
+async def run_maturity_computation(data: RunMaturityRequest):
+    """
+    Manually trigger region maturity computation job.
+    
+    Computes data maturity scores for all regions based on:
+    - Labeled sample count
+    - Label source diversity
+    - Drift stability over time
+    
+    ADVISORY ONLY - Does not affect calibration behavior.
+    
+    Safety features:
+    - dry_run mode (default) previews results without DB changes
+    - Locking prevents concurrent runs
+    - Feature flag must be enabled
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    if not acquire_phase3_lock("maturity_computation"):
+        raise HTTPException(
+            status_code=409,
+            detail="A maturity computation job is already running. Please wait for it to complete."
+        )
+    
+    try:
+        result = await compute_region_maturity(
+            database=database,
+            scans_table=scans_table,
+            scan_labels_table=scan_labels_table,
+            drift_events_table=calibration_drift_events_table,
+            region_maturity_table=region_maturity_table,
+            dry_run=data.dry_run
+        )
+        
+        return {
+            "success": True,
+            "dry_run": result.dry_run,
+            "regions_computed": result.regions_computed,
+            "low_maturity": result.low_maturity,
+            "medium_maturity": result.medium_maturity,
+            "high_maturity": result.high_maturity,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors,
+            "message": "Dry run completed - no changes saved" if result.dry_run else f"Computed maturity for {result.regions_computed} regions"
+        }
+    finally:
+        release_phase3_lock("maturity_computation")
+
+
+@api_router.post("/admin/calibration/phase3/run-recommendations")
+async def run_recommendations_generation(data: RunRecommendationsRequest):
+    """
+    Manually trigger model recommendations generation job.
+    
+    Generates advisory recommendations based on drift patterns:
+    - rebuild_calibration: Drift high, accuracy stable
+    - consider_retraining: Accuracy declining
+    - investigate_data: Both drifting
+    - region_curve_update: Region-specific drift
+    
+    ADVISORY ONLY - Does not take any automatic action.
+    
+    Safety features:
+    - dry_run mode (default) previews results without DB changes
+    - Locking prevents concurrent runs
+    - Feature flag must be enabled
+    """
+    if not AdaptiveCalibrationConfig.is_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail="Adaptive calibration is not enabled. Set CALIBRATION_ADAPTIVE_ENABLED=true to enable."
+        )
+    
+    if not acquire_phase3_lock("recommendation_generation"):
+        raise HTTPException(
+            status_code=409,
+            detail="A recommendation generation job is already running. Please wait for it to complete."
+        )
+    
+    try:
+        result = await generate_model_recommendations(
+            database=database,
+            drift_events_table=calibration_drift_events_table,
+            region_maturity_table=region_maturity_table,
+            recommendations_table=model_action_recommendations_table,
+            dry_run=data.dry_run
+        )
+        
+        return {
+            "success": True,
+            "dry_run": result.dry_run,
+            "recommendations_generated": result.recommendations_generated,
+            "by_type": result.by_type,
+            "duration_seconds": result.duration_seconds,
+            "errors": result.errors,
+            "message": "Dry run completed - no changes saved" if result.dry_run else f"Generated {result.recommendations_generated} recommendations"
+        }
+    finally:
+        release_phase3_lock("recommendation_generation")
+
 # ============ HEALTH CHECK ============
 
 @app.get("/health")
