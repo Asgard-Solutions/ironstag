@@ -269,18 +269,51 @@ backend:
 
   - task: "Calibration Database Tables"
     implemented: true
-    working: true
+    working: "NA"
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Created scan_labels and calibration_curves tables via migrations in startup event. Tables support empirical calibration curve building and storage."
-      - working: true
-        agent: "testing"
-        comment: "✅ TESTED: Calibration database tables working correctly. Tables scan_labels and calibration_curves created successfully via migrations. Database schema supports empirical calibration system. Confirmed through admin API endpoints that can query these tables (curves endpoint returns empty array as expected for new system). Table structure supports curve building, activation, and recalibration workflows."
+
+  - task: "Phase 3 Adaptive Calibration Admin APIs"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented Phase 3 adaptive calibration system: GET /api/admin/calibration/phase3/status (always works), GET /api/admin/calibration/drift (flag-gated), GET /api/admin/calibration/maturity (flag-gated), GET /api/admin/calibration/recommendations (flag-gated), POST /api/admin/calibration/phase3/run-drift (flag-gated, dry_run), POST /api/admin/calibration/phase3/run-maturity (flag-gated, dry_run), POST /api/admin/calibration/phase3/run-recommendations (flag-gated, dry_run). Feature flag CALIBRATION_ADAPTIVE_ENABLED=false by default. All endpoints return 400 when disabled."
+
+  - task: "Phase 3 Database Schema"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Created Phase 3 tables: calibration_drift_events (drift detection storage), region_maturity (maturity scoring), model_action_recommendations (advisory outputs). Extended scan_labels with trust_source and trust_weight columns."
+
+  - task: "Season Mapping Configuration"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/config/season_mapping.json"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Created region-specific season mapping config for deer phenology periods (pre_rut, rut, post_rut, late_season, off_season). Supports temporal awareness for drift detection."
 
   - task: "Authentication Security & Token Validation"
     implemented: true
