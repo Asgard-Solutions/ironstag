@@ -918,7 +918,8 @@ async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_cur
         scans_remaining=user.get("scans_remaining", 3),
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user["disclaimer_accepted"],
-        disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+        disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
+        state=user.get("state")
     )
 
 # ============ SUBSCRIPTION HELPERS ============
