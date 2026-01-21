@@ -31,7 +31,6 @@ import {
   Mail,
   Clock,
   Camera,
-  BookOpen,
   Settings,
   FileText,
   ExternalLink,
