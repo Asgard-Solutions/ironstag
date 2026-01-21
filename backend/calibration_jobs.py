@@ -891,8 +891,8 @@ def get_job_status() -> Dict[str, Any]:
         "build_curves_running": is_job_running("build_curves"),
         "recalibrate_scans_running": is_job_running("recalibrate_scans"),
         "config": {
-            "curves_enabled": CalibrationJobConfig.CALIBRATION_CURVES_ENABLED,
-            "schedule_enabled": CalibrationJobConfig.CALIBRATION_CURVE_SCHEDULE_ENABLED,
+            "curves_enabled": CalibrationJobConfig.get_curves_enabled(),
+            "schedule_enabled": CalibrationJobConfig.get_schedule_enabled(),
             "global_min_samples": CalibrationJobConfig.GLOBAL_CURVE_MIN_SAMPLES,
             "region_min_samples": CalibrationJobConfig.REGION_CURVE_MIN_SAMPLES,
             "bin_min_samples": CalibrationJobConfig.BIN_MIN_SAMPLES,
