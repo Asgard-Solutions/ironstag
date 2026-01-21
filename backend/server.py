@@ -1290,23 +1290,7 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
     query = scans_table.select().where(scans_table.c.id == scan_id)
     scan = await database.fetch_one(query)
     
-    return DeerAnalysisResponse(
-        id=scan["id"],
-        user_id=scan["user_id"],
-        local_image_id=scan["local_image_id"],
-        deer_age=scan["deer_age"],
-        deer_type=scan["deer_type"],
-        deer_sex=scan["deer_sex"],
-        antler_points=scan["antler_points"],
-        antler_points_left=scan["antler_points_left"],
-        antler_points_right=scan["antler_points_right"],
-        body_condition=scan["body_condition"],
-        confidence=scan["confidence"],
-        recommendation=scan["recommendation"],
-        reasoning=scan["reasoning"],
-        notes=scan["notes"],
-        created_at=scan["created_at"]
-    )
+    return build_scan_response(dict(scan))
 
 @api_router.post("/scans/{scan_id}/edit", response_model=DeerAnalysisResponse)
 async def edit_scan_with_reanalysis(
