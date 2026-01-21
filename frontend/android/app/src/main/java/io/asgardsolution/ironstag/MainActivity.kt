@@ -1,6 +1,7 @@
 package io.asgardsolution.ironstag
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -24,6 +25,27 @@ class MainActivity : ReactActivity() {
     super.onCreate(null)
     
     // Apply modern edge-to-edge handling for Android 15+
+    setupEdgeToEdge()
+  }
+
+  /**
+   * Handle configuration changes (orientation, screen size, etc.)
+   * This ensures edge-to-edge display is maintained during orientation changes
+   * and multi-window mode transitions on tablets and foldables.
+   */
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    // Re-apply edge-to-edge setup after configuration changes
+    setupEdgeToEdge()
+  }
+
+  /**
+   * Handle multi-window mode changes (split-screen, freeform, etc.)
+   * Required for Android 7.0+ multi-window support on tablets and foldables.
+   */
+  override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+    super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+    // Re-apply edge-to-edge setup when entering/exiting multi-window mode
     setupEdgeToEdge()
   }
 
