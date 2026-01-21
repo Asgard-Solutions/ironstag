@@ -646,11 +646,22 @@ const styles = StyleSheet.create({
   passStatus: {
     color: colors.primary,
   },
+  ageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
   ageText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
-    marginBottom: 2,
+  },
+  ageTextUncertain: {
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  uncertainIcon: {
+    marginLeft: 4,
   },
   pointsText: {
     fontSize: 14,
@@ -664,14 +675,24 @@ const styles = StyleSheet.create({
   confidenceContainer: {
     alignItems: 'flex-end',
   },
+  confidenceContainerUncertain: {
+    opacity: 0.7,
+  },
   confidenceValue: {
     fontSize: 24,
     fontWeight: '700',
     color: colors.textPrimary,
   },
+  confidenceValueUncertain: {
+    fontSize: 20,
+    color: colors.textSecondary,
+  },
   confidenceLabel: {
     fontSize: 11,
     color: colors.textMuted,
+  },
+  confidenceLabelUncertain: {
+    fontSize: 10,
   },
 
   // Empty State Styles
