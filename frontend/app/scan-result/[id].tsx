@@ -27,6 +27,7 @@ import {
   Calendar,
   AlertTriangle,
   Pencil,
+  AlertCircle,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -35,6 +36,10 @@ import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format } from 'date-fns';
+
+// ============ CONFIDENCE CALIBRATION CONSTANTS ============
+// Cap confidence at this value when age is uncertain/unknown
+const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 
 interface ScanResult {
   id: string;
@@ -51,6 +56,38 @@ interface ScanResult {
   reasoning: string | null;
   notes: string | null;
   created_at: string;
+}
+
+// ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
+
+/**
+ * Check if the age is uncertain/unknown
+ */
+function isAgeUncertain(age: number | null | undefined): boolean {
+  return age === null || age === undefined || age === 0;
+}
+
+/**
+ * Get display-calibrated confidence value
+ */
+function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
+  const confidence = rawConfidence || 0;
+  
+  if (isAgeUncertain(age)) {
+    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
+  }
+  
+  return confidence;
+}
+
+/**
+ * Get age display text with uncertainty handling
+ */
+function getAgeDisplayText(age: number | null): string {
+  if (isAgeUncertain(age)) {
+    return 'Uncertain';
+  }
+  return `${age} years`;
 }
 
 const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Elk', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
