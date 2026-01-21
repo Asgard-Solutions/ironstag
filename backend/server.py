@@ -1785,10 +1785,34 @@ async def get_version_config():
 @api_router.get("/admin/calibration-config")
 async def get_calibration_config():
     """
-    Get current confidence calibration configuration.
-    Useful for debugging and verifying calibration settings.
+    Get comprehensive region calibration configuration.
+    Includes all feature flags, thresholds, and region settings.
     """
-    return get_calibration_metadata()
+    return get_region_calibration_metadata()
+
+@api_router.get("/admin/calibration/status")
+async def get_calibration_status_endpoint():
+    """
+    Get calibration system status for diagnostics.
+    Returns:
+    - Active calibration version
+    - Available strategies
+    - Curve availability and maturity status
+    - Feature flag states
+    """
+    return get_calibration_status()
+
+@api_router.get("/admin/calibration/regions")
+async def get_calibration_regions():
+    """
+    Get all configured regions with their settings.
+    Includes:
+    - Region keys
+    - Difficulty multipliers
+    - Uncertainty thresholds
+    - State mappings
+    """
+    return get_all_regions()
 
 # ============ HEALTH CHECK ============
 
