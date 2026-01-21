@@ -580,7 +580,8 @@ async def apple_sign_in(data: AppleSignInRequest):
                 scans_remaining=user.get("scans_remaining", 3),
                 total_scans_used=user.get("total_scans_used", 0),
                 disclaimer_accepted=user.get("disclaimer_accepted", False),
-                disclaimer_accepted_at=user.get("disclaimer_accepted_at")
+                disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
+                state=user.get("state")
             )
         )
     
@@ -609,7 +610,8 @@ async def apple_sign_in(data: AppleSignInRequest):
                     scans_remaining=existing_user.get("scans_remaining", 3),
                     total_scans_used=existing_user.get("total_scans_used", 0),
                     disclaimer_accepted=existing_user.get("disclaimer_accepted", False),
-                    disclaimer_accepted_at=existing_user.get("disclaimer_accepted_at")
+                    disclaimer_accepted_at=existing_user.get("disclaimer_accepted_at"),
+                    state=existing_user.get("state")
                 )
             )
     
