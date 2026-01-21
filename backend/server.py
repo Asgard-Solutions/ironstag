@@ -70,12 +70,18 @@ scans_table = Table(
     Column("antler_points_left", Integer),
     Column("antler_points_right", Integer),
     Column("body_condition", String(50)),
-    Column("confidence", Integer),
+    Column("confidence", Integer),  # Legacy field - now holds recommendation_confidence
     Column("recommendation", String(50)),
     Column("reasoning", Text),
     Column("notes", Text),
     Column("raw_response", JSON),
     Column("created_at", DateTime, default=datetime.utcnow),
+    # New columns for confidence calibration
+    Column("raw_confidence", Integer),  # Original model confidence (preserved for analysis)
+    Column("age_confidence", Integer),  # Calibrated age estimation confidence
+    Column("recommendation_confidence", Integer),  # Calibrated recommendation confidence
+    Column("age_uncertain", Boolean, default=False),  # True if age confidence below threshold
+    Column("calibration_version", String(50)),  # e.g., "v1-heuristic"
 )
 
 password_reset_codes_table = Table(
