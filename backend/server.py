@@ -213,6 +213,7 @@ class ProfileUpdate(BaseModel):
     email: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
+    state: Optional[str] = None  # Two-letter state code for region calibration
 
 class DisclaimerAccept(BaseModel):
     accepted: bool
