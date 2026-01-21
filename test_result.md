@@ -296,15 +296,18 @@ backend:
 
   - task: "Phase 3 Database Schema"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Created Phase 3 tables: calibration_drift_events (drift detection storage), region_maturity (maturity scoring), model_action_recommendations (advisory outputs). Extended scan_labels with trust_source and trust_weight columns."
+      - working: true
+        agent: "testing"
+        comment: "✅ TESTED: Phase 3 Database Schema working perfectly. All required tables created and accessible: 1) calibration_drift_events ✅ (drift detection storage) 2) region_maturity ✅ (maturity scoring) 3) model_action_recommendations ✅ (advisory outputs) 4) scan_labels ✅ (extended with trust_source and trust_weight columns for Phase 3 trust weighting). Database migrations completed successfully. All Phase 3 tables properly indexed and ready for adaptive calibration data collection."
 
   - task: "Season Mapping Configuration"
     implemented: true
