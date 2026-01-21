@@ -118,7 +118,7 @@ scans_table = Table(
     Column("calibration_fallback_reason", String(100)),  # Why fallback was used
 )
 
-# Scan labels table for future empirical calibration (Phase 2)
+# Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
 scan_labels_table = Table(
     "scan_labels",
     metadata,
@@ -129,6 +129,9 @@ scan_labels_table = Table(
     Column("age_correct", Boolean),  # Was age estimation correct
     Column("recommendation_correct", Boolean),  # Was recommendation correct
     Column("created_at", DateTime, default=datetime.utcnow),
+    # Phase 3: Trust weighting fields
+    Column("trust_source", String(50)),  # expert, admin, trusted_user, self_reported, unknown
+    Column("trust_weight", Float),  # 0-1 trust weight
 )
 
 # Calibration curves table for future empirical calibration (Phase 2)
@@ -146,6 +149,51 @@ calibration_curves_table = Table(
     Column("is_active", Boolean, default=False),
     Column("created_at", DateTime, default=datetime.utcnow),
     Column("updated_at", DateTime, default=datetime.utcnow),
+)
+
+# Phase 3: Calibration drift events table
+calibration_drift_events_table = Table(
+    "calibration_drift_events",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("region_key", String(50)),
+    Column("model_version", String(50)),
+    Column("calibration_version", String(50)),
+    Column("confidence_type", String(50)),  # age, recommendation
+    Column("expected_accuracy", Float),
+    Column("observed_accuracy", Float),
+    Column("drift_percentage", Float),
+    Column("severity", String(20)),  # warning, critical
+    Column("sample_size", Integer),
+    Column("time_window_days", Integer),
+    Column("season_bucket", String(50)),  # pre_rut, rut, post_rut, late_season, off_season
+    Column("created_at", DateTime, default=datetime.utcnow),
+)
+
+# Phase 3: Region maturity table
+region_maturity_table = Table(
+    "region_maturity",
+    metadata,
+    Column("region_key", String(50), primary_key=True),
+    Column("maturity_level", String(20)),  # low, medium, high
+    Column("labeled_sample_count", Integer),
+    Column("label_source_diversity_score", Float),
+    Column("stability_score", Float),
+    Column("last_computed_at", DateTime, default=datetime.utcnow),
+)
+
+# Phase 3: Model action recommendations table
+model_action_recommendations_table = Table(
+    "model_action_recommendations",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("region_key", String(50)),  # nullable for global recommendations
+    Column("model_version", String(50)),
+    Column("confidence_type", String(50)),
+    Column("recommendation_type", String(50)),  # rebuild_calibration, consider_retraining, etc.
+    Column("supporting_metrics", JSON),
+    Column("severity", String(20)),
+    Column("created_at", DateTime, default=datetime.utcnow),
 )
 
 password_reset_codes_table = Table(
