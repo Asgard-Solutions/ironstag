@@ -15,6 +15,7 @@ interface User {
   disclaimer_accepted: boolean;
   disclaimer_accepted_at?: string;
   created_at: string;
+  state?: string;  // Two-letter state code for region calibration
 }
 
 interface BiometricState {
