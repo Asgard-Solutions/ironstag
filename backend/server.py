@@ -202,6 +202,7 @@ class UserResponse(BaseModel):
     total_scans_used: int = 0
     disclaimer_accepted: bool = False
     disclaimer_accepted_at: Optional[datetime] = None
+    state: Optional[str] = None  # Two-letter state code for region calibration
 
 class TokenResponse(BaseModel):
     access_token: str
