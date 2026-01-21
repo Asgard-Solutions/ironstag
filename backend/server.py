@@ -1397,21 +1397,29 @@ async def edit_scan_with_reanalysis(
                 if total_points is not None:
                     analysis["antler_points"] = total_points
                 
-                # Update the scan with new analysis
+                # Apply confidence calibration to re-analysis
+                calibration_result, calibrated_analysis = calibrate_from_dict(analysis)
+                
+                # Update the scan with new calibrated analysis
                 update_query = scans_table.update().where(
                     scans_table.c.id == scan_id
                 ).values(
-                    deer_age=analysis.get("deer_age"),
-                    deer_type=analysis.get("deer_type"),
-                    deer_sex=analysis.get("deer_sex"),
-                    antler_points=analysis.get("antler_points"),
-                    antler_points_left=analysis.get("antler_points_left"),
-                    antler_points_right=analysis.get("antler_points_right"),
-                    body_condition=analysis.get("body_condition"),
-                    confidence=analysis.get("confidence"),
-                    recommendation=analysis.get("recommendation"),
-                    reasoning=analysis.get("reasoning"),
-                    raw_response=analysis
+                    deer_age=calibrated_analysis.get("deer_age"),
+                    deer_type=calibrated_analysis.get("deer_type"),
+                    deer_sex=calibrated_analysis.get("deer_sex"),
+                    antler_points=calibrated_analysis.get("antler_points"),
+                    antler_points_left=calibrated_analysis.get("antler_points_left"),
+                    antler_points_right=calibrated_analysis.get("antler_points_right"),
+                    body_condition=calibrated_analysis.get("body_condition"),
+                    confidence=calibrated_analysis.get("confidence"),
+                    recommendation=calibrated_analysis.get("recommendation"),
+                    reasoning=calibrated_analysis.get("reasoning"),
+                    raw_response=analysis,  # Store original for debugging
+                    raw_confidence=calibrated_analysis.get("raw_confidence"),
+                    age_confidence=calibrated_analysis.get("age_confidence"),
+                    recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
+                    age_uncertain=calibrated_analysis.get("age_uncertain", False),
+                    calibration_version=calibrated_analysis.get("calibration_version")
                 )
                 await database.execute(update_query)
         except Exception as e:
