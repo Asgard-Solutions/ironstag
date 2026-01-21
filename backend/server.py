@@ -363,6 +363,39 @@ async def startup():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_calibration_version ON scans(calibration_version)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_age_uncertain ON scans(age_uncertain)")
         
+        # Phase 2: Create scan_labels table for empirical calibration
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS scan_labels (
+                id VARCHAR(36) PRIMARY KEY,
+                scan_id VARCHAR(36) NOT NULL,
+                label_source VARCHAR(50),
+                true_age_bucket VARCHAR(20),
+                age_correct BOOLEAN,
+                recommendation_correct BOOLEAN,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_scan_id ON scan_labels(scan_id)")
+        
+        # Phase 2: Create calibration_curves table for empirical calibration
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS calibration_curves (
+                id VARCHAR(36) PRIMARY KEY,
+                calibration_version VARCHAR(50) NOT NULL,
+                curve_type VARCHAR(50) NOT NULL,
+                region_key VARCHAR(50),
+                method VARCHAR(50),
+                bins JSON,
+                min_samples_required INTEGER DEFAULT 200,
+                sample_count INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_calibration_curves_active ON calibration_curves(is_active)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_calibration_curves_type_region ON calibration_curves(curve_type, region_key)")
+        
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
