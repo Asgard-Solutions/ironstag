@@ -1499,8 +1499,16 @@ async def edit_scan_with_reanalysis(
                 if total_points is not None:
                     analysis["antler_points"] = total_points
                 
-                # Apply confidence calibration to re-analysis
-                calibration_result, calibrated_analysis = calibrate_from_dict(analysis)
+                # Apply region-aware confidence calibration to re-analysis
+                # Get existing scan's region state (preserve from original scan)
+                existing_region_state = scan.get("region_state")
+                user_profile_state = user.get("state")
+                
+                calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
+                    analysis=analysis,
+                    state=existing_region_state,  # Preserve original region
+                    user_profile_state=user_profile_state
+                )
                 
                 # Update the scan with new calibrated analysis
                 update_query = scans_table.update().where(
@@ -1521,7 +1529,12 @@ async def edit_scan_with_reanalysis(
                     age_confidence=calibrated_analysis.get("age_confidence"),
                     recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                     age_uncertain=calibrated_analysis.get("age_uncertain", False),
-                    calibration_version=calibrated_analysis.get("calibration_version")
+                    calibration_version=calibrated_analysis.get("calibration_version"),
+                    region_key=calibrated_analysis.get("region_key"),
+                    region_source=calibrated_analysis.get("region_source"),
+                    region_state=calibrated_analysis.get("region_state"),
+                    calibration_strategy=calibrated_analysis.get("calibration_strategy"),
+                    calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason")
                 )
                 await database.execute(update_query)
         except Exception as e:
