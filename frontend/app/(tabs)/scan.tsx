@@ -377,6 +377,59 @@ export default function ScanScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Hunting Location Override (collapsible) */}
+        <View style={styles.locationSection}>
+          <TouchableOpacity 
+            style={styles.locationHeader}
+            onPress={() => setLocationExpanded(!locationExpanded)}
+          >
+            <View style={styles.locationHeaderLeft}>
+              <MapPin size={16} color={huntingLocation ? colors.primary : colors.textMuted} />
+              <Text style={styles.locationHeaderText}>
+                {huntingLocation 
+                  ? `Hunting in ${getStateName(huntingLocation)}` 
+                  : user?.state 
+                    ? `Using home state (${user.state})`
+                    : 'Set hunting location'}
+              </Text>
+            </View>
+            {locationExpanded ? (
+              <ChevronUp size={18} color={colors.textMuted} />
+            ) : (
+              <ChevronDown size={18} color={colors.textMuted} />
+            )}
+          </TouchableOpacity>
+          
+          {locationExpanded && (
+            <View style={styles.locationContent}>
+              <Text style={styles.locationHelpText}>
+                {user?.state 
+                  ? `Your home state is ${getStateName(user.state)}. Override below if hunting elsewhere.`
+                  : 'Set a location to improve age estimation accuracy for this region.'}
+              </Text>
+              <TouchableOpacity 
+                style={styles.locationSelectButton}
+                onPress={() => setShowLocationPicker(true)}
+              >
+                <MapPin size={18} color={colors.primary} />
+                <Text style={styles.locationSelectText}>
+                  {huntingLocation ? getStateName(huntingLocation) : 'Select State'}
+                </Text>
+              </TouchableOpacity>
+              {huntingLocation && (
+                <TouchableOpacity 
+                  style={styles.locationClearButton}
+                  onPress={() => setHuntingLocation(null)}
+                >
+                  <Text style={styles.locationClearText}>
+                    Use home state instead
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+
         <View style={[styles.previewControls, { paddingBottom: insets.bottom + spacing.lg }]}>
           <Button
             title="Retake"
@@ -391,6 +444,19 @@ export default function ScanScreen() {
             disabled={!isPremium && scansRemaining === 0}
           />
         </View>
+
+        {/* State Picker Modal */}
+        <StatePicker
+          visible={showLocationPicker}
+          selectedState={huntingLocation}
+          onSelect={(state) => {
+            setHuntingLocation(state);
+            setShowLocationPicker(false);
+          }}
+          onClose={() => setShowLocationPicker(false)}
+          title="Select Hunting Location"
+          allowClear={true}
+        />
       </View>
     );
   }
