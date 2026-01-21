@@ -1,0 +1,68 @@
+{
+  "_version": "v1",
+  "_description": "Region-specific deer hunting season mapping. Dates are approximate and represent typical phenological patterns, not legal hunting seasons.",
+  
+  "default": {
+    "pre_rut": {"start_month": 9, "start_day": 15, "end_month": 10, "end_day": 25},
+    "rut": {"start_month": 10, "start_day": 26, "end_month": 11, "end_day": 20},
+    "post_rut": {"start_month": 11, "start_day": 21, "end_month": 12, "end_day": 15},
+    "late_season": {"start_month": 12, "start_day": 16, "end_month": 1, "end_day": 31},
+    "off_season": {"start_month": 2, "start_day": 1, "end_month": 9, "end_day": 14}
+  },
+  
+  "midwest": {
+    "pre_rut": {"start_month": 10, "start_day": 1, "end_month": 10, "end_day": 31},
+    "rut": {"start_month": 11, "start_day": 1, "end_month": 11, "end_day": 20},
+    "post_rut": {"start_month": 11, "start_day": 21, "end_month": 12, "end_day": 10},
+    "late_season": {"start_month": 12, "start_day": 11, "end_month": 1, "end_day": 15},
+    "off_season": {"start_month": 1, "start_day": 16, "end_month": 9, "end_day": 30}
+  },
+  
+  "southeast": {
+    "pre_rut": {"start_month": 10, "start_day": 15, "end_month": 11, "end_day": 10},
+    "rut": {"start_month": 11, "start_day": 11, "end_month": 12, "end_day": 5},
+    "post_rut": {"start_month": 12, "start_day": 6, "end_month": 12, "end_day": 25},
+    "late_season": {"start_month": 12, "start_day": 26, "end_month": 1, "end_day": 31},
+    "off_season": {"start_month": 2, "start_day": 1, "end_month": 10, "end_day": 14}
+  },
+  
+  "northeast": {
+    "pre_rut": {"start_month": 10, "start_day": 15, "end_month": 11, "end_day": 5},
+    "rut": {"start_month": 11, "start_day": 6, "end_month": 11, "end_day": 25},
+    "post_rut": {"start_month": 11, "start_day": 26, "end_month": 12, "end_day": 15},
+    "late_season": {"start_month": 12, "start_day": 16, "end_month": 1, "end_day": 15},
+    "off_season": {"start_month": 1, "start_day": 16, "end_month": 10, "end_day": 14}
+  },
+  
+  "plains": {
+    "pre_rut": {"start_month": 10, "start_day": 20, "end_month": 11, "end_day": 10},
+    "rut": {"start_month": 11, "start_day": 11, "end_month": 11, "end_day": 30},
+    "post_rut": {"start_month": 12, "start_day": 1, "end_month": 12, "end_day": 20},
+    "late_season": {"start_month": 12, "start_day": 21, "end_month": 1, "end_day": 31},
+    "off_season": {"start_month": 2, "start_day": 1, "end_month": 10, "end_day": 19}
+  },
+  
+  "south_texas": {
+    "pre_rut": {"start_month": 11, "start_day": 15, "end_month": 12, "end_day": 10},
+    "rut": {"start_month": 12, "start_day": 11, "end_month": 12, "end_day": 31},
+    "post_rut": {"start_month": 1, "start_day": 1, "end_month": 1, "end_day": 20},
+    "late_season": {"start_month": 1, "start_day": 21, "end_month": 2, "end_day": 15},
+    "off_season": {"start_month": 2, "start_day": 16, "end_month": 11, "end_day": 14}
+  },
+  
+  "northern": {
+    "pre_rut": {"start_month": 9, "start_day": 20, "end_month": 10, "end_day": 15},
+    "rut": {"start_month": 10, "start_day": 16, "end_month": 11, "end_day": 10},
+    "post_rut": {"start_month": 11, "start_day": 11, "end_month": 11, "end_day": 30},
+    "late_season": {"start_month": 12, "start_day": 1, "end_month": 12, "end_day": 31},
+    "off_season": {"start_month": 1, "start_day": 1, "end_month": 9, "end_day": 19}
+  },
+  
+  "unknown": {
+    "pre_rut": {"start_month": 10, "start_day": 1, "end_month": 10, "end_day": 31},
+    "rut": {"start_month": 11, "start_day": 1, "end_month": 11, "end_day": 25},
+    "post_rut": {"start_month": 11, "start_day": 26, "end_month": 12, "end_day": 15},
+    "late_season": {"start_month": 12, "start_day": 16, "end_month": 1, "end_day": 31},
+    "off_season": {"start_month": 2, "start_day": 1, "end_month": 9, "end_day": 30}
+  }
+}
