@@ -313,7 +313,7 @@ export default function HistoryScreen() {
           {/* Right Confidence */}
           <View style={styles.exampleConfidence}>
             <Text style={styles.exampleConfidenceValue}>87%</Text>
-            <Text style={styles.exampleConfidenceLabel}>confidence</Text>
+            <Text style={styles.exampleConfidenceLabel}>Model confidence</Text>
           </View>
         </View>
       </View>
