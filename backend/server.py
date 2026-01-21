@@ -462,6 +462,60 @@ async def startup():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_calibration_curves_active ON calibration_curves(is_active)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_calibration_curves_type_region ON calibration_curves(curve_type, region_key)")
         
+        # Phase 3: Add trust weighting columns to scan_labels
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS trust_source VARCHAR(50)")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS trust_weight FLOAT")
+        
+        # Phase 3: Create calibration_drift_events table
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS calibration_drift_events (
+                id VARCHAR(36) PRIMARY KEY,
+                region_key VARCHAR(50),
+                model_version VARCHAR(50),
+                calibration_version VARCHAR(50),
+                confidence_type VARCHAR(50),
+                expected_accuracy FLOAT,
+                observed_accuracy FLOAT,
+                drift_percentage FLOAT,
+                severity VARCHAR(20),
+                sample_size INTEGER,
+                time_window_days INTEGER,
+                season_bucket VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_drift_events_region ON calibration_drift_events(region_key, confidence_type)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_drift_events_model ON calibration_drift_events(model_version)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_drift_events_severity ON calibration_drift_events(severity)")
+        
+        # Phase 3: Create region_maturity table
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS region_maturity (
+                region_key VARCHAR(50) PRIMARY KEY,
+                maturity_level VARCHAR(20),
+                labeled_sample_count INTEGER,
+                label_source_diversity_score FLOAT,
+                stability_score FLOAT,
+                last_computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Phase 3: Create model_action_recommendations table
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS model_action_recommendations (
+                id VARCHAR(36) PRIMARY KEY,
+                region_key VARCHAR(50),
+                model_version VARCHAR(50),
+                confidence_type VARCHAR(50),
+                recommendation_type VARCHAR(50),
+                supporting_metrics JSON,
+                severity VARCHAR(20),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_recommendations_type ON model_action_recommendations(recommendation_type)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_recommendations_created ON model_action_recommendations(created_at)")
+        
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
