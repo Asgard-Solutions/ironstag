@@ -216,25 +216,6 @@ export default function LearnScreen() {
           </Card>
         ))}
 
-        {/* Premium Insight Card */}
-        <Card style={styles.premiumCard}>
-          <View style={styles.premiumHeader}>
-            <View style={styles.premiumIconContainer}>
-              <Sparkles size={20} color={colors.primary} />
-            </View>
-            <Text style={styles.premiumTitle}>Premium Insight</Text>
-            <View style={styles.premiumBadge}>
-              <Lock size={14} color={colors.textMuted} />
-            </View>
-          </View>
-          <Text style={styles.premiumText}>
-            Premium members get detailed body scoring breakdowns and advanced antler metrics that go beyond basic age estimation—including main beam measurements, tine positioning analysis, and comparative scoring against regional averages.
-          </Text>
-          <TouchableOpacity style={styles.upgradeButton}>
-            <Text style={styles.upgradeButtonText}>Upgrade to Unlock</Text>
-          </TouchableOpacity>
-        </Card>
-
         {/* Field Indicators Section */}
         <Text style={styles.sectionTitle}>Field Indicators</Text>
         {fieldIndicators.map((indicator, index) => (
@@ -248,25 +229,6 @@ export default function LearnScreen() {
             ))}
           </Card>
         ))}
-
-        {/* Premium Historical Tracking Card */}
-        <Card style={styles.premiumCard}>
-          <View style={styles.premiumHeader}>
-            <View style={styles.premiumIconContainer}>
-              <Lock size={20} color={colors.primary} />
-            </View>
-            <Text style={styles.premiumTitle}>Premium: Historical Tracking</Text>
-            <View style={styles.premiumBadge}>
-              <Lock size={14} color={colors.textMuted} />
-            </View>
-          </View>
-          <Text style={styles.premiumText}>
-            Track the same deer across multiple seasons. Premium members get year-over-year growth analysis, maturation predictions, and property-specific herd health metrics to support long-term management goals.
-          </Text>
-          <TouchableOpacity style={styles.upgradeButton}>
-            <Text style={styles.upgradeButtonText}>Learn More</Text>
-          </TouchableOpacity>
-        </Card>
 
         {/* Ethical Reminder */}
         <Card style={styles.ethicalCard}>
