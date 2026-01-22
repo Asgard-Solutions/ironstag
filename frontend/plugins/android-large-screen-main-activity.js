@@ -105,31 +105,25 @@ function addEdgeToEdgeSetup(contents) {
  * Modify onCreate to call edge-to-edge setup
  */
 function modifyOnCreate(contents) {
-  const setupCall = 'setupEdgeToEdge()';
+  // Check if setupEdgeToEdge is already called in onCreate
+  // Look for the pattern: super.onCreate followed by setupEdgeToEdge
+  const alreadyCalledPattern = /super\.onCreate\([^)]*\)[\s\S]*?setupEdgeToEdge\(\)[\s\S]*?override fun getMainComponentName/;
   
-  // Check if already added
-  if (contents.includes(setupCall)) {
-    console.log('[android-large-screen-main-activity] setupEdgeToEdge() already present');
+  if (alreadyCalledPattern.test(contents)) {
+    console.log('[android-large-screen-main-activity] setupEdgeToEdge() already called in onCreate');
     return contents;
   }
   
   // Find the super.onCreate call and add setupEdgeToEdge() after it
-  // Handle the closing brace after super.onCreate
-  const onCreateWithBraceRegex = /(super\.onCreate\([^)]*\)\s*\n\s*\})/;
+  // Handle the pattern where super.onCreate is followed by closing brace
+  const onCreateWithBraceRegex = /(super\.onCreate\([^)]*\))(\s*\n\s*\})/;
   
   if (onCreateWithBraceRegex.test(contents)) {
     contents = contents.replace(onCreateWithBraceRegex, 
-      'super.onCreate(null)\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()\n  }');
+      '$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()$2');
     console.log('[android-large-screen-main-activity] Added setupEdgeToEdge() call to onCreate');
   } else {
-    // Try simpler pattern
-    const superOnCreateRegex = /(super\.onCreate\([^)]*\))/;
-    if (superOnCreateRegex.test(contents)) {
-      contents = contents.replace(superOnCreateRegex, '$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()');
-      console.log('[android-large-screen-main-activity] Added setupEdgeToEdge() call (fallback pattern)');
-    } else {
-      console.log('[android-large-screen-main-activity] WARNING: Could not find super.onCreate() pattern');
-    }
+    console.log('[android-large-screen-main-activity] WARNING: Could not find onCreate pattern to modify');
   }
   
   return contents;
