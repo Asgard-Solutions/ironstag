@@ -109,18 +109,27 @@ function modifyOnCreate(contents) {
   
   // Check if already added
   if (contents.includes(setupCall)) {
+    console.log('[android-large-screen-main-activity] setupEdgeToEdge() already present');
     return contents;
   }
   
   // Find the super.onCreate call and add setupEdgeToEdge() after it
-  // Look for pattern: super.onCreate(null) or super.onCreate(savedInstanceState)
-  const superOnCreateRegex = /(super\.onCreate\([^)]*\))/;
+  // Handle the closing brace after super.onCreate
+  const onCreateWithBraceRegex = /(super\.onCreate\([^)]*\)\s*\n\s*\})/;
   
-  if (superOnCreateRegex.test(contents)) {
-    contents = contents.replace(superOnCreateRegex, '$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()');
+  if (onCreateWithBraceRegex.test(contents)) {
+    contents = contents.replace(onCreateWithBraceRegex, 
+      'super.onCreate(null)\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()\n  }');
     console.log('[android-large-screen-main-activity] Added setupEdgeToEdge() call to onCreate');
   } else {
-    console.log('[android-large-screen-main-activity] WARNING: Could not find super.onCreate() call');
+    // Try simpler pattern
+    const superOnCreateRegex = /(super\.onCreate\([^)]*\))/;
+    if (superOnCreateRegex.test(contents)) {
+      contents = contents.replace(superOnCreateRegex, '$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()');
+      console.log('[android-large-screen-main-activity] Added setupEdgeToEdge() call (fallback pattern)');
+    } else {
+      console.log('[android-large-screen-main-activity] WARNING: Could not find super.onCreate() pattern');
+    }
   }
   
   return contents;
