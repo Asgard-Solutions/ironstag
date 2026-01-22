@@ -112,11 +112,12 @@ function modifyOnCreate(contents) {
     return contents;
   }
   
-  // Find onCreate and add the call after super.onCreate
-  const onCreateRegex = /(override fun onCreate\(savedInstanceState: Bundle\?\) \{[\s\S]*?super\.onCreate\(savedInstanceState\))/;
+  // Find onCreate method and add setupEdgeToEdge() call after super.onCreate
+  // Handle both super.onCreate(savedInstanceState) and super.onCreate(null)
+  const onCreateSuperRegex = /(super\.onCreate\([^)]*\))/g;
   
-  if (onCreateRegex.test(contents)) {
-    contents = contents.replace(onCreateRegex, `$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()`);
+  if (onCreateSuperRegex.test(contents)) {
+    contents = contents.replace(onCreateSuperRegex, `$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()`);
   }
   
   return contents;
