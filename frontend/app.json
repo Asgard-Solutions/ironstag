@@ -95,7 +95,8 @@
       "expo-web-browser",
       "./plugins/android-large-screen-plugin.js",
       "./plugins/android-large-screen-main-activity.js",
-      "./plugins/android-colors-plugin.js"
+      "./plugins/android-colors-plugin.js",
+      "./plugins/android-large-screen-libs-plugin.js"
     ],
     "experiments": {
       "typedRoutes": true
