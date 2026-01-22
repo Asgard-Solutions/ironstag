@@ -112,12 +112,15 @@ function modifyOnCreate(contents) {
     return contents;
   }
   
-  // Find onCreate method and add setupEdgeToEdge() call after super.onCreate
-  // Handle both super.onCreate(savedInstanceState) and super.onCreate(null)
-  const onCreateSuperRegex = /(super\.onCreate\([^)]*\))/g;
+  // Find the super.onCreate call and add setupEdgeToEdge() after it
+  // Look for pattern: super.onCreate(null) or super.onCreate(savedInstanceState)
+  const superOnCreateRegex = /(super\.onCreate\([^)]*\))/;
   
-  if (onCreateSuperRegex.test(contents)) {
-    contents = contents.replace(onCreateSuperRegex, `$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()`);
+  if (superOnCreateRegex.test(contents)) {
+    contents = contents.replace(superOnCreateRegex, '$1\n    // Setup edge-to-edge using modern Android 15+ APIs\n    setupEdgeToEdge()');
+    console.log('[android-large-screen-main-activity] Added setupEdgeToEdge() call to onCreate');
+  } else {
+    console.log('[android-large-screen-main-activity] WARNING: Could not find super.onCreate() call');
   }
   
   return contents;
