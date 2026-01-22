@@ -18,7 +18,6 @@ import {
   BookOpen, 
   Shield, 
   Trees,
-  Sparkles,
   Lock,
   AlertCircle,
 } from 'lucide-react-native';
