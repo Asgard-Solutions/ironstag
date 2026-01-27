@@ -366,20 +366,43 @@ class IronStagTester:
             self.log("❌ AUTHENTICATION FAILED - Cannot proceed with testing")
             return False
         
-        # Step 2: Check scan eligibility
-        self.log("\n🔍 Step 2: Check Scan Eligibility")
+        # Step 2: Test calibration thresholds directly (code-level verification)
+        self.log("\n🔧 Step 2: Direct Calibration Threshold Verification")
+        threshold_result = self.test_calibration_thresholds_directly()
+        
+        # Step 3: Check scan eligibility
+        self.log("\n🔍 Step 3: Check Scan Eligibility")
         eligibility_result = self.test_scan_eligibility()
         if not eligibility_result["success"]:
             self.log("❌ SCAN ELIGIBILITY CHECK FAILED")
             return False
         
-        # Step 3: Test deer analysis endpoint (main test)
-        self.log("\n🎯 Step 3: Test Deer Analysis Endpoint (CRITICAL BUG FIX)")
+        # Step 4: Test other backend endpoints
+        self.log("\n🌐 Step 4: Test Other Backend Endpoints")
+        other_endpoints_result = self.test_other_backend_endpoints()
+        
+        # Step 5: Test deer analysis endpoint (main test)
+        self.log("\n🎯 Step 5: Test Deer Analysis Endpoint (CRITICAL BUG FIX)")
         analysis_result = self.test_deer_analysis_endpoint()
         
-        # Step 4: Analyze results
-        self.log("\n📊 Step 4: Test Results Analysis")
+        # Step 6: Analyze results
+        self.log("\n📊 Step 6: Test Results Analysis")
         self.log("=" * 50)
+        
+        # Report threshold verification results
+        if threshold_result["success"] and threshold_result.get("bug_fix_verified", False):
+            self.log("✅ CONFIDENCE CALIBRATION THRESHOLDS VERIFIED AT CODE LEVEL")
+            self.log("   - All region thresholds are now in range (0.35-0.45)")
+            self.log("   - Previous thresholds (0.55-0.70) have been lowered")
+            self.log("   - Bug fix implemented correctly in region_calibration.py")
+        else:
+            self.log("❌ THRESHOLD VERIFICATION FAILED")
+        
+        # Report other endpoints results
+        if other_endpoints_result["success"]:
+            passed = other_endpoints_result["total_passed"]
+            failed = other_endpoints_result["total_failed"]
+            self.log(f"✅ OTHER BACKEND ENDPOINTS: {passed} passed, {failed} failed")
         
         if analysis_result["success"]:
             if "error_code" in analysis_result and analysis_result["error_code"] == "NOT_A_DEER":
