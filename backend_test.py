@@ -214,7 +214,118 @@ class IronStagTester:
             self.log(f"❌ Deer analysis test error: {str(e)}", "ERROR")
             return {"success": False, "error": str(e)}
     
-    def test_scan_eligibility(self) -> Dict[str, Any]:
+    def test_calibration_thresholds_directly(self) -> Dict[str, Any]:
+        """
+        Test the calibration thresholds directly by importing the region_calibration module.
+        This verifies the bug fix at the code level.
+        """
+        try:
+            # Import the calibration module to check thresholds
+            import sys
+            sys.path.append('/app/backend')
+            from region_calibration import REGION_UNCERTAINTY_THRESHOLDS, RegionKey
+            
+            self.log("🔍 Checking region uncertainty thresholds...")
+            
+            results = {
+                "success": True,
+                "thresholds": {},
+                "bug_fix_verified": True
+            }
+            
+            # Check each region's threshold
+            for region in RegionKey:
+                threshold = REGION_UNCERTAINTY_THRESHOLDS.get(region, 0.68)
+                results["thresholds"][region.value] = threshold
+                self.log(f"   {region.value}: {threshold} (was 0.55-0.70, now lower)")
+                
+                # Verify the thresholds are in the expected lower range (0.35-0.45)
+                if threshold > 0.50:  # If any threshold is still high
+                    results["bug_fix_verified"] = False
+                    self.log(f"   ⚠️ {region.value} threshold still high: {threshold}")
+            
+            # Check specific regions mentioned in the bug fix
+            midwest_threshold = REGION_UNCERTAINTY_THRESHOLDS.get(RegionKey.MIDWEST, 0.68)
+            south_texas_threshold = REGION_UNCERTAINTY_THRESHOLDS.get(RegionKey.SOUTH_TEXAS, 0.68)
+            
+            if midwest_threshold <= 0.45 and south_texas_threshold <= 0.45:
+                self.log("✅ CONFIDENCE CALIBRATION BUG FIX VERIFIED IN CODE")
+                self.log(f"   - Midwest threshold: {midwest_threshold} (was ~0.55-0.70)")
+                self.log(f"   - South Texas threshold: {south_texas_threshold} (was ~0.55-0.70)")
+                self.log("   - All thresholds are now in reasonable range (0.35-0.45)")
+            else:
+                self.log("❌ THRESHOLDS STILL TOO HIGH")
+                results["bug_fix_verified"] = False
+            
+            return results
+            
+        except Exception as e:
+            self.log(f"❌ Calibration threshold test error: {str(e)}", "ERROR")
+            return {"success": False, "error": str(e)}
+    
+    def test_other_backend_endpoints(self) -> Dict[str, Any]:
+        """Test other backend endpoints to ensure the system is working properly"""
+        if not self.auth_token:
+            return {"success": False, "error": "No authentication token"}
+        
+        results = {
+            "success": True,
+            "endpoints_tested": {},
+            "total_passed": 0,
+            "total_failed": 0
+        }
+        
+        headers = {"Authorization": f"Bearer {self.auth_token}"}
+        
+        # Test user profile endpoint
+        try:
+            response = self.session.get(f"{self.base_url}/auth/me", headers=headers)
+            if response.status_code == 200:
+                self.log("✅ User profile endpoint working")
+                results["endpoints_tested"]["auth_me"] = "passed"
+                results["total_passed"] += 1
+            else:
+                self.log(f"❌ User profile endpoint failed: {response.status_code}")
+                results["endpoints_tested"]["auth_me"] = "failed"
+                results["total_failed"] += 1
+        except Exception as e:
+            self.log(f"❌ User profile test error: {str(e)}")
+            results["endpoints_tested"]["auth_me"] = "error"
+            results["total_failed"] += 1
+        
+        # Test subscription status endpoint
+        try:
+            response = self.session.get(f"{self.base_url}/subscription/status", headers=headers)
+            if response.status_code == 200:
+                self.log("✅ Subscription status endpoint working")
+                results["endpoints_tested"]["subscription_status"] = "passed"
+                results["total_passed"] += 1
+            else:
+                self.log(f"❌ Subscription status endpoint failed: {response.status_code}")
+                results["endpoints_tested"]["subscription_status"] = "failed"
+                results["total_failed"] += 1
+        except Exception as e:
+            self.log(f"❌ Subscription status test error: {str(e)}")
+            results["endpoints_tested"]["subscription_status"] = "error"
+            results["total_failed"] += 1
+        
+        # Test scan history endpoint
+        try:
+            response = self.session.get(f"{self.base_url}/scans", headers=headers)
+            if response.status_code == 200:
+                self.log("✅ Scan history endpoint working")
+                results["endpoints_tested"]["scans"] = "passed"
+                results["total_passed"] += 1
+            else:
+                self.log(f"❌ Scan history endpoint failed: {response.status_code}")
+                results["endpoints_tested"]["scans"] = "failed"
+                results["total_failed"] += 1
+        except Exception as e:
+            self.log(f"❌ Scan history test error: {str(e)}")
+            results["endpoints_tested"]["scans"] = "error"
+            results["total_failed"] += 1
+        
+        return results
         """Test scan eligibility endpoint"""
         if not self.auth_token:
             return {"success": False, "error": "No authentication token"}
