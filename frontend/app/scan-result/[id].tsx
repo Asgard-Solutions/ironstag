@@ -582,6 +582,15 @@ export default function ScanResultScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Feedback Modal (Phase 2 Empirical Calibration) */}
+      <LabelFeedbackModal
+        visible={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+        scanId={id || ''}
+        predictedAge={scan?.deer_age || null}
+        onLabelSubmitted={handleLabelSubmitted}
+      />
     </View>
   );
 }
