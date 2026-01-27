@@ -326,6 +326,8 @@ class IronStagTester:
             results["total_failed"] += 1
         
         return results
+    
+    def test_scan_eligibility(self) -> Dict[str, Any]:
         """Test scan eligibility endpoint"""
         if not self.auth_token:
             return {"success": False, "error": "No authentication token"}
