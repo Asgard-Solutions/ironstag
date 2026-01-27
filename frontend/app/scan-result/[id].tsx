@@ -787,6 +787,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  // Feedback section (Phase 2 Empirical Calibration)
+  feedbackSection: {
+    marginBottom: spacing.md,
+  },
+  feedbackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary + '10',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  feedbackButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.primary,
+  },
+  feedbackSubmitted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.harvest + '10',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  feedbackSubmittedText: {
+    fontSize: 13,
+    color: colors.harvest,
+  },
   disclaimerCard: {
     backgroundColor: colors.warning + '10',
     padding: spacing.md,
