@@ -447,6 +447,26 @@ export default function ScanResultScreen() {
           )}
         </View>
 
+        {/* Feedback Section (Phase 2 Empirical Calibration) */}
+        {labelCheckDone && (
+          <View style={styles.feedbackSection}>
+            {hasLabel ? (
+              <View style={styles.feedbackSubmitted}>
+                <Check size={16} color={colors.harvest} />
+                <Text style={styles.feedbackSubmittedText}>Feedback submitted — thanks!</Text>
+              </View>
+            ) : isFeedbackEligible() ? (
+              <TouchableOpacity 
+                style={styles.feedbackButton}
+                onPress={() => setShowFeedbackModal(true)}
+              >
+                <MessageSquare size={18} color={colors.primary} />
+                <Text style={styles.feedbackButtonText}>How did this estimate hold up?</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
+
         {/* Disclaimer */}
         <Card style={styles.disclaimerCard}>
           <View style={styles.disclaimerHeader}>
