@@ -360,6 +360,61 @@ class ScanEditRequest(BaseModel):
     antler_points_right: Optional[int] = None
     image_base64: Optional[str] = None  # Required if re-analyzing with LLM
 
+
+# ============ SCAN LABEL MODELS (Phase 2 Empirical Calibration) ============
+
+class ScanLabelRequest(BaseModel):
+    """Request to add a label to a scan for empirical calibration.
+    
+    Two modes:
+    1. Exact age (strong signal): User provides reported_age after harvest
+    2. Categorical (weak signal): User says 'exact', 'close', or 'off'
+    """
+    # Exact age label (strong signal)
+    reported_age: Optional[float] = Field(None, description="Actual age if known (e.g., after harvest)")
+    
+    # Categorical label (weak signal)
+    accuracy_category: Optional[str] = Field(None, description="'exact' | 'close' | 'off'")
+    
+    # Was this deer harvested? (affects credibility)
+    harvest_confirmed: bool = Field(False, description="True if user harvested this deer")
+    
+    # Optional notes
+    notes: Optional[str] = None
+
+
+class ScanLabelResponse(BaseModel):
+    """Response after creating a scan label."""
+    id: str
+    scan_id: str
+    label_type: str  # 'exact_age' | 'categorical'
+    label_weight: float
+    effective_weight: float  # After credibility adjustment
+    reported_age: Optional[float] = None
+    accuracy_category: Optional[str] = None
+    error_bucket: Optional[str] = None  # 'exact' | 'within_half' | 'within_one' | 'off'
+    prediction_error: Optional[float] = None
+    harvest_confirmed: bool
+    created_at: datetime
+
+
+class ScanWithLabel(DeerAnalysisResponse):
+    """Scan response extended with label data if present."""
+    label: Optional[ScanLabelResponse] = None
+
+
+class LabelStatsResponse(BaseModel):
+    """Statistics about labels in the system."""
+    total_labels: int
+    exact_age_count: int  # Strong signals
+    categorical_count: int  # Weak signals
+    by_region: Dict[str, int]
+    by_error_bucket: Dict[str, int]
+    by_image_quality: Dict[str, int]
+    total_weighted_samples: float  # Sum of effective weights
+    maturity_gates: Dict[str, bool]  # Which gates are met
+
+
 class PasswordResetRequest(BaseModel):
     email: EmailStr
 
