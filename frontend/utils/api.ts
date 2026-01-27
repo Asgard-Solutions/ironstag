@@ -112,6 +112,31 @@ export const scanAPI = {
   deleteAllScans: () => api.delete('/scans/all'),
 
   getStats: () => api.get('/scans/stats/summary'),
+  
+  // ============ SCAN LABEL API (Phase 2 Empirical Calibration) ============
+  
+  /**
+   * Get label for a scan (if exists)
+   */
+  getLabel: (scanId: string) => api.get(`/scans/${scanId}/label`),
+  
+  /**
+   * Add a label to a scan
+   * - reported_age: Exact age if known (strong signal)
+   * - accuracy_category: 'exact' | 'close' | 'off' (weak signal)
+   * - harvest_confirmed: True if user harvested this deer (boosts credibility)
+   */
+  addLabel: (scanId: string, data: {
+    reported_age?: number;
+    accuracy_category?: 'exact' | 'close' | 'off';
+    harvest_confirmed?: boolean;
+    notes?: string;
+  }) => api.post(`/scans/${scanId}/label`, data),
+  
+  /**
+   * Delete label from a scan
+   */
+  deleteLabel: (scanId: string) => api.delete(`/scans/${scanId}/label`),
 };
 
 // Subscription API
