@@ -12,6 +12,22 @@ Calibration Version: v2-region-heuristic
 - Fallback chain: region_curve → global_curve → heuristic → legacy
 
 Author: Iron Stag Development Team
+
+=============================================================================
+IMPORTANT: EMPIRICAL CALIBRATION CURVES ARE INTENTIONALLY INACTIVE
+=============================================================================
+Calibration curves (Phase 2) are built but NOT activated until empirical
+maturity gates are met. This prevents premature calibration on thin data.
+
+Activation requires:
+- Minimum sample counts per confidence bin
+- Monotonicity validation
+- No confidence inflation
+- Human-gated approval via CLI
+
+Do not manually enable curve-based calibration without validating maturity.
+See: python -m cli.calibration status
+=============================================================================
 """
 
 import os
