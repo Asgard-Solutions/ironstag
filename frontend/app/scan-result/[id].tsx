@@ -113,6 +113,11 @@ export default function ScanResultScreen() {
   const [editPointsLeft, setEditPointsLeft] = useState<string>('');
   const [editPointsRight, setEditPointsRight] = useState<string>('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  
+  // Feedback modal state (Phase 2 Empirical Calibration)
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [hasLabel, setHasLabel] = useState(false);
+  const [labelCheckDone, setLabelCheckDone] = useState(false);
 
   useEffect(() => {
     loadScan();
