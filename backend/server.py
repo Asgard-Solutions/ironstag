@@ -498,6 +498,31 @@ async def startup():
         """)
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_scan_id ON scan_labels(scan_id)")
         
+        # Phase 2 Enhanced: Add new columns to scan_labels for weighted empirical calibration
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS user_id VARCHAR(36)")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_type VARCHAR(20)")  # 'exact_age' | 'categorical'
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_weight FLOAT DEFAULT 1.0")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS reported_age FLOAT")  # User-entered actual age
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS accuracy_category VARCHAR(20)")  # 'exact' | 'close' | 'off'
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS prediction_error FLOAT")  # |predicted - actual|
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS error_bucket VARCHAR(20)")  # 'exact' | 'within_half' | 'within_one' | 'off'
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS harvest_confirmed BOOLEAN DEFAULT FALSE")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS credibility_factor FLOAT DEFAULT 0.5")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS effective_weight FLOAT")  # label_weight * credibility_factor
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS notes TEXT")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS labeled_at TIMESTAMP")
+        
+        # Phase 2 Enhanced: Add image quality and posture columns to scans
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS image_quality_bucket VARCHAR(20)")  # 'excellent' | 'good' | 'fair' | 'poor'
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS quality_factors JSON")  # {blur_score, lighting, distance_estimate, occlusion}
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS posture_bucket VARCHAR(20)")  # 'broadside' | 'angled' | 'head_down' | 'unknown'
+        
+        # Create indexes for label queries
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_user_id ON scan_labels(user_id)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_label_type ON scan_labels(label_type)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_error_bucket ON scan_labels(error_bucket)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_created_at ON scan_labels(created_at)")
+        
         # Phase 2: Create calibration_curves table for empirical calibration
         await database.execute("""
             CREATE TABLE IF NOT EXISTS calibration_curves (
