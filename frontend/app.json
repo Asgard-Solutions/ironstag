@@ -34,7 +34,7 @@
     },
     "android": {
       "package": "io.asgardsolution.ironstag",
-      "versionCode": 18,
+      "versionCode": 19,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/stag_icon.png",
         "backgroundColor": "#0E1A14"
