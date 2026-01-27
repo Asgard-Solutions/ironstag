@@ -517,11 +517,15 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS quality_factors JSON")  # {blur_score, lighting, distance_estimate, occlusion}
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS posture_bucket VARCHAR(20)")  # 'broadside' | 'angled' | 'head_down' | 'unknown'
         
+        # Label versioning for safe weight recomputation in future
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_version INTEGER DEFAULT 1")
+        
         # Create indexes for label queries
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_user_id ON scan_labels(user_id)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_label_type ON scan_labels(label_type)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_error_bucket ON scan_labels(error_bucket)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_created_at ON scan_labels(created_at)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_version ON scan_labels(label_version)")
         
         # Phase 2: Create calibration_curves table for empirical calibration
         await database.execute("""
