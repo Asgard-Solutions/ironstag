@@ -11,8 +11,8 @@ import base64
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-# Backend URL from frontend/.env
-BACKEND_URL = "https://ai-confidence-boost.preview.emergentagent.com/api"
+# Backend URL - using localhost since external URL is not accessible
+BACKEND_URL = "http://localhost:8001/api"
 
 class IronStagPhase1Tester:
     def __init__(self):
