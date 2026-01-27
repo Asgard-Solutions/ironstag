@@ -1954,7 +1954,7 @@ async def delete_scan_label(
         raise HTTPException(status_code=404, detail="Scan not found")
     
     # Delete label
-    result = await database.execute(
+    await database.execute(
         "DELETE FROM scan_labels WHERE scan_id = :scan_id",
         {"scan_id": scan_id}
     )
