@@ -178,15 +178,17 @@ REGION_DIFFICULTY_MULTIPLIERS: Dict[RegionKey, float] = {
 
 
 # Region-specific uncertainty thresholds (v1 defaults)
-# Higher = harder region requires higher confidence to avoid "uncertain"
+# Lower thresholds = only mark as uncertain for genuinely poor quality images
+# These values represent the MINIMUM calibrated confidence needed to provide an age estimate
+# Calibrated confidence is already scaled (max ~0.75), so thresholds should be proportionally lower
 REGION_UNCERTAINTY_THRESHOLDS: Dict[RegionKey, float] = {
-    RegionKey.MIDWEST: 0.55,
-    RegionKey.NORTHEAST: 0.60,
-    RegionKey.PLAINS: 0.62,
-    RegionKey.SOUTHEAST: 0.65,
-    RegionKey.SOUTH_TEXAS: 0.70,
-    RegionKey.NORTHERN: 0.62,
-    RegionKey.UNKNOWN: 0.68,
+    RegionKey.MIDWEST: 0.35,       # Easiest region - only reject very low confidence
+    RegionKey.NORTHEAST: 0.38,    # Slightly higher bar
+    RegionKey.PLAINS: 0.40,       # Distance shots may have lower confidence
+    RegionKey.SOUTHEAST: 0.42,    # Body size variance considered
+    RegionKey.SOUTH_TEXAS: 0.45,  # Hardest region - still reasonable threshold
+    RegionKey.NORTHERN: 0.40,     # Less data, moderate threshold
+    RegionKey.UNKNOWN: 0.42,      # Conservative default for unknown regions
 }
 
 
