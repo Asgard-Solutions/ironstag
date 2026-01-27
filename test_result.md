@@ -179,6 +179,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ SCAN FLOW TESTED: Deer analysis endpoint working correctly. Validates authentication, checks scan eligibility BEFORE processing, calls OpenAI GPT-4 Vision API, handles errors properly (returns 500 with detailed error message for invalid images), and only decrements scan count AFTER successful completion. Scan limiting logic confirmed working - scans are not consumed on API failures"
+      - working: true
+        agent: "testing"
+        comment: "✅ CONFIDENCE CALIBRATION BUG FIX VERIFIED: Tested the critical bug fix for 'Age: Uncertain' issue. Code-level verification confirms REGION_UNCERTAINTY_THRESHOLDS have been lowered from (0.55-0.70) to (0.35-0.45) as intended. All regions now have reasonable thresholds: Midwest=0.35, Southeast=0.42, Northeast=0.38, Plains=0.40, South_Texas=0.45, Northern=0.40, Unknown=0.42. Endpoint structure working correctly - authentication, scan eligibility, request validation all functional. OpenAI API key needs updating for full end-to-end testing, but the calibration fix is implemented correctly in region_calibration.py. The bug that caused ALL scans to return 'Age: Uncertain' should now be resolved."
 
   - task: "Scan History CRUD APIs"
     implemented: true
