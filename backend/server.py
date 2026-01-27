@@ -1694,6 +1694,436 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
     
     return build_scan_response(dict(scan))
 
+
+# ============ SCAN LABEL ENDPOINTS (Phase 2 Empirical Calibration) ============
+
+# Label weight constants
+LABEL_WEIGHTS = {
+    "exact_age_harvested": 1.0,
+    "exact_age_estimated": 0.7,
+    "categorical_exact": 0.3,
+    "categorical_close": 0.2,
+    "categorical_off": 0.4,
+}
+
+# Credibility factors
+CREDIBILITY_FACTORS = {
+    "harvested": 1.0,
+    "has_prior_exact_labels": 0.7,
+    "default": 0.5,
+}
+
+
+def compute_error_bucket(predicted_age: Optional[float], reported_age: float) -> str:
+    """
+    Compute error bucket based on prediction error.
+    Primary calibration metric: within_half (±0.5 years)
+    """
+    if predicted_age is None:
+        return "off"
+    
+    error = abs(predicted_age - reported_age)
+    
+    if error <= 0.25:
+        return "exact"
+    elif error <= 0.5:
+        return "within_half"
+    elif error <= 1.0:
+        return "within_one"
+    else:
+        return "off"
+
+
+def compute_label_weight(label_type: str, accuracy_category: Optional[str], harvest_confirmed: bool) -> float:
+    """Compute base label weight based on label type."""
+    if label_type == "exact_age":
+        return LABEL_WEIGHTS["exact_age_harvested"] if harvest_confirmed else LABEL_WEIGHTS["exact_age_estimated"]
+    elif label_type == "categorical":
+        if accuracy_category == "exact":
+            return LABEL_WEIGHTS["categorical_exact"]
+        elif accuracy_category == "close":
+            return LABEL_WEIGHTS["categorical_close"]
+        elif accuracy_category == "off":
+            return LABEL_WEIGHTS["categorical_off"]
+    return 0.5  # Default
+
+
+async def compute_credibility_factor(user_id: str, harvest_confirmed: bool) -> float:
+    """
+    Compute credibility factor based on user history and harvest confirmation.
+    Credibility: 1.0 (harvested) -> 0.7 (prior exact labels) -> 0.5 (default)
+    """
+    if harvest_confirmed:
+        return CREDIBILITY_FACTORS["harvested"]
+    
+    # Check if user has prior exact age labels
+    query = """
+        SELECT COUNT(*) FROM scan_labels 
+        WHERE user_id = :user_id AND label_type = 'exact_age'
+    """
+    result = await database.fetch_one(query, {"user_id": user_id})
+    if result and result[0] > 0:
+        return CREDIBILITY_FACTORS["has_prior_exact_labels"]
+    
+    return CREDIBILITY_FACTORS["default"]
+
+
+@api_router.post("/scans/{scan_id}/label", response_model=ScanLabelResponse)
+async def add_scan_label(
+    scan_id: str,
+    data: ScanLabelRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Add a label to a scan for empirical calibration.
+    
+    Two modes:
+    1. Exact age (strong signal): Provide reported_age (usually after harvest)
+    2. Categorical (weak signal): Provide accuracy_category ('exact', 'close', 'off')
+    
+    Labels are weighted by:
+    - Label type (exact_age > categorical)
+    - Credibility (harvest_confirmed > prior_exact_labels > default)
+    """
+    # Validate request - must have either reported_age OR accuracy_category
+    if data.reported_age is None and data.accuracy_category is None:
+        raise HTTPException(
+            status_code=400, 
+            detail="Must provide either reported_age (exact age) or accuracy_category ('exact', 'close', 'off')"
+        )
+    
+    if data.accuracy_category and data.accuracy_category not in ["exact", "close", "off"]:
+        raise HTTPException(
+            status_code=400,
+            detail="accuracy_category must be 'exact', 'close', or 'off'"
+        )
+    
+    # Get the scan
+    query = scans_table.select().where(
+        (scans_table.c.id == scan_id) & (scans_table.c.user_id == user["id"])
+    )
+    scan = await database.fetch_one(query)
+    
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Check if label already exists for this scan
+    existing_label = await database.fetch_one(
+        "SELECT id FROM scan_labels WHERE scan_id = :scan_id",
+        {"scan_id": scan_id}
+    )
+    if existing_label:
+        raise HTTPException(
+            status_code=400,
+            detail="Label already exists for this scan. Delete existing label first to re-label."
+        )
+    
+    # Determine label type
+    label_type = "exact_age" if data.reported_age is not None else "categorical"
+    
+    # Compute error metrics for exact age labels
+    prediction_error = None
+    error_bucket = None
+    if label_type == "exact_age" and data.reported_age is not None:
+        predicted_age = scan["deer_age"]
+        if predicted_age is not None:
+            prediction_error = abs(predicted_age - data.reported_age)
+            error_bucket = compute_error_bucket(predicted_age, data.reported_age)
+        else:
+            error_bucket = "off"  # No prediction to compare
+    elif label_type == "categorical":
+        # Map categorical to error bucket
+        error_bucket = data.accuracy_category
+    
+    # Compute weights
+    base_weight = compute_label_weight(label_type, data.accuracy_category, data.harvest_confirmed)
+    credibility = await compute_credibility_factor(user["id"], data.harvest_confirmed)
+    effective_weight = base_weight * credibility
+    
+    # Create label
+    label_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    
+    await database.execute(
+        """
+        INSERT INTO scan_labels (
+            id, scan_id, user_id, label_type, label_weight, reported_age, 
+            accuracy_category, prediction_error, error_bucket, harvest_confirmed,
+            credibility_factor, effective_weight, notes, created_at, labeled_at,
+            label_source, trust_source, trust_weight
+        ) VALUES (
+            :id, :scan_id, :user_id, :label_type, :label_weight, :reported_age,
+            :accuracy_category, :prediction_error, :error_bucket, :harvest_confirmed,
+            :credibility_factor, :effective_weight, :notes, :created_at, :labeled_at,
+            :label_source, :trust_source, :trust_weight
+        )
+        """,
+        {
+            "id": label_id,
+            "scan_id": scan_id,
+            "user_id": user["id"],
+            "label_type": label_type,
+            "label_weight": base_weight,
+            "reported_age": data.reported_age,
+            "accuracy_category": data.accuracy_category,
+            "prediction_error": prediction_error,
+            "error_bucket": error_bucket,
+            "harvest_confirmed": data.harvest_confirmed,
+            "credibility_factor": credibility,
+            "effective_weight": effective_weight,
+            "notes": data.notes,
+            "created_at": now,
+            "labeled_at": now,
+            "label_source": "user_self_report",
+            "trust_source": "self_reported",
+            "trust_weight": effective_weight,
+        }
+    )
+    
+    logger.info(
+        f"Scan label created: scan={scan_id}, type={label_type}, "
+        f"weight={base_weight:.2f}, credibility={credibility:.2f}, "
+        f"effective={effective_weight:.2f}, error_bucket={error_bucket}"
+    )
+    
+    return ScanLabelResponse(
+        id=label_id,
+        scan_id=scan_id,
+        label_type=label_type,
+        label_weight=base_weight,
+        effective_weight=effective_weight,
+        reported_age=data.reported_age,
+        accuracy_category=data.accuracy_category,
+        error_bucket=error_bucket,
+        prediction_error=prediction_error,
+        harvest_confirmed=data.harvest_confirmed,
+        created_at=now,
+    )
+
+
+@api_router.get("/scans/{scan_id}/label", response_model=Optional[ScanLabelResponse])
+async def get_scan_label(
+    scan_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """Get the label for a specific scan if it exists."""
+    # Verify scan ownership
+    scan = await database.fetch_one(
+        "SELECT id FROM scans WHERE id = :scan_id AND user_id = :user_id",
+        {"scan_id": scan_id, "user_id": user["id"]}
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Get label
+    label = await database.fetch_one(
+        "SELECT * FROM scan_labels WHERE scan_id = :scan_id",
+        {"scan_id": scan_id}
+    )
+    
+    if not label:
+        return None
+    
+    return ScanLabelResponse(
+        id=label["id"],
+        scan_id=label["scan_id"],
+        label_type=label["label_type"] or "unknown",
+        label_weight=label["label_weight"] or 0,
+        effective_weight=label["effective_weight"] or 0,
+        reported_age=label["reported_age"],
+        accuracy_category=label["accuracy_category"],
+        error_bucket=label["error_bucket"],
+        prediction_error=label["prediction_error"],
+        harvest_confirmed=label["harvest_confirmed"] or False,
+        created_at=label["created_at"],
+    )
+
+
+@api_router.delete("/scans/{scan_id}/label")
+async def delete_scan_label(
+    scan_id: str,
+    user: dict = Depends(get_current_user)
+):
+    """Delete the label for a specific scan."""
+    # Verify scan ownership
+    scan = await database.fetch_one(
+        "SELECT id FROM scans WHERE id = :scan_id AND user_id = :user_id",
+        {"scan_id": scan_id, "user_id": user["id"]}
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Delete label
+    result = await database.execute(
+        "DELETE FROM scan_labels WHERE scan_id = :scan_id",
+        {"scan_id": scan_id}
+    )
+    
+    return {"deleted": True, "scan_id": scan_id}
+
+
+# ============ ADMIN LABEL ENDPOINTS (for CLI and future dashboard) ============
+
+@api_router.get("/admin/calibration/labels/stats", response_model=LabelStatsResponse)
+async def get_label_stats(
+    region: Optional[str] = None
+):
+    """
+    Get statistics about labels in the system.
+    Used by CLI for inspection and maturity gate checking.
+    """
+    # Build base query
+    base_filter = ""
+    params = {}
+    if region:
+        base_filter = " AND s.region_key = :region"
+        params["region"] = region
+    
+    # Total labels
+    total_query = f"""
+        SELECT COUNT(*) FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE 1=1 {base_filter}
+    """
+    total_result = await database.fetch_one(total_query, params)
+    total_labels = total_result[0] if total_result else 0
+    
+    # By label type
+    exact_query = f"""
+        SELECT COUNT(*) FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE sl.label_type = 'exact_age' {base_filter}
+    """
+    exact_result = await database.fetch_one(exact_query, params)
+    exact_age_count = exact_result[0] if exact_result else 0
+    
+    categorical_count = total_labels - exact_age_count
+    
+    # By region
+    region_query = """
+        SELECT s.region_key, COUNT(*) as count 
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE s.region_key IS NOT NULL
+        GROUP BY s.region_key
+    """
+    region_results = await database.fetch_all(region_query)
+    by_region = {r["region_key"]: r["count"] for r in region_results}
+    
+    # By error bucket
+    bucket_query = """
+        SELECT error_bucket, COUNT(*) as count 
+        FROM scan_labels 
+        WHERE error_bucket IS NOT NULL
+        GROUP BY error_bucket
+    """
+    bucket_results = await database.fetch_all(bucket_query)
+    by_error_bucket = {r["error_bucket"]: r["count"] for r in bucket_results}
+    
+    # By image quality
+    quality_query = """
+        SELECT s.image_quality_bucket, COUNT(*) as count 
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE s.image_quality_bucket IS NOT NULL
+        GROUP BY s.image_quality_bucket
+    """
+    quality_results = await database.fetch_all(quality_query)
+    by_image_quality = {r["image_quality_bucket"]: r["count"] for r in quality_results}
+    
+    # Total weighted samples
+    weight_query = f"""
+        SELECT COALESCE(SUM(sl.effective_weight), 0) 
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE 1=1 {base_filter}
+    """
+    weight_result = await database.fetch_one(weight_query, params)
+    total_weighted = float(weight_result[0]) if weight_result and weight_result[0] else 0.0
+    
+    # Check maturity gates
+    maturity_gates = {
+        "global_min_samples": total_labels >= 500,
+        "global_min_weighted": total_weighted >= 300,
+        "has_region_data": len(by_region) > 0,
+        "has_quality_diversity": len(by_image_quality) >= 2,
+    }
+    
+    return LabelStatsResponse(
+        total_labels=total_labels,
+        exact_age_count=exact_age_count,
+        categorical_count=categorical_count,
+        by_region=by_region,
+        by_error_bucket=by_error_bucket,
+        by_image_quality=by_image_quality,
+        total_weighted_samples=total_weighted,
+        maturity_gates=maturity_gates,
+    )
+
+
+@api_router.get("/admin/calibration/labels")
+async def get_labels(
+    region: Optional[str] = None,
+    since: Optional[str] = None,
+    label_type: Optional[str] = None,
+    limit: int = 100
+):
+    """
+    Get labels for inspection. Used by CLI.
+    """
+    limit = min(limit, 500)
+    
+    # Build query
+    conditions = ["1=1"]
+    params = {"limit": limit}
+    
+    if region:
+        conditions.append("s.region_key = :region")
+        params["region"] = region
+    
+    if since:
+        conditions.append("sl.created_at >= :since")
+        params["since"] = since
+    
+    if label_type:
+        conditions.append("sl.label_type = :label_type")
+        params["label_type"] = label_type
+    
+    where_clause = " AND ".join(conditions)
+    
+    query = f"""
+        SELECT sl.*, s.region_key, s.image_quality_bucket, s.deer_age as predicted_age
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE {where_clause}
+        ORDER BY sl.created_at DESC
+        LIMIT :limit
+    """
+    
+    results = await database.fetch_all(query, params)
+    
+    labels = []
+    for r in results:
+        labels.append({
+            "id": r["id"],
+            "scan_id": r["scan_id"],
+            "label_type": r["label_type"],
+            "label_weight": r["label_weight"],
+            "effective_weight": r["effective_weight"],
+            "reported_age": r["reported_age"],
+            "accuracy_category": r["accuracy_category"],
+            "error_bucket": r["error_bucket"],
+            "prediction_error": r["prediction_error"],
+            "harvest_confirmed": r["harvest_confirmed"],
+            "region_key": r["region_key"],
+            "image_quality_bucket": r["image_quality_bucket"],
+            "predicted_age": r["predicted_age"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        })
+    
+    return {"labels": labels, "count": len(labels)}
+
+
 @api_router.post("/scans/{scan_id}/edit", response_model=DeerAnalysisResponse)
 async def edit_scan_with_reanalysis(
     scan_id: str, 
