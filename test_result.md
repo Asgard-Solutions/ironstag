@@ -377,6 +377,8 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "MVP implementation complete. Backend APIs tested with curl. Frontend screens rendering. Need full integration testing."
+  - agent: "main"
+    message: "CRITICAL BUG FIX: Fixed over-aggressive 'Age: Uncertain' calibration. The REGION_UNCERTAINTY_THRESHOLDS in /app/backend/region_calibration.py were too high (0.55-0.70), causing all scans to return 'Age: Uncertain'. Lowered thresholds to moderate range (0.35-0.45) so only genuinely poor quality images are marked as uncertain. Need to test deer analysis endpoint to confirm fix works."
   - agent: "testing"
     message: "✅ BACKEND TESTING COMPLETE: All 9 backend API endpoints tested and working correctly. Auth flow (register/login/profile/password-reset), subscription management (status/stripe checkout), scan history (get/stats), deer analysis (GPT-4 Vision integration), and learn content all functioning properly. OpenAI and Stripe integrations confirmed working with live API keys. Ready for frontend integration testing or production deployment."
   - agent: "testing"
