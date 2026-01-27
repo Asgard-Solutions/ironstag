@@ -135,12 +135,33 @@ export default function ScanResultScreen() {
         const uri = await getImage(response.data.local_image_id);
         setImageUri(uri);
       }
+      
+      // Check if scan already has a label (for feedback feature)
+      try {
+        const labelResponse = await scanAPI.getLabel(id);
+        setHasLabel(!!labelResponse.data);
+      } catch {
+        setHasLabel(false);
+      }
+      setLabelCheckDone(true);
     } catch (error) {
       console.error('Failed to load scan:', error);
       Alert.alert('Error', 'Failed to load scan details');
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Check if scan is eligible for feedback (7+ days old)
+  const isFeedbackEligible = (): boolean => {
+    if (!scan || hasLabel) return false;
+    const scanDate = new Date(scan.created_at);
+    const daysSinceScan = differenceInDays(new Date(), scanDate);
+    return daysSinceScan >= 7;
+  };
+  
+  const handleLabelSubmitted = () => {
+    setHasLabel(true);
   };
 
   const handleDelete = () => {
