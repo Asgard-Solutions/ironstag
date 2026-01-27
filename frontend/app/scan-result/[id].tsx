@@ -28,14 +28,16 @@ import {
   AlertTriangle,
   Pencil,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
 // Cap confidence at this value when age is uncertain/unknown
