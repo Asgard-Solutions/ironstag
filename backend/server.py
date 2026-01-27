@@ -1854,7 +1854,7 @@ async def add_scan_label(
             id, scan_id, user_id, label_type, label_weight, reported_age, 
             accuracy_category, prediction_error, error_bucket, harvest_confirmed,
             credibility_factor, effective_weight, notes, created_at, labeled_at,
-            label_source, trust_source, trust_weight
+            label_source, trust_source, trust_weight, label_version
         ) VALUES (
             :id, :scan_id, :user_id, :label_type, :label_weight, :reported_age,
             :accuracy_category, :prediction_error, :error_bucket, :harvest_confirmed,
