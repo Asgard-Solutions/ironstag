@@ -267,17 +267,20 @@ backend:
         agent: "testing"
         comment: "✅ TESTED: Phase 2 Empirical Calibration Admin APIs working perfectly. All 7 endpoints tested successfully: 1) GET /api/admin/calibration/jobs/status ✅ (returns job status and config with curves_enabled=true) 2) GET /api/admin/calibration/curves ✅ (returns 0 curves as expected - no labeled data) 3) POST /api/admin/calibration/build-curves ✅ (dry_run=true returns success with 0 curves built) 4) POST /api/admin/calibration/recalibrate-scans ✅ (dry_run=true returns success with 'No active curves found' error as expected) 5) GET /api/admin/calibration/curves/{invalid_id} ✅ (returns 404 'Curve not found') 6) POST /api/admin/calibration/activate-curve ✅ (returns 400 for invalid curve_id) 7) POST /api/admin/calibration/deactivate-curve/{invalid_id} ✅ (returns success even for invalid ID as designed). Feature flag CALIBRATION_CURVES_ENABLED=true working correctly. All endpoints properly protected by feature flag and return expected responses for current system state (no labeled data, no active curves). Calibration jobs module integration confirmed working."
 
-  - task: "Calibration Database Tables"
+  - task: "Phase 1 Empirical Calibration Label APIs"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
         comment: "Created scan_labels and calibration_curves tables via migrations in startup event. Tables support empirical calibration curve building and storage."
+      - working: true
+        agent: "testing"
+        comment: "✅ PHASE 1 EMPIRICAL CALIBRATION TESTING COMPLETE: Comprehensive testing of all Phase 1 label endpoints completed successfully with 10/10 tests passed (100% success rate). All endpoints working perfectly: 1) POST /api/scans/{scan_id}/label ✅ (exact age labels: label_type='exact_age', label_weight=1.0, effective_weight=1.0 for harvested deer; categorical labels: label_type='categorical', label_weight=0.2, effective_weight=0.1 for 'close' accuracy with default credibility) 2) GET /api/scans/{scan_id}/label ✅ (retrieves labels correctly, returns null for scans without labels) 3) DELETE /api/scans/{scan_id}/label ✅ (removes existing labels successfully) 4) GET /api/admin/calibration/labels/stats ✅ (returns comprehensive statistics: total_labels, exact_age_count, categorical_count, by_region breakdown, by_error_bucket analysis, maturity_gates status, total_weighted_samples) 5) GET /api/admin/calibration/labels ✅ (lists recent labels with proper structure including region_key, image_quality_bucket, predicted_age). Label weighting system working correctly: exact_age_harvested=1.0, categorical_close=0.2, credibility factors applied (harvested=1.0, default=0.5). Database schema confirmed working with all required columns (trust_source, trust_weight for Phase 3 compatibility). Admin endpoints accessible without authentication as designed. System ready for empirical calibration data collection and curve building."
 
   - task: "Phase 3 Adaptive Calibration Admin APIs"
     implemented: true
