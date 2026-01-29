@@ -298,6 +298,22 @@ export default function HistoryScreen() {
         onPress={() => router.push(`/scan-result/${item.id}`)}
       >
         <View style={styles.scanCard}>
+          {/* Favorite button - top right corner */}
+          <TouchableOpacity 
+            style={styles.favoriteButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              toggleFavorite(item.id, item.is_favorite || false);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Heart 
+              size={18} 
+              color={item.is_favorite ? colors.harvest : colors.textMuted}
+              fill={item.is_favorite ? colors.harvest : 'transparent'}
+            />
+          </TouchableOpacity>
+          
           <View style={styles.scanRow}>
             {/* Left side - Icon or Image */}
             <ScanImage localImageId={item.local_image_id} imageUrl={item.image_url} />
