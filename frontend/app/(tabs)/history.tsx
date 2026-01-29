@@ -44,6 +44,9 @@ interface Scan {
   created_at: string;
   // Cloud image storage (R2) - for cross-device access
   image_url?: string | null;
+  // Favorites and Tags
+  is_favorite?: boolean;
+  tags?: string[];
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
