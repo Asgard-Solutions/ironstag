@@ -2364,6 +2364,14 @@ async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
+    # Delete image from R2 cloud storage
+    if R2_ENABLED:
+        try:
+            delete_scan_image(scan_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete R2 image for scan {scan_id}: {e}")
+            # Continue with DB deletion even if R2 fails
+    
     query = scans_table.delete().where(scans_table.c.id == scan_id)
     await database.execute(query)
     
