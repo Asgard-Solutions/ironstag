@@ -191,7 +191,10 @@ def upload_scan_image(scan_id: str, base64_image: str) -> Optional[str]:
         # Parse the base64 image
         image_bytes, content_type = parse_base64_image(base64_image)
         
-        # Determine file extension from content type
+        # Compress image to reduce storage costs
+        image_bytes, content_type = compress_image(image_bytes, content_type)
+        
+        # Determine file extension from content type (always jpg after compression)
         ext_map = {
             "image/jpeg": "jpg",
             "image/png": "png",
