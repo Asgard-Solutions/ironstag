@@ -243,7 +243,7 @@ export default function HistoryScreen() {
         <View style={styles.scanCard}>
           <View style={styles.scanRow}>
             {/* Left side - Icon or Image */}
-            <ScanImage localImageId={item.local_image_id} />
+            <ScanImage localImageId={item.local_image_id} imageUrl={item.image_url} />
             
             {/* Middle - Info */}
             <View style={styles.scanInfo}>
