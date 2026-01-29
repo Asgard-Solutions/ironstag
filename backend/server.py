@@ -353,6 +353,9 @@ class DeerAnalysisResponse(BaseModel):
     calibration_fallback_reason: Optional[str] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
+    # Favorites and Tags
+    is_favorite: Optional[bool] = False
+    tags: Optional[List[str]] = None
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
