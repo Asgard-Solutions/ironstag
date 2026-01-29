@@ -98,9 +98,79 @@ def parse_base64_image(base64_string: str) -> Tuple[bytes, str]:
     return image_bytes, content_type
 
 
+def compress_image(image_bytes: bytes, content_type: str) -> Tuple[bytes, str]:
+    """
+    Compress an image to reduce file size while maintaining quality.
+    
+    - Resizes if larger than MAX_IMAGE_DIMENSION
+    - Converts to JPEG for better compression
+    - Applies quality setting
+    
+    Args:
+        image_bytes: Original image bytes
+        content_type: Original content type
+        
+    Returns:
+        Tuple of (compressed_bytes, new_content_type)
+    """
+    if not PIL_AVAILABLE:
+        logger.debug("PIL not available, skipping compression")
+        return image_bytes, content_type
+    
+    try:
+        original_size = len(image_bytes) / 1024  # KB
+        
+        # Open image
+        img = Image.open(BytesIO(image_bytes))
+        
+        # Convert RGBA to RGB (for JPEG compatibility)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            # Create white background
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Resize if too large
+        width, height = img.size
+        if width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
+            # Calculate new size maintaining aspect ratio
+            if width > height:
+                new_width = MAX_IMAGE_DIMENSION
+                new_height = int(height * (MAX_IMAGE_DIMENSION / width))
+            else:
+                new_height = MAX_IMAGE_DIMENSION
+                new_width = int(width * (MAX_IMAGE_DIMENSION / height))
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            logger.debug(f"Resized image from {width}x{height} to {new_width}x{new_height}")
+        
+        # Compress to JPEG
+        output = BytesIO()
+        img.save(output, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+        compressed_bytes = output.getvalue()
+        
+        compressed_size = len(compressed_bytes) / 1024  # KB
+        savings = ((original_size - compressed_size) / original_size) * 100 if original_size > 0 else 0
+        
+        logger.info(f"Image compressed: {original_size:.1f}KB -> {compressed_size:.1f}KB ({savings:.1f}% reduction)")
+        
+        return compressed_bytes, "image/jpeg"
+        
+    except Exception as e:
+        logger.warning(f"Image compression failed, using original: {e}")
+        return image_bytes, content_type
+
+
 def upload_scan_image(scan_id: str, base64_image: str) -> Optional[str]:
     """
     Upload a scan image to R2 storage.
+    
+    - Compresses image before upload to reduce storage costs
+    - Uses scan_id as filename for easy retrieval
     
     Args:
         scan_id: The scan's UUID (used as filename)
