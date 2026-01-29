@@ -351,6 +351,8 @@ class DeerAnalysisResponse(BaseModel):
     region_key: Optional[str] = None
     calibration_strategy: Optional[str] = None
     calibration_fallback_reason: Optional[str] = None
+    # Cloud image storage (R2) - for cross-device image access
+    image_url: Optional[str] = None
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
