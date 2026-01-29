@@ -151,9 +151,18 @@ export default function ScanResultScreen() {
       setScan(response.data);
       setNotes(response.data.notes || '');
 
+      // Try to get local image first, fall back to cloud URL (R2)
       if (response.data.local_image_id) {
         const uri = await getImage(response.data.local_image_id);
-        setImageUri(uri);
+        if (uri) {
+          setImageUri(uri);
+        } else if (response.data.image_url) {
+          // Local image not found, use cloud URL (cross-device access)
+          setImageUri(response.data.image_url);
+        }
+      } else if (response.data.image_url) {
+        // No local image ID, use cloud URL directly
+        setImageUri(response.data.image_url);
       }
       
       // Check if scan already has a label (for feedback feature)
