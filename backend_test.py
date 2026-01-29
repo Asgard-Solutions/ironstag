@@ -10,7 +10,7 @@ import sys
 from typing import Dict, Any
 
 # API Configuration
-API_BASE_URL = "https://ai-confidence-boost.preview.emergentagent.com/api"
+API_BASE_URL = "https://deer-age.preview.emergentagent.com/api"
 
 class TestResults:
     def __init__(self):

@@ -7,7 +7,7 @@ import requests
 import json
 
 # API Configuration
-API_BASE_URL = "https://ai-confidence-boost.preview.emergentagent.com/api"
+API_BASE_URL = "https://deer-age.preview.emergentagent.com/api"
 
 def test_feature_flag_behavior():
     """Test that endpoints work correctly when feature flag is enabled"""
