@@ -157,6 +157,27 @@ export default function HistoryScreen() {
     try {
       const response = await scanAPI.getScans({});
       setScans(response.data);
+      
+      // Check labels for scans >7 days old (for feedback badge)
+      const eligibleScans = response.data.filter((scan: Scan) => {
+        const daysSinceScan = differenceInDays(new Date(), new Date(scan.created_at));
+        return daysSinceScan >= 7;
+      });
+      
+      // Batch check labels for eligible scans (non-blocking)
+      if (eligibleScans.length > 0) {
+        const labelChecks = await Promise.allSettled(
+          eligibleScans.map((scan: Scan) => scanAPI.getLabel(scan.id))
+        );
+        
+        const labeled = new Set<string>();
+        labelChecks.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value.data) {
+            labeled.add(eligibleScans[index].id);
+          }
+        });
+        setLabeledScanIds(labeled);
+      }
     } catch (error) {
       console.error('Failed to load scans:', error);
     } finally {
