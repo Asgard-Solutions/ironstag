@@ -1564,6 +1564,115 @@ async def verify_revenuecat(user: dict = Depends(get_current_user)):
         logger.error(f"RevenueCat verification error: {e}")
         return {"status": "error", "message": str(e)}
 
+
+@api_router.post("/webhooks/revenuecat")
+async def revenuecat_webhook(request: Request):
+    """
+    RevenueCat webhook endpoint for subscription events.
+    Configure this URL in RevenueCat Dashboard > Integrations > Webhooks.
+    
+    Events handled:
+    - INITIAL_PURCHASE: New subscription
+    - RENEWAL: Subscription renewed
+    - CANCELLATION: Subscription cancelled
+    - EXPIRATION: Subscription expired
+    - BILLING_ISSUE: Payment failed
+    """
+    # Verify webhook authenticity using shared secret
+    webhook_secret = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
+    auth_header = request.headers.get("Authorization", "")
+    
+    if webhook_secret and auth_header != f"Bearer {webhook_secret}":
+        logger.warning("RevenueCat webhook: Invalid authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        body = await request.json()
+        event = body.get("event", {})
+        event_type = event.get("type", "")
+        app_user_id = event.get("app_user_id", "")
+        
+        logger.info(f"RevenueCat webhook: {event_type} for user {app_user_id}")
+        
+        if not app_user_id:
+            logger.warning("RevenueCat webhook: No app_user_id in event")
+            return {"status": "ok", "message": "No user ID"}
+        
+        # Look up user by ID (app_user_id should match our user.id)
+        user = await database.fetch_one(
+            "SELECT * FROM users WHERE id = :id",
+            {"id": app_user_id}
+        )
+        
+        if not user:
+            logger.warning(f"RevenueCat webhook: User {app_user_id} not found")
+            return {"status": "ok", "message": "User not found"}
+        
+        # Handle different event types
+        if event_type in ["INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION"]:
+            # Subscription is active
+            product_id = event.get("product_id", "")
+            expiration_at = event.get("expiration_at_ms")
+            
+            expiration_date = None
+            if expiration_at:
+                from datetime import datetime
+                expiration_date = datetime.utcfromtimestamp(expiration_at / 1000)
+            
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_tier = :tier,
+                    subscription_status = :status,
+                    subscription_end_date = :end_date
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "tier": "master_stag",
+                    "status": "active",
+                    "end_date": expiration_date,
+                }
+            )
+            logger.info(f"RevenueCat: Activated subscription for user {app_user_id}")
+            
+        elif event_type in ["CANCELLATION", "EXPIRATION"]:
+            # Subscription ended
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_status = :status
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "status": "cancelled" if event_type == "CANCELLATION" else "expired",
+                }
+            )
+            logger.info(f"RevenueCat: {event_type} for user {app_user_id}")
+            
+        elif event_type == "BILLING_ISSUE":
+            # Payment problem
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_status = :status
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "status": "past_due",
+                }
+            )
+            logger.warning(f"RevenueCat: Billing issue for user {app_user_id}")
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"RevenueCat webhook error: {e}")
+        # Always return 200 to prevent retries for errors we can't fix
+        return {"status": "error", "message": str(e)}
+
 # ============ DEER ANALYSIS ============
 
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
