@@ -295,8 +295,18 @@ export default function ScanResultScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.replace('/(tabs)/scan')}>
+            <ArrowLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.title}>Scan Results</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        
+        {/* Skeleton loading state */}
+        <ScanResultSkeleton />
       </View>
     );
   }
