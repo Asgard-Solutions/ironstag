@@ -484,6 +484,17 @@ export default function HistoryScreen() {
                 </TouchableOpacity>
               )}
             </View>
+            {/* Favorites filter toggle */}
+            <TouchableOpacity
+              style={[styles.favoriteFilterButton, showFavoritesOnly && styles.favoriteFilterButtonActive]}
+              onPress={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            >
+              <Heart 
+                size={20} 
+                color={showFavoritesOnly ? colors.white : colors.harvest}
+                fill={showFavoritesOnly ? colors.white : 'transparent'}
+              />
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
               onPress={() => setShowFilters(!showFilters)}
