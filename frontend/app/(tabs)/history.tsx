@@ -746,6 +746,26 @@ const styles = StyleSheet.create({
   confidenceLabelUncertain: {
     fontSize: 10,
   },
+  // Right column container (holds confidence + feedback badge)
+  rightColumn: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  // Feedback badge for unlabeled scans >7 days old
+  feedbackBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.primary + '15',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.sm,
+  },
+  feedbackBadgeText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.primary,
+  },
 
   // Empty State Styles
   emptyContainer: {
