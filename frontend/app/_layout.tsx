@@ -72,6 +72,9 @@ export default function RootLayout() {
         await loadToken();
         await initializeImages();
         
+        // Initialize offline queue service
+        await offlineQueue.initialize();
+        
         // Initialize RevenueCat for iOS and Android (only in native builds, not Expo Go)
         if (Platform.OS === 'ios' || Platform.OS === 'android') {
           try {
