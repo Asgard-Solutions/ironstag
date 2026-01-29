@@ -138,6 +138,9 @@ scans_table = Table(
     Column("raw_recommendation_confidence", Integer),  # Raw recommendation confidence from model
     Column("calibration_strategy", String(50)),  # heuristic, global_curve, region_curve
     Column("calibration_fallback_reason", String(100)),  # Why fallback was used
+    # Image quality fields
+    Column("image_quality_bucket", String(20), nullable=True),  # Image quality assessment
+    Column("quality_factors", JSON, nullable=True),  # Detailed quality factors
     # User organization fields
     Column("is_favorite", Boolean, default=False),  # User favorite
     Column("tags", JSON, nullable=True),  # User tags for organization
