@@ -18,6 +18,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { ScanListSkeleton } from '../../components/Skeleton';
+import { OfflineBanner } from '../../components/OfflineIndicator';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
