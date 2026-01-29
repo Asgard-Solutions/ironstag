@@ -1576,6 +1576,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         
         scan_id = str(uuid.uuid4())
         
+        # Upload image to R2 cloud storage for cross-device access
+        image_url = None
+        if R2_ENABLED:
+            try:
+                image_url = upload_scan_image(scan_id, image_data)
+                if image_url:
+                    logger.info(f"Image uploaded to R2 for scan {scan_id}")
+            except Exception as e:
+                logger.warning(f"Failed to upload image to R2: {e}")
+                # Continue without cloud image - local image still works
+        
         query = scans_table.insert().values(
             id=scan_id,
             user_id=user["id"],
@@ -1604,7 +1615,9 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             region_source=calibrated_analysis.get("region_source"),
             region_state=calibrated_analysis.get("region_state"),
             calibration_strategy=calibrated_analysis.get("calibration_strategy"),
-            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason")
+            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
+            # Cloud image storage (R2)
+            image_url=image_url,
         )
         await database.execute(query)
         
