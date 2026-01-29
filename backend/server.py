@@ -47,6 +47,9 @@ from calibration_jobs import (
     CalibrationJobConfig
 )
 
+# Import R2 storage for cloud image storage
+from r2_storage import upload_scan_image, delete_scan_image, R2_ENABLED
+
 # Import Phase 3 adaptive calibration module
 from adaptive_calibration import (
     AdaptiveCalibrationConfig,
