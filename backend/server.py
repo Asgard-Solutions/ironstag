@@ -1763,6 +1763,101 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
     return build_scan_response(dict(scan))
 
 
+# ============ FAVORITES & TAGS ENDPOINTS ============
+
+class ToggleFavoriteRequest(BaseModel):
+    is_favorite: bool
+
+
+class UpdateTagsRequest(BaseModel):
+    tags: List[str]
+
+
+@api_router.post("/scans/{scan_id}/favorite", response_model=DeerAnalysisResponse)
+async def toggle_favorite(
+    scan_id: str,
+    data: ToggleFavoriteRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Toggle favorite status for a scan."""
+    # Verify scan ownership
+    query = scans_table.select().where(
+        (scans_table.c.id == scan_id) & (scans_table.c.user_id == user["id"])
+    )
+    scan = await database.fetch_one(query)
+    
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Update favorite status
+    update_query = scans_table.update().where(
+        scans_table.c.id == scan_id
+    ).values(is_favorite=data.is_favorite)
+    await database.execute(update_query)
+    
+    # Return updated scan
+    scan = await database.fetch_one(query)
+    return build_scan_response(dict(scan))
+
+
+@api_router.post("/scans/{scan_id}/tags", response_model=DeerAnalysisResponse)
+async def update_tags(
+    scan_id: str,
+    data: UpdateTagsRequest,
+    user: dict = Depends(get_current_user)
+):
+    """Update tags for a scan."""
+    # Verify scan ownership
+    query = scans_table.select().where(
+        (scans_table.c.id == scan_id) & (scans_table.c.user_id == user["id"])
+    )
+    scan = await database.fetch_one(query)
+    
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    # Validate tags (max 10 tags, max 30 chars each)
+    if len(data.tags) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 tags allowed")
+    
+    for tag in data.tags:
+        if len(tag) > 30:
+            raise HTTPException(status_code=400, detail="Tag must be 30 characters or less")
+    
+    # Clean tags (lowercase, trim whitespace)
+    clean_tags = [tag.strip().lower() for tag in data.tags if tag.strip()]
+    unique_tags = list(dict.fromkeys(clean_tags))  # Remove duplicates, preserve order
+    
+    # Update tags
+    import json
+    update_query = scans_table.update().where(
+        scans_table.c.id == scan_id
+    ).values(tags=json.dumps(unique_tags))
+    await database.execute(update_query)
+    
+    # Return updated scan
+    scan = await database.fetch_one(query)
+    return build_scan_response(dict(scan))
+
+
+@api_router.get("/scans/tags/all")
+async def get_all_user_tags(user: dict = Depends(get_current_user)):
+    """Get all unique tags used by the user across all scans."""
+    query = """
+        SELECT DISTINCT jsonb_array_elements_text(tags::jsonb) as tag
+        FROM scans
+        WHERE user_id = :user_id AND tags IS NOT NULL
+        ORDER BY tag
+    """
+    try:
+        results = await database.fetch_all(query, {"user_id": user["id"]})
+        tags = [r["tag"] for r in results]
+        return {"tags": tags}
+    except Exception:
+        # Fallback for older Postgres versions
+        return {"tags": []}
+
+
 # ============ SCAN LABEL ENDPOINTS (Phase 2 Empirical Calibration) ============
 
 # Label weight constants
