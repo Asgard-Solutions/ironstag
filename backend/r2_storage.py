@@ -9,6 +9,7 @@ Features:
 - Generate public URLs for cross-device access
 - Automatic content-type detection
 - UUID-based file naming for security through obscurity
+- Image compression to reduce storage costs
 """
 
 import os
@@ -22,6 +23,14 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+# Image processing for compression
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logging.warning("PIL not available - image compression disabled")
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -32,6 +41,11 @@ R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "ironstag-images")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL")
+
+# Compression settings
+MAX_IMAGE_DIMENSION = 1920  # Max width or height
+JPEG_QUALITY = 85  # Quality for JPEG compression (1-100)
+MAX_FILE_SIZE_KB = 500  # Target max file size in KB
 
 # Check if R2 is configured
 R2_ENABLED = all([R2_ENDPOINT_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME])
