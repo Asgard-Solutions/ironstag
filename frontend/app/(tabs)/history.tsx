@@ -155,6 +155,9 @@ export default function HistoryScreen() {
   
   // Track which scans have labels (for feedback badge)
   const [labeledScanIds, setLabeledScanIds] = useState<Set<string>>(new Set());
+  
+  // Favorites filter
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   const loadScans = useCallback(async () => {
     if (!isAuthenticated) return;
