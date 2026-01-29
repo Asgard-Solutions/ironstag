@@ -181,8 +181,15 @@ export default function ScanResultScreen() {
       Alert.alert('Error', 'Failed to load scan details');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+  
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadScan();
+  }, [id]);
   
   // Check if scan is eligible for feedback (7+ days old)
   const isFeedbackEligible = (): boolean => {
