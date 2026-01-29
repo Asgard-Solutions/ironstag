@@ -517,6 +517,9 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS quality_factors JSON")  # {blur_score, lighting, distance_estimate, occlusion}
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS posture_bucket VARCHAR(20)")  # 'broadside' | 'angled' | 'head_down' | 'unknown'
         
+        # Cloud image storage (R2) - for cross-device image access
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS image_url VARCHAR(500)")  # R2 public URL
+        
         # Label versioning for safe weight recomputation in future
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_version INTEGER DEFAULT 1")
         
