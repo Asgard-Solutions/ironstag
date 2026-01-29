@@ -700,24 +700,54 @@ export default function ScanScreen() {
               onPress={async () => {
                 setCheckoutLoading(true);
                 try {
-                  const response = await subscriptionAPI.createCheckout(selectedPlan);
-                  const checkoutUrl = response.data.checkout_url;
-                  if (checkoutUrl) {
-                    const canOpen = await Linking.canOpenURL(checkoutUrl);
-                    if (canOpen) {
-                      await Linking.openURL(checkoutUrl);
+                  // Use RevenueCat for iOS and Android, Stripe for web
+                  if (Platform.OS !== 'web' && revenueCatService.isAvailable()) {
+                    // Native mobile purchase via RevenueCat
+                    const productId = selectedPlan === 'monthly' 
+                      ? PRODUCT_IDS.MONTHLY 
+                      : PRODUCT_IDS.ANNUAL;
+                    
+                    const customerInfo = await revenueCatService.purchaseProduct(productId);
+                    
+                    if (customerInfo) {
+                      // Verify with backend and update user state
+                      await subscriptionAPI.verifyRevenueCat();
+                      await refreshUser();
+                      
+                      Alert.alert(
+                        '🎉 Welcome to Premium!',
+                        'Your subscription is now active. Enjoy unlimited scans!',
+                        [{ text: 'OK', style: 'default' }]
+                      );
                     }
+                    setShowUpgradeModal(false);
+                  } else {
+                    // Web or Expo Go - use Stripe checkout
+                    const response = await subscriptionAPI.createCheckout(selectedPlan);
+                    const checkoutUrl = response.data.checkout_url;
+                    if (checkoutUrl) {
+                      const canOpen = await Linking.canOpenURL(checkoutUrl);
+                      if (canOpen) {
+                        await Linking.openURL(checkoutUrl);
+                      }
+                    }
+                    setShowUpgradeModal(false);
                   }
-                  setShowUpgradeModal(false);
-                } catch (error) {
-                  Alert.alert('Error', 'Failed to start upgrade process.');
+                } catch (error: any) {
+                  if (error.message === 'Purchase cancelled by user') {
+                    // User cancelled - don't show error
+                    console.log('Purchase cancelled by user');
+                  } else {
+                    console.error('Purchase error:', error);
+                    Alert.alert('Error', 'Failed to complete purchase. Please try again.');
+                  }
                 } finally {
                   setCheckoutLoading(false);
                 }
               }}
             >
               <Text style={upgradeModalStyles.upgradeButtonText}>
-                {checkoutLoading ? 'Loading...' : 'Continue to Payment'}
+                {checkoutLoading ? 'Processing...' : 'Subscribe Now'}
               </Text>
             </TouchableOpacity>
             
