@@ -732,6 +732,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    position: 'relative',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    zIndex: 10,
+    padding: 4,
   },
   scanRow: {
     flexDirection: 'row',
