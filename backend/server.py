@@ -1652,7 +1652,9 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             # Region fields (feature-flagged)
             region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
             calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
-            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None
+            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None,
+            # Cloud image storage (R2)
+            image_url=image_url,
         )
         
     except openai.OpenAIError as e:
