@@ -13,7 +13,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
