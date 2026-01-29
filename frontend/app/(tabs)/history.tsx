@@ -466,6 +466,9 @@ export default function HistoryScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Offline Banner - Show pending scans */}
+      <OfflineBanner />
+
       {scans.length > 0 ? (
         <>
           {/* Search & Filters - Only show when there are scans */}
