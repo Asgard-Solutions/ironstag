@@ -259,6 +259,10 @@ export default function HistoryScreen() {
     const displayConfidence = getCalibratedConfidence(item.confidence, item.deer_age);
     const ageDisplayText = getAgeDisplayText(item.deer_age);
     
+    // Check if scan is eligible for feedback (>7 days old and not labeled)
+    const daysSinceScan = differenceInDays(new Date(), new Date(item.created_at));
+    const isEligibleForFeedback = daysSinceScan >= 7 && !labeledScanIds.has(item.id);
+    
     return (
       <TouchableOpacity
         activeOpacity={0.8}
@@ -297,14 +301,24 @@ export default function HistoryScreen() {
               </Text>
             </View>
             
-            {/* Right side - Confidence */}
-            <View style={[styles.confidenceContainer, ageIsUncertain && styles.confidenceContainerUncertain]}>
-              <Text style={[styles.confidenceValue, ageIsUncertain && styles.confidenceValueUncertain]}>
-                {displayConfidence}%
-              </Text>
-              <Text style={[styles.confidenceLabel, ageIsUncertain && styles.confidenceLabelUncertain]}>
-                Model confidence
-              </Text>
+            {/* Right side - Confidence + Feedback Badge */}
+            <View style={styles.rightColumn}>
+              <View style={[styles.confidenceContainer, ageIsUncertain && styles.confidenceContainerUncertain]}>
+                <Text style={[styles.confidenceValue, ageIsUncertain && styles.confidenceValueUncertain]}>
+                  {displayConfidence}%
+                </Text>
+                <Text style={[styles.confidenceLabel, ageIsUncertain && styles.confidenceLabelUncertain]}>
+                  Model confidence
+                </Text>
+              </View>
+              
+              {/* Feedback Available Badge */}
+              {isEligibleForFeedback && (
+                <View style={styles.feedbackBadge}>
+                  <MessageSquare size={10} color={colors.primary} />
+                  <Text style={styles.feedbackBadgeText}>Feedback</Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
