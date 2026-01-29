@@ -2435,6 +2435,14 @@ async def delete_all_scans(user: dict = Depends(get_current_user)):
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No scans to delete"}
     
+    # Delete images from R2 cloud storage
+    if R2_ENABLED:
+        for scan in scans_to_delete:
+            try:
+                delete_scan_image(scan["id"])
+            except Exception as e:
+                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    
     # Delete all scans for this user
     delete_query = scans_table.delete().where(scans_table.c.user_id == user["id"])
     await database.execute(delete_query)
