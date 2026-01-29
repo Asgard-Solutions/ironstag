@@ -278,6 +278,7 @@ export default function HistoryScreen() {
   const clearFilters = () => {
     setFilters({ deer_sex: '', recommendation: '' });
     setSearchQuery('');
+    setShowFavoritesOnly(false);
   };
 
   const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery || showFavoritesOnly;
