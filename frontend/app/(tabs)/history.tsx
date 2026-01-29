@@ -204,8 +204,28 @@ export default function HistoryScreen() {
     await loadScans();
     setRefreshing(false);
   };
+  
+  // Toggle favorite for a scan
+  const toggleFavorite = async (scanId: string, currentFavorite: boolean) => {
+    try {
+      const newFavorite = !currentFavorite;
+      await scanAPI.toggleFavorite(scanId, newFavorite);
+      
+      // Update local state
+      setScans(prev => prev.map(scan => 
+        scan.id === scanId ? { ...scan, is_favorite: newFavorite } : scan
+      ));
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    }
+  };
 
   const filteredScans = scans.filter((scan) => {
+    // Apply favorites filter
+    if (showFavoritesOnly && !scan.is_favorite) {
+      return false;
+    }
+    
     // Apply deer_sex filter
     if (filters.deer_sex && scan.deer_sex?.toLowerCase() !== filters.deer_sex.toLowerCase()) {
       return false;
@@ -245,6 +265,8 @@ export default function HistoryScreen() {
         scan.created_at ? format(new Date(scan.created_at), 'MMM d, yyyy') : null,
         scan.created_at ? format(new Date(scan.created_at), 'MMM d yyyy') : null,
         scan.created_at ? format(new Date(scan.created_at), 'MMMM') : null,
+        // Tags
+        ...(scan.tags || []),
       ].filter(Boolean).join(' ').toLowerCase();
       
       return searchableText.includes(query);
