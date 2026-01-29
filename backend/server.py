@@ -1482,7 +1482,87 @@ async def cancel_subscription(user: dict = Depends(get_current_user)):
 
 @api_router.post("/subscription/verify-revenuecat")
 async def verify_revenuecat(user: dict = Depends(get_current_user)):
-    return {"status": "not_implemented"}
+    """
+    Verify RevenueCat subscription status and update user record.
+    Called after a successful in-app purchase to sync subscription status with backend.
+    """
+    import httpx
+    
+    revenuecat_api_key = os.getenv("REVENUECAT_API_KEY", "")
+    if not revenuecat_api_key:
+        logger.warning("RevenueCat API key not configured")
+        return {"status": "error", "message": "RevenueCat not configured"}
+    
+    user_id = user["id"]
+    
+    try:
+        # Call RevenueCat API to get subscriber info
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.revenuecat.com/v1/subscribers/{user_id}",
+                headers={
+                    "Authorization": f"Bearer {revenuecat_api_key}",
+                    "Content-Type": "application/json",
+                }
+            )
+            
+            if response.status_code == 404:
+                # User not found in RevenueCat - no subscription
+                return {"status": "ok", "is_premium": False}
+            
+            response.raise_for_status()
+            data = response.json()
+        
+        # Check for active entitlements
+        subscriber = data.get("subscriber", {})
+        entitlements = subscriber.get("entitlements", {})
+        
+        # Look for our premium entitlement
+        master_stag = entitlements.get("master_stag", {})
+        is_active = master_stag.get("expires_date") is not None
+        
+        # Check if not expired
+        if is_active:
+            expires_date_str = master_stag.get("expires_date")
+            if expires_date_str:
+                from datetime import datetime
+                expires_date = datetime.fromisoformat(expires_date_str.replace("Z", "+00:00"))
+                is_active = expires_date > datetime.now(expires_date.tzinfo)
+        
+        if is_active:
+            # Update user's subscription status
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_tier = :tier,
+                    subscription_status = :status,
+                    subscription_end_date = :end_date
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": user_id,
+                    "tier": "master_stag",
+                    "status": "active",
+                    "end_date": master_stag.get("expires_date"),
+                }
+            )
+            logger.info(f"User {user_id} subscription verified via RevenueCat: master_stag active")
+            return {
+                "status": "ok",
+                "is_premium": True,
+                "tier": "master_stag",
+                "expires_at": master_stag.get("expires_date"),
+            }
+        else:
+            # No active subscription
+            return {"status": "ok", "is_premium": False}
+            
+    except httpx.HTTPStatusError as e:
+        logger.error(f"RevenueCat API error: {e}")
+        return {"status": "error", "message": "Failed to verify subscription"}
+    except Exception as e:
+        logger.error(f"RevenueCat verification error: {e}")
+        return {"status": "error", "message": str(e)}
 
 # ============ DEER ANALYSIS ============
 
