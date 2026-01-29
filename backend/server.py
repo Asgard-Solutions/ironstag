@@ -1507,18 +1507,46 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     If the image DOES contain a valid deer (Whitetail or Mule Deer), return:
                     {
                         "is_valid_deer": true,
-                        "deer_age": <number or null>,
+                        "deer_age": <number - estimate age in years>,
                         "deer_type": <"Whitetail" or "Mule Deer">,
                         "deer_sex": <"Buck" or "Doe" or "Unknown">,
-                        "antler_points": <total number or null>,
-                        "antler_points_left": <number of points on left antler or null>,
-                        "antler_points_right": <number of points on right antler or null>,
+                        "antler_points": <total number or null for does>,
+                        "antler_points_left": <number of points on left antler or null for does>,
+                        "antler_points_right": <number of points on right antler or null for does>,
                         "body_condition": <string>,
                         "confidence": <number 1-100>,
                         "recommendation": <"HARVEST" or "PASS">,
                         "reasoning": <string>
                     }
-                    For antler points, count tines on each side separately. Total should equal left + right."""
+                    
+                    AGING GUIDELINES:
+                    
+                    For BUCKS, use these indicators:
+                    - Body mass and muscle development
+                    - Neck thickness and shape (especially during rut)
+                    - Antler mass, beam length, and spread
+                    - Chest depth and belly sag
+                    - Legs appearing shorter relative to body
+                    - Face/muzzle length and Roman nose development
+                    
+                    For DOES, use these indicators (ALWAYS provide an age estimate for does):
+                    - Body size and overall mass
+                    - Face length and shape (longer, more rectangular face = older)
+                    - Neck length relative to body
+                    - Belly sag and chest depth
+                    - Overall body condition and fat deposits
+                    - Legs appearing shorter relative to body in mature does
+                    - Fawn vs yearling vs mature doe body proportions
+                    
+                    Age ranges:
+                    - Fawn: 0.5 years (small body, short face)
+                    - Yearling: 1.5 years (long legs, slender body)
+                    - Young adult: 2.5-3.5 years (filling out, athletic build)
+                    - Mature: 4.5-5.5 years (full body, sagging belly possible)
+                    - Older: 6.5+ years (prominent belly sag, worn appearance)
+                    
+                    For antler points (BUCKS ONLY), count tines on each side separately. Total should equal left + right.
+                    For DOES, set antler fields to null."""
                 },
                 {
                     "role": "user",
