@@ -4,6 +4,7 @@ export const colors = {
   background: '#0E1A14',
   backgroundLight: '#142119',
   backgroundCard: '#1A2B22',
+  surface: '#1E2F25',  // For cards and elevated surfaces
   
   // Primary (Gold/Bronze)
   primary: '#C8A24A',
@@ -14,6 +15,7 @@ export const colors = {
   textPrimary: '#FFFFFF',
   textSecondary: '#A0A0A0',
   textMuted: '#6B6B6B',
+  white: '#FFFFFF',
   
   // Status colors
   harvest: '#4CAF50',
