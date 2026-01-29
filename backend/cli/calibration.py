@@ -136,9 +136,57 @@ class CalibrationClient:
         response.raise_for_status()
         return response.json()
     
+    def get_curve_details(self, curve_id: str) -> Dict[str, Any]:
+        """Get detailed information about a specific curve."""
+        response = self.session.get(f"{self.base_url}/admin/calibration/curves/{curve_id}")
+        response.raise_for_status()
+        return response.json()
+    
     def get_status(self) -> Dict[str, Any]:
         """Get calibration system status."""
         response = self.session.get(f"{self.base_url}/admin/calibration/status")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_jobs_status(self) -> Dict[str, Any]:
+        """Get calibration jobs status."""
+        response = self.session.get(f"{self.base_url}/admin/calibration/jobs/status")
+        response.raise_for_status()
+        return response.json()
+    
+    def build_curves(self, dry_run: bool = True) -> Dict[str, Any]:
+        """Build calibration curves from labeled data."""
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/build-curves",
+            json={"dry_run": dry_run}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def activate_curve(self, curve_id: str) -> Dict[str, Any]:
+        """Activate a calibration curve."""
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/activate-curve",
+            json={"curve_id": curve_id}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def deactivate_curve(self, curve_id: str) -> Dict[str, Any]:
+        """Deactivate a calibration curve."""
+        response = self.session.post(f"{self.base_url}/admin/calibration/deactivate-curve/{curve_id}")
+        response.raise_for_status()
+        return response.json()
+    
+    def recalibrate_scans(self, dry_run: bool = True, region: Optional[str] = None) -> Dict[str, Any]:
+        """Recalibrate existing scans using active curves."""
+        payload = {"dry_run": dry_run}
+        if region:
+            payload["region"] = region
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/recalibrate-scans",
+            json=payload
+        )
         response.raise_for_status()
         return response.json()
 
