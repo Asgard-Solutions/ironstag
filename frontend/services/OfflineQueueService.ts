@@ -191,6 +191,7 @@ class OfflineQueueService {
         image_base64: scan.image_base64,
         local_image_id: scan.local_image_id,
         notes: scan.notes,
+        state: scan.state,
       });
       
       return { success: true, scanId: response.data.id };
