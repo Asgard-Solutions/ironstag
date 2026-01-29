@@ -526,21 +526,30 @@ Examples:
     
     # Build command
     build_parser = subparsers.add_parser("build", help="Build calibration curves")
-    build_parser.add_argument("--scope", choices=["global", "region"], required=True, help="Curve scope")
-    build_parser.add_argument("--region", help="Region key (required if scope=region)")
-    build_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting")
-    build_parser.add_argument("--execute", action="store_true", help="Actually persist the curve")
+    build_parser.add_argument("--scope", choices=["global", "region"], default="global", help="Curve scope (default: global)")
+    build_parser.add_argument("--region", help="Region key (optional, for region-specific curves)")
+    build_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting (default)")
+    build_parser.add_argument("--execute", action="store_true", help="Actually persist the curves")
     build_parser.set_defaults(func=cmd_build)
     
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate curve against activation gates")
     validate_parser.add_argument("--curve-id", required=True, help="Curve UUID to validate")
+    validate_parser.add_argument("--verbose", "-v", action="store_true", help="Show bin-level details")
     validate_parser.set_defaults(func=cmd_validate)
     
     # Activate command
     activate_parser = subparsers.add_parser("activate", help="Human-gated curve activation")
     activate_parser.add_argument("--curve-id", required=True, help="Curve UUID to activate")
     activate_parser.add_argument("--confirm", action="store_true", help="Confirm activation (required)")
+    activate_parser.set_defaults(func=cmd_activate)
+    
+    # Recalibrate command
+    recalibrate_parser = subparsers.add_parser("recalibrate", help="Recalibrate existing scans with active curves")
+    recalibrate_parser.add_argument("--region", help="Only recalibrate scans in this region")
+    recalibrate_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting (default)")
+    recalibrate_parser.add_argument("--execute", action="store_true", help="Actually update scans")
+    recalibrate_parser.set_defaults(func=cmd_recalibrate)
     activate_parser.set_defaults(func=cmd_activate)
     
     args = parser.parse_args()
