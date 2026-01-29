@@ -388,6 +388,26 @@ export default function HistoryScreen() {
     return null;
   }
 
+  // Show skeleton while loading initially
+  if (loading && scans.length === 0) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerSpacer} />
+          <Text style={styles.title}>History</Text>
+          <TouchableOpacity style={styles.premiumBadge}>
+            <Crown size={14} color={colors.primary} />
+            <Text style={styles.premiumText}>Premium</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Skeleton loading state */}
+        <ScanListSkeleton count={5} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
