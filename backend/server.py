@@ -682,7 +682,9 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         # Region fields (feature-flagged)
         region_key=region_key,
         calibration_strategy=calibration_strategy,
-        calibration_fallback_reason=calibration_fallback_reason
+        calibration_fallback_reason=calibration_fallback_reason,
+        # Cloud image storage (R2) - for cross-device image access
+        image_url=scan.get("image_url"),
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
