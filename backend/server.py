@@ -110,6 +110,7 @@ scans_table = Table(
     Column("id", String(36), primary_key=True),
     Column("user_id", String(36), nullable=False),
     Column("local_image_id", String(100)),
+    Column("image_url", String, nullable=True),  # Cloud image URL (R2)
     Column("deer_age", Float),
     Column("deer_type", String(100)),
     Column("deer_sex", String(50)),
@@ -137,6 +138,10 @@ scans_table = Table(
     Column("raw_recommendation_confidence", Integer),  # Raw recommendation confidence from model
     Column("calibration_strategy", String(50)),  # heuristic, global_curve, region_curve
     Column("calibration_fallback_reason", String(100)),  # Why fallback was used
+    # User organization fields
+    Column("is_favorite", Boolean, default=False),  # User favorite
+    Column("tags", JSON, nullable=True),  # User tags for organization
+    Column("posture_bucket", String(20), nullable=True),  # Future: posture analysis
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
