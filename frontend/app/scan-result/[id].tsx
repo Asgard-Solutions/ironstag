@@ -108,6 +108,7 @@ export default function ScanResultScreen() {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState('');
   
