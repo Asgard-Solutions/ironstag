@@ -148,6 +148,9 @@ export default function HistoryScreen() {
     deer_sex: '',
     recommendation: '',
   });
+  
+  // Track which scans have labels (for feedback badge)
+  const [labeledScanIds, setLabeledScanIds] = useState<Set<string>>(new Set());
 
   const loadScans = useCallback(async () => {
     if (!isAuthenticated) return;
