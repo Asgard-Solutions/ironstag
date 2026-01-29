@@ -1486,9 +1486,7 @@ async def verify_revenuecat(user: dict = Depends(get_current_user)):
     Verify RevenueCat subscription status and update user record.
     Called after a successful in-app purchase to sync subscription status with backend.
     """
-    import httpx
-    
-    revenuecat_api_key = os.getenv("REVENUECAT_API_KEY", "")
+    revenuecat_api_key = os.getenv("REVENUECAT_SECRET_KEY", "")
     if not revenuecat_api_key:
         logger.warning("RevenueCat API key not configured")
         return {"status": "error", "message": "RevenueCat not configured"}
