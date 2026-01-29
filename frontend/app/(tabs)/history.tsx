@@ -280,7 +280,7 @@ export default function HistoryScreen() {
     setSearchQuery('');
   };
 
-  const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery;
+  const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery || showFavoritesOnly;
 
   const renderScanCard = ({ item }: { item: Scan }) => {
     // Calculate calibrated confidence and check age uncertainty
