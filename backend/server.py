@@ -2402,6 +2402,14 @@ async def delete_scans_by_local_image_ids(
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No matching scans found"}
     
+    # Delete images from R2 cloud storage
+    if R2_ENABLED:
+        for scan in scans_to_delete:
+            try:
+                delete_scan_image(scan["id"])
+            except Exception as e:
+                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    
     # Delete all matching scans
     delete_query = scans_table.delete().where(
         (scans_table.c.user_id == user["id"]) & 
