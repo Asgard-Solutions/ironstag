@@ -493,6 +493,77 @@ def cmd_activate(args):
         sys.exit(1)
 
 
+def cmd_recalibrate(args):
+    """Handle 'recalibrate' command - update existing scans with active curves."""
+    print_header("Recalibrate Existing Scans")
+    
+    dry_run = not args.execute
+    
+    if not dry_run:
+        print_warning("This will update confidence values for existing scans.")
+        if ENVIRONMENT == 'production':
+            confirm = input("Type 'RECALIBRATE' to confirm in production: ")
+            if confirm != "RECALIBRATE":
+                print_error("Aborted.")
+                sys.exit(1)
+    
+    print_info(f"Dry run: {dry_run}")
+    if args.region:
+        print_info(f"Region: {args.region}")
+    print()
+    
+    client = CalibrationClient()
+    
+    try:
+        # Check if there are active curves
+        curves = client.get_curves_summary()
+        active_curves = [c for c in curves.get('curves', []) if c.get('is_active')]
+        
+        if not active_curves:
+            print_error("No active calibration curves found")
+            print_info("Use 'build' and 'activate' commands to create curves first")
+            sys.exit(1)
+        
+        print(color("Active Curves:", Colors.BOLD))
+        for curve in active_curves:
+            print(f"  - {curve.get('curve_type')} ({curve.get('region_key', 'global')})")
+        print()
+        
+        # Run recalibration
+        print_info("Running recalibration...")
+        result = client.recalibrate_scans(dry_run=dry_run, region=args.region)
+        
+        print()
+        print(color("Recalibration Results:", Colors.BOLD))
+        print(f"  Scans processed: {result.get('scans_processed', 0)}")
+        print(f"  Scans updated: {result.get('scans_updated', 0)}")
+        print(f"  Scans skipped (no change): {result.get('scans_skipped', 0)}")
+        print(f"  Duration: {result.get('duration_seconds', 0):.2f}s")
+        print(f"  Curve version: {result.get('curve_version', 'N/A')}")
+        
+        if result.get('errors'):
+            print()
+            print_warning("Errors:")
+            for err in result['errors']:
+                print(f"    - {err}")
+        
+        if dry_run:
+            print()
+            print_info("Dry run complete. Use --execute to apply changes.")
+        else:
+            print_success("Recalibration complete!")
+        
+    except requests.exceptions.RequestException as e:
+        print_error(f"API request failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                detail = e.response.json().get('detail', str(e))
+                print_error(f"  Detail: {detail}")
+            except:
+                pass
+        sys.exit(1)
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
