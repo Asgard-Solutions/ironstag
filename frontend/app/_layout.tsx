@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../stores/authStore';
 import { useImageStore } from '../stores/imageStore';
 import { appUpdateService, VersionCheckResponse } from '../services/AppUpdateService';
+import { offlineQueue } from '../services/OfflineQueueService';
 import { UpdateModal } from '../components/UpdateModal';
 import { colors } from '../constants/theme';
 
