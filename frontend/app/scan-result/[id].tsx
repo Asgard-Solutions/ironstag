@@ -35,6 +35,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
+import { ScanResultSkeleton } from '../../components/Skeleton';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
