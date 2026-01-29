@@ -693,6 +693,9 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         calibration_fallback_reason=calibration_fallback_reason,
         # Cloud image storage (R2) - for cross-device image access
         image_url=scan.get("image_url"),
+        # Favorites and Tags
+        is_favorite=scan.get("is_favorite") or False,
+        tags=scan.get("tags") or [],
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
