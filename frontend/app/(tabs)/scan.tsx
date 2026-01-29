@@ -561,6 +561,9 @@ export default function ScanScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Offline Banner */}
+      <OfflineBanner />
+
       <ScrollView contentContainerStyle={[styles.mainContent, { paddingBottom: insets.bottom + spacing.xl }]}>
         {/* Target Icon */}
         <View style={styles.targetContainer}>
