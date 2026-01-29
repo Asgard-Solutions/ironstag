@@ -2003,6 +2003,39 @@ async def add_scan_label(
     credibility = await compute_credibility_factor(user["id"], data.harvest_confirmed)
     effective_weight = base_weight * credibility
     
+    # Compute age_correct and recommendation_correct for curve building
+    # age_correct: True if exact match, None if can't determine
+    # recommendation_correct: True if harvest recommendation was appropriate
+    age_correct = None
+    recommendation_correct = None
+    
+    if label_type == "exact_age" and data.reported_age is not None:
+        predicted_age = scan["deer_age"]
+        if predicted_age is not None:
+            # Age is "correct" if within 0.5 years of reported age
+            age_correct = abs(predicted_age - data.reported_age) <= 0.5
+            
+            # Recommendation is correct if:
+            # - HARVEST was given for mature deer (3.5+ years) AND deer was actually mature
+            # - PASS was given for young deer AND deer was actually young
+            recommendation = scan["recommendation"]
+            actual_mature = data.reported_age >= 3.5
+            if recommendation == "HARVEST":
+                recommendation_correct = actual_mature
+            else:
+                recommendation_correct = not actual_mature
+    elif label_type == "categorical":
+        # For categorical, 'exact' means correct
+        if data.accuracy_category == "exact":
+            age_correct = True
+            recommendation_correct = True  # If age was exact, recommendation was likely correct
+        elif data.accuracy_category == "close":
+            age_correct = False  # Not quite right
+            recommendation_correct = True  # But probably didn't affect recommendation
+        else:  # 'off'
+            age_correct = False
+            recommendation_correct = False
+    
     # Create label
     label_id = str(uuid.uuid4())
     now = datetime.utcnow()
@@ -2013,12 +2046,14 @@ async def add_scan_label(
             id, scan_id, user_id, label_type, label_weight, reported_age, 
             accuracy_category, prediction_error, error_bucket, harvest_confirmed,
             credibility_factor, effective_weight, notes, created_at, labeled_at,
-            label_source, trust_source, trust_weight, label_version
+            label_source, trust_source, trust_weight, label_version,
+            age_correct, recommendation_correct
         ) VALUES (
             :id, :scan_id, :user_id, :label_type, :label_weight, :reported_age,
             :accuracy_category, :prediction_error, :error_bucket, :harvest_confirmed,
             :credibility_factor, :effective_weight, :notes, :created_at, :labeled_at,
-            :label_source, :trust_source, :trust_weight, :label_version
+            :label_source, :trust_source, :trust_weight, :label_version,
+            :age_correct, :recommendation_correct
         )
         """,
         {
@@ -2041,6 +2076,8 @@ async def add_scan_label(
             "trust_source": "self_reported",
             "trust_weight": effective_weight,
             "label_version": 1,  # Current weighting schema version
+            "age_correct": age_correct,
+            "recommendation_correct": recommendation_correct,
         }
     )
     
