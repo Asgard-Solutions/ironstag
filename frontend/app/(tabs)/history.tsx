@@ -13,7 +13,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target, AlertCircle } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -21,7 +21,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
 // Cap confidence at this value when age is uncertain/unknown
