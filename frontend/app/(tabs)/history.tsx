@@ -17,6 +17,7 @@ import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare } 
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
+import { ScanListSkeleton } from '../../components/Skeleton';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
