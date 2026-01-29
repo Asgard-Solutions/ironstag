@@ -172,15 +172,60 @@ export default function ScanScreen() {
     }
   };
 
+  // Get offline queue status
+  const { isOnline, pendingCount } = useOfflineQueue();
+
   const analyzeDeer = async () => {
-    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated });
+    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated, isOnline });
     
     if (!capturedImage || !isAuthenticated) {
       console.log('Early return - no image or not authenticated');
       return;
     }
 
-    // Check eligibility before starting analysis
+    // Save image to local storage first (always do this regardless of online status)
+    console.log('Saving image to local storage...');
+    const localImageId = await saveImageFromBase64(capturedImage);
+    console.log('Image saved with ID:', localImageId);
+
+    // Determine state to send (per-scan override or user profile default)
+    const stateToSend = huntingLocation || user?.state || undefined;
+
+    // Check if we're offline - if so, queue the scan
+    if (!isOnline) {
+      console.log('[OfflineQueue] Device is offline, queueing scan...');
+      
+      try {
+        await offlineQueue.addToQueue({
+          image_base64: capturedImage,
+          local_image_id: localImageId,
+          notes: undefined,
+          state: stateToSend,
+        });
+        
+        // Reset state
+        setHuntingLocation(null);
+        setLocationExpanded(false);
+        setCapturedImage(null);
+        setScanStep('main');
+        
+        // Show success message
+        Alert.alert(
+          '📶 Scan Queued',
+          'You\'re currently offline. Your scan has been saved and will be automatically uploaded when you\'re back online.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        return;
+      } catch (error) {
+        console.error('[OfflineQueue] Failed to queue scan:', error);
+        Alert.alert('Error', 'Failed to save scan for later. Please try again.');
+        setScanStep('main');
+        setCapturedImage(null);
+        return;
+      }
+    }
+
+    // We're online - check eligibility before starting analysis
     console.log('Checking scan eligibility...');
     const canScan = await checkScanEligibility();
     console.log('Eligibility result:', canScan);
@@ -195,13 +240,6 @@ export default function ScanScreen() {
     setAnalyzing(true);
 
     try {
-      // Save image to local storage first
-      console.log('Saving image to local storage...');
-      const localImageId = await saveImageFromBase64(capturedImage);
-      console.log('Image saved with ID:', localImageId);
-
-      // Determine state to send (per-scan override or user profile default)
-      const stateToSend = huntingLocation || user?.state || undefined;
       console.log('Sending to analyze-deer API with state:', stateToSend);
       
       const response = await scanAPI.analyzeDeer({
@@ -231,6 +269,37 @@ export default function ScanScreen() {
     } catch (error: any) {
       console.error('Analyze deer error:', error);
       console.error('Error response:', error.response?.data);
+      
+      // Check if this is a network error - offer to queue
+      if (!error.response && (error.message === 'Network Error' || error.code === 'ECONNABORTED')) {
+        Alert.alert(
+          '📶 Connection Lost',
+          'Lost connection while uploading. Would you like to save this scan and retry when you\'re back online?',
+          [
+            { text: 'Discard', style: 'cancel', onPress: () => {
+              setScanStep('main');
+              setCapturedImage(null);
+            }},
+            { text: 'Save for Later', onPress: async () => {
+              try {
+                await offlineQueue.addToQueue({
+                  image_base64: capturedImage!,
+                  local_image_id: localImageId,
+                  notes: undefined,
+                  state: stateToSend,
+                });
+                Alert.alert('Saved', 'Scan queued for upload when online.');
+              } catch (queueError) {
+                Alert.alert('Error', 'Failed to save scan.');
+              }
+              setScanStep('main');
+              setCapturedImage(null);
+            }}
+          ]
+        );
+        setAnalyzing(false);
+        return;
+      }
       
       // Check if this is a "free limit reached" error
       if (error.response?.status === 403) {
