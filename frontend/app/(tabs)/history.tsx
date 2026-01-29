@@ -85,7 +85,7 @@ function getAgeDisplayText(age: number | null): string {
 }
 
 // Component to handle async image loading
-function ScanImage({ localImageId }: { localImageId: string }) {
+function ScanImage({ localImageId, imageUrl }: { localImageId: string; imageUrl?: string | null }) {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const { getImage } = useImageStore();
 
@@ -94,23 +94,35 @@ function ScanImage({ localImageId }: { localImageId: string }) {
     
     const loadImage = async () => {
       try {
+        // Try local image first
         const uri = await getImage(localImageId);
         if (mounted && uri) {
           setImageUri(uri);
+        } else if (mounted && imageUrl) {
+          // Fall back to cloud URL (R2) for cross-device access
+          setImageUri(imageUrl);
         }
       } catch (error) {
-        console.error('Failed to load image:', error);
+        // If local image fails, try cloud URL
+        if (mounted && imageUrl) {
+          setImageUri(imageUrl);
+        } else {
+          console.error('Failed to load image:', error);
+        }
       }
     };
 
     if (localImageId) {
       loadImage();
+    } else if (imageUrl) {
+      // No local image ID, use cloud URL directly
+      setImageUri(imageUrl);
     }
 
     return () => {
       mounted = false;
     };
-  }, [localImageId]);
+  }, [localImageId, imageUrl]);
 
   if (!imageUri) {
     return (
