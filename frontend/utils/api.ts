@@ -137,6 +137,25 @@ export const scanAPI = {
    * Delete label from a scan
    */
   deleteLabel: (scanId: string) => api.delete(`/scans/${scanId}/label`),
+  
+  // ============ FAVORITES & TAGS API ============
+  
+  /**
+   * Toggle favorite status for a scan
+   */
+  toggleFavorite: (scanId: string, isFavorite: boolean) => 
+    api.post(`/scans/${scanId}/favorite`, { is_favorite: isFavorite }),
+  
+  /**
+   * Update tags for a scan
+   */
+  updateTags: (scanId: string, tags: string[]) =>
+    api.post(`/scans/${scanId}/tags`, { tags }),
+  
+  /**
+   * Get all unique tags used by the user
+   */
+  getAllTags: () => api.get('/scans/tags/all'),
 };
 
 // Subscription API
