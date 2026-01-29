@@ -525,6 +525,11 @@ async def startup():
         # Cloud image storage (R2) - for cross-device image access
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS image_url VARCHAR(500)")  # R2 public URL
         
+        # Favorites and Tags for organizing scans
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS tags JSON")  # Array of tag strings
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_is_favorite ON scans(is_favorite)")
+        
         # Label versioning for safe weight recomputation in future
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_version INTEGER DEFAULT 1")
         
