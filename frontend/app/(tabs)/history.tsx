@@ -679,6 +679,20 @@ const styles = StyleSheet.create({
   filterButtonActive: {
     backgroundColor: colors.primary,
   },
+  favoriteFilterButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundCard,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.harvest + '30',
+  },
+  favoriteFilterButtonActive: {
+    backgroundColor: colors.harvest,
+    borderColor: colors.harvest,
+  },
   filterOptions: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
