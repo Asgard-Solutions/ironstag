@@ -2567,36 +2567,70 @@ async def edit_scan_with_reanalysis(
             
             hint_text = ". ".join(hints) if hints else ""
             
+            # Build a detailed re-analysis prompt that uses user corrections as ground truth
+            reanalysis_system_prompt = """You are an expert wildlife biologist specializing in deer aging and analysis.
+
+The user has CORRECTED some details about this deer based on their field observation. Your task is to RE-ANALYZE the deer image using these corrections as GROUND TRUTH facts.
+
+CRITICAL INSTRUCTIONS:
+1. The user's corrections are AUTHORITATIVE - they were there and saw the deer in person
+2. Use the corrected information to inform your OTHER assessments (especially age estimation)
+3. If the user corrected the sex to "Doe", do NOT report antler points
+4. If the user corrected antler points, use those exact numbers and factor them into age estimation
+5. Adjust your age estimate based on the corrected details (e.g., point count correlates with age)
+6. Re-evaluate the harvest recommendation based on all corrected information
+
+AGE ESTIMATION GUIDELINES WITH CORRECTIONS:
+- For Bucks: More antler points generally indicate older deer
+  * 4-6 points total: Likely 1.5-2.5 years
+  * 8-10 points total: Likely 2.5-4.5 years  
+  * 10+ points total: Likely 4.5+ years
+- For Does: Focus on body characteristics, face length, belly sag
+- Body condition and physical maturity indicators still apply
+
+Return ONLY valid JSON with your REVISED analysis:
+{
+    "deer_age": <revised age estimate as number, or null if truly uncertain>,
+    "deer_type": <string: "Whitetail", "Mule Deer", "Elk", etc.>,
+    "deer_sex": <"Buck" or "Doe" or "Unknown">,
+    "antler_points": <total points if buck, null if doe>,
+    "antler_points_left": <left antler points if buck, null if doe>,
+    "antler_points_right": <right antler points if buck, null if doe>,
+    "body_condition": <"Poor", "Fair", "Good", "Excellent">,
+    "confidence": <1-100, your confidence in the REVISED analysis>,
+    "recommendation": <"HARVEST" or "PASS" based on revised age>,
+    "reasoning": <detailed explanation incorporating the user's corrections and how they affected your analysis>
+}"""
+
+            # Build user message with clear correction context
+            if hint_text:
+                user_message = f"""RE-ANALYZE this deer with the following USER CORRECTIONS (treat as facts):
+
+{hint_text}
+
+Based on these corrections, provide a complete revised analysis including:
+- Updated age estimate considering the corrected details
+- Revised harvest recommendation
+- Explanation of how the corrections affected your analysis"""
+            else:
+                user_message = "Analyze this deer image and provide a complete assessment."
+            
             response = openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are an expert wildlife biologist specializing in deer aging. 
-                        Analyze the deer image and return ONLY valid JSON:
-                        {
-                            "deer_age": <number or null>,
-                            "deer_type": <string like "Whitetail", "Mule Deer", "Elk", etc.>,
-                            "deer_sex": <"Buck" or "Doe" or "Unknown">,
-                            "antler_points": <total number or null>,
-                            "antler_points_left": <number of points on left antler or null>,
-                            "antler_points_right": <number of points on right antler or null>,
-                            "body_condition": <string>,
-                            "confidence": <number 1-100>,
-                            "recommendation": <"HARVEST" or "PASS">,
-                            "reasoning": <string>
-                        }
-                        The user has provided corrections - incorporate them into your analysis."""
+                        "content": reanalysis_system_prompt
                     },
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": f"Re-analyze this deer with these corrections: {hint_text}" if hint_text else "Analyze this deer:"},
+                            {"type": "text", "text": user_message},
                             {"type": "image_url", "image_url": {"url": image_data}}
                         ]
                     }
                 ],
-                max_tokens=1000
+                max_tokens=1500
             )
             
             response_text = response.choices[0].message.content
