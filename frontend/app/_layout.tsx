@@ -277,5 +277,6 @@ export default function RootLayout() {
         )}
       </QueryClientProvider>
     </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
