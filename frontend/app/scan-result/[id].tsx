@@ -130,23 +130,6 @@ export default function ScanResultScreen() {
     loadScan();
   }, [id]);
 
-  // Handle Android hardware back button - navigate to scan tab instead of back through stack
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => {
-        // Navigate to scan tab using replace to avoid stuck states
-        router.replace('/(tabs)/scan');
-        return true; // Prevent default back behavior
-      };
-
-      // Only add listener on Android
-      if (Platform.OS === 'android') {
-        BackHandler.addEventListener('hardwareBackPress', onBackPress);
-        return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
-      }
-      return undefined;
-    }, [])
-  );
   const loadScan = async () => {
     if (!id) return;
     setLoading(true);
