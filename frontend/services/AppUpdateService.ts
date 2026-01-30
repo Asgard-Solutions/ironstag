@@ -20,7 +20,7 @@ const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 // App Store IDs - UPDATE THESE WITH YOUR ACTUAL IDS
 const APP_STORE_ID = '6478628123'; // Your Apple App Store ID
-const PLAY_STORE_PACKAGE = 'com.ironstag.app'; // Your Android package name
+const PLAY_STORE_PACKAGE = 'io.asgardsolution.ironstag'; // Your Android package name
 
 // Store URLs
 const IOS_STORE_URL = `https://apps.apple.com/app/id${APP_STORE_ID}`;
