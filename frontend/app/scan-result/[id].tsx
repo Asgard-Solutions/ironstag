@@ -18,6 +18,7 @@ import {
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
+import * as FileSystem from 'expo-file-system';
 import {
   ArrowLeft,
   Share2,
