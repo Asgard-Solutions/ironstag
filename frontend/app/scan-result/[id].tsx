@@ -307,7 +307,10 @@ export default function ScanResultScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace('/(tabs)/scan')}>
+          <TouchableOpacity 
+            onPress={() => router.replace('/(tabs)/scan')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <ArrowLeft size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Scan Results</Text>
