@@ -240,6 +240,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: spacing.lg,
   },
+  backButton: {
+    marginBottom: spacing.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logoContainer: {
     alignItems: 'center',
     marginBottom: spacing.sm,
