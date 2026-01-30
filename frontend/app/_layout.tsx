@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
-import { Stack } from 'expo-router';
+import { Platform, BackHandler, Alert } from 'react-native';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
