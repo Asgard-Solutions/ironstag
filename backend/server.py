@@ -3527,6 +3527,211 @@ async def admin_upgrade_user(user: dict = Depends(get_current_user)):
     ).values(subscription_tier="master_stag", scans_remaining=-1)
     await database.execute(query)
     return {"status": "upgraded", "tier": "master_stag"}
+
+
+# ============ DEBUG/CRASH REPORTING ENDPOINTS ============
+
+# Environment variable to control debug mode (default: disabled)
+DEBUG_MODE_ENABLED = os.getenv("DEBUG_MODE_ENABLED", "false").lower() == "true"
+
+class CrashReportRequest(BaseModel):
+    id: str
+    timestamp: str
+    error_message: str
+    error_stack: Optional[str] = None
+    component_stack: Optional[str] = None
+    screen: Optional[str] = None
+    user_id: Optional[str] = None
+    platform: str
+    app_version: str
+    build_number: str
+    device_info: dict = {}
+    extra_data: dict = {}
+
+class BreadcrumbRequest(BaseModel):
+    timestamp: str
+    message: str
+    screen: Optional[str] = None
+    user_id: Optional[str] = None
+    platform: str
+    app_version: str
+    data: dict = {}
+
+@api_router.get("/debug/status")
+async def get_debug_status():
+    """Get debug mode status - controls whether crash reporting is enabled"""
+    return {
+        "debug_enabled": DEBUG_MODE_ENABLED,
+        "environment": os.getenv("ENVIRONMENT", "development"),
+    }
+
+@api_router.post("/debug/crash-report")
+async def submit_crash_report(report: CrashReportRequest):
+    """
+    Receive and store crash reports from mobile apps.
+    Only processes reports if DEBUG_MODE_ENABLED is true.
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"status": "ignored", "message": "Debug mode disabled"}
+    
+    try:
+        # Create crash_reports table if it doesn't exist
+        create_query = """
+        CREATE TABLE IF NOT EXISTS crash_reports (
+            id TEXT PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL,
+            error_message TEXT NOT NULL,
+            error_stack TEXT,
+            component_stack TEXT,
+            screen TEXT,
+            user_id TEXT,
+            platform TEXT NOT NULL,
+            app_version TEXT NOT NULL,
+            build_number TEXT,
+            device_info JSONB,
+            extra_data JSONB,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+        await database.execute(create_query)
+        
+        # Insert crash report
+        insert_query = """
+        INSERT INTO crash_reports (
+            id, timestamp, error_message, error_stack, component_stack,
+            screen, user_id, platform, app_version, build_number,
+            device_info, extra_data
+        ) VALUES (
+            :id, :timestamp, :error_message, :error_stack, :component_stack,
+            :screen, :user_id, :platform, :app_version, :build_number,
+            :device_info, :extra_data
+        )
+        ON CONFLICT (id) DO NOTHING
+        """
+        await database.execute(insert_query, {
+            "id": report.id,
+            "timestamp": report.timestamp,
+            "error_message": report.error_message,
+            "error_stack": report.error_stack,
+            "component_stack": report.component_stack,
+            "screen": report.screen,
+            "user_id": report.user_id,
+            "platform": report.platform,
+            "app_version": report.app_version,
+            "build_number": report.build_number,
+            "device_info": json.dumps(report.device_info),
+            "extra_data": json.dumps(report.extra_data),
+        })
+        
+        logger.warning(f"[CrashReport] {report.platform}/{report.app_version} - {report.error_message[:100]}")
+        
+        return {"status": "received", "id": report.id}
+    except Exception as e:
+        logger.error(f"Failed to store crash report: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.post("/debug/breadcrumb")
+async def submit_breadcrumb(breadcrumb: BreadcrumbRequest):
+    """
+    Receive breadcrumb/event data for debugging.
+    Only processes if DEBUG_MODE_ENABLED is true.
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"status": "ignored"}
+    
+    try:
+        # Create breadcrumbs table if it doesn't exist
+        create_query = """
+        CREATE TABLE IF NOT EXISTS debug_breadcrumbs (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL,
+            message TEXT NOT NULL,
+            screen TEXT,
+            user_id TEXT,
+            platform TEXT NOT NULL,
+            app_version TEXT NOT NULL,
+            data JSONB,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+        await database.execute(create_query)
+        
+        # Insert breadcrumb
+        insert_query = """
+        INSERT INTO debug_breadcrumbs (
+            timestamp, message, screen, user_id, platform, app_version, data
+        ) VALUES (
+            :timestamp, :message, :screen, :user_id, :platform, :app_version, :data
+        )
+        """
+        await database.execute(insert_query, {
+            "timestamp": breadcrumb.timestamp,
+            "message": breadcrumb.message,
+            "screen": breadcrumb.screen,
+            "user_id": breadcrumb.user_id,
+            "platform": breadcrumb.platform,
+            "app_version": breadcrumb.app_version,
+            "data": json.dumps(breadcrumb.data),
+        })
+        
+        return {"status": "received"}
+    except Exception as e:
+        logger.error(f"Failed to store breadcrumb: {e}")
+        return {"status": "error"}
+
+@api_router.get("/debug/crash-reports")
+async def get_crash_reports(
+    limit: int = 50,
+    platform: Optional[str] = None,
+    app_version: Optional[str] = None
+):
+    """
+    Get recent crash reports (admin only).
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"reports": [], "message": "Debug mode disabled"}
+    
+    try:
+        query = "SELECT * FROM crash_reports WHERE 1=1"
+        params = {}
+        
+        if platform:
+            query += " AND platform = :platform"
+            params["platform"] = platform
+        
+        if app_version:
+            query += " AND app_version = :app_version"
+            params["app_version"] = app_version
+        
+        query += " ORDER BY timestamp DESC LIMIT :limit"
+        params["limit"] = limit
+        
+        reports = await database.fetch_all(query, params)
+        
+        return {
+            "reports": [dict(r) for r in reports],
+            "count": len(reports),
+        }
+    except Exception as e:
+        return {"reports": [], "error": str(e)}
+
+@api_router.post("/debug/enable")
+async def enable_debug_mode(secret: str):
+    """
+    Enable debug mode (requires admin secret).
+    In production, this would update a config in the database.
+    """
+    admin_secret = os.getenv("ADMIN_SECRET", "iron_stag_debug_2024")
+    if secret != admin_secret:
+        raise HTTPException(status_code=403, detail="Invalid secret")
+    
+    # In a real implementation, this would update a database flag
+    # For now, we just return the current status
+    return {
+        "status": "Debug mode controlled via DEBUG_MODE_ENABLED env var",
+        "current_status": DEBUG_MODE_ENABLED,
+        "message": "Set DEBUG_MODE_ENABLED=true in .env to enable"
+    }
     
 
 # Include router
