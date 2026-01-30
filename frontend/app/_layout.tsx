@@ -39,6 +39,12 @@ export default function RootLayout() {
       const rootRoutes = ['/', '/index', '/splash', '/(tabs)', '/(tabs)/scan', '/(tabs)/history', '/(tabs)/learn', '/(tabs)/profile'];
       const authRoutes = ['/(auth)/login', '/(auth)/signup'];
       
+      // If on scan-result page, navigate to scan tab
+      if (pathname.startsWith('/scan-result')) {
+        router.replace('/(tabs)/scan');
+        return true; // Prevent default
+      }
+      
       // If on a root tab or splash, ask before exiting
       if (rootRoutes.some(route => pathname === route || pathname.startsWith('/(tabs)'))) {
         // On main tabs - show exit confirmation
