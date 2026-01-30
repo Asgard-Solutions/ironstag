@@ -23,10 +23,50 @@ const queryClient = new QueryClient({
 export default function RootLayout() {
   const loadToken = useAuthStore((state) => state.loadToken);
   const initializeImages = useImageStore((state) => state.initialize);
+  const pathname = usePathname();
+  const router = useRouter();
   
   // Update modal state
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<VersionCheckResponse | null>(null);
+
+  // Handle Android back button globally to prevent app from closing unexpectedly
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const onBackPress = () => {
+      // Define routes where back should navigate to tabs instead of closing app
+      const rootRoutes = ['/', '/index', '/splash', '/(tabs)', '/(tabs)/scan', '/(tabs)/history', '/(tabs)/learn', '/(tabs)/profile'];
+      const authRoutes = ['/(auth)/login', '/(auth)/signup'];
+      
+      // If on a root tab or splash, ask before exiting
+      if (rootRoutes.some(route => pathname === route || pathname.startsWith('/(tabs)'))) {
+        // On main tabs - show exit confirmation
+        Alert.alert(
+          'Exit App',
+          'Are you sure you want to exit?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Exit', style: 'destructive', onPress: () => BackHandler.exitApp() }
+          ]
+        );
+        return true; // Prevent default
+      }
+      
+      // If on auth screens (login/signup), go back to splash
+      if (authRoutes.some(route => pathname === route || pathname.startsWith('/(auth)'))) {
+        router.replace('/splash');
+        return true;
+      }
+      
+      // For other screens, let the default back behavior happen
+      // but if it would close the app, prevent it
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [pathname, router]);
 
   // Check for updates
   const checkForUpdates = async (force: boolean = false) => {
