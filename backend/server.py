@@ -2550,22 +2550,41 @@ async def edit_scan_with_reanalysis(
     # If image is provided, re-analyze with LLM
     if data.image_base64:
         try:
+            logger.info(f"Re-analyzing scan {scan_id} with user corrections")
+            
             image_data = data.image_base64
             if not image_data.startswith("data:"):
                 image_data = f"data:image/jpeg;base64,{image_data}"
             
-            # Build hint text from user corrections
+            # Build hint text from user corrections with context about original analysis
             hints = []
-            if data.deer_sex:
-                hints.append(f"The deer is a {data.deer_sex}")
-            if data.deer_type:
-                hints.append(f"The deer type is {data.deer_type}")
-            if data.antler_points_left is not None:
-                hints.append(f"Left antler has {data.antler_points_left} points")
-            if data.antler_points_right is not None:
-                hints.append(f"Right antler has {data.antler_points_right} points")
             
-            hint_text = ". ".join(hints) if hints else ""
+            # Include original analysis for context
+            original_context = []
+            if scan.get("deer_sex"):
+                original_context.append(f"Originally identified as: {scan.get('deer_sex')}")
+            if scan.get("deer_age"):
+                original_context.append(f"Original age estimate: {scan.get('deer_age')} years")
+            if scan.get("antler_points"):
+                original_context.append(f"Original point count: {scan.get('antler_points')} points")
+            
+            # Add user corrections
+            if data.deer_sex:
+                hints.append(f"CORRECTION: The deer is actually a {data.deer_sex} (user confirmed in field)")
+            if data.deer_type:
+                hints.append(f"CORRECTION: The deer type is {data.deer_type}")
+            if data.antler_points_left is not None:
+                hints.append(f"CORRECTION: Left antler has exactly {data.antler_points_left} points (user counted)")
+            if data.antler_points_right is not None:
+                hints.append(f"CORRECTION: Right antler has exactly {data.antler_points_right} points (user counted)")
+            if total_points is not None:
+                hints.append(f"CORRECTION: Total antler points is {total_points} (user verified)")
+            
+            # Combine original context and corrections
+            context_text = "\n".join(original_context) if original_context else ""
+            hint_text = "\n".join(hints) if hints else ""
+            
+            logger.info(f"Re-analysis corrections: {hint_text}")
             
             # Build a detailed re-analysis prompt that uses user corrections as ground truth
             reanalysis_system_prompt = """You are an expert wildlife biologist specializing in deer aging and analysis.
