@@ -324,7 +324,7 @@ export default function ScanResultScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>Scan not found</Text>
-        <Button title="Go Back" onPress={() => router.back()} />
+        <Button title="Go Back" onPress={() => router.replace('/(tabs)/scan')} />
       </View>
     );
   }
