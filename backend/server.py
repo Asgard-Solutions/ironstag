@@ -2623,14 +2623,21 @@ Return ONLY valid JSON with your REVISED analysis:
 
             # Build user message with clear correction context
             if hint_text:
-                user_message = f"""RE-ANALYZE this deer with the following USER CORRECTIONS (treat as facts):
+                user_message = f"""RE-ANALYZE this deer image with USER CORRECTIONS.
 
+ORIGINAL AI ANALYSIS (for reference):
+{context_text if context_text else "No original analysis data available"}
+
+USER CORRECTIONS (treat these as GROUND TRUTH - the user was in the field):
 {hint_text}
 
-Based on these corrections, provide a complete revised analysis including:
-- Updated age estimate considering the corrected details
-- Revised harvest recommendation
-- Explanation of how the corrections affected your analysis"""
+INSTRUCTIONS:
+1. Accept ALL user corrections as factual - they saw this deer in person
+2. Re-estimate the deer's AGE based on the corrected information
+3. Update the HARVEST/PASS recommendation based on revised age
+4. Explain how the corrections changed your analysis in the reasoning field
+
+Provide your complete REVISED analysis in JSON format."""
             else:
                 user_message = "Analyze this deer image and provide a complete assessment."
             
@@ -2651,6 +2658,8 @@ Based on these corrections, provide a complete revised analysis including:
                 ],
                 max_tokens=1500
             )
+            
+            logger.info(f"Re-analysis API call completed for scan {scan_id}")
             
             response_text = response.choices[0].message.content
             
