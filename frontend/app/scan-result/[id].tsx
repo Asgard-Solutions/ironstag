@@ -275,7 +275,7 @@ export default function ScanResultScreen() {
           } else {
             // Local file URI - use FileSystem to read
             const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-              encoding: FileSystem.EncodingType.Base64,
+              encoding: 'base64' as FileSystem.EncodingType,
             });
             base64Image = `data:image/jpeg;base64,${base64Data}`;
           }
