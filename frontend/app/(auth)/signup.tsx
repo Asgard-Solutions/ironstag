@@ -100,11 +100,20 @@ export default function SignupScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg },
+            { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg + 20 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {/* Back Button */}
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => router.replace('/splash')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ArrowLeft size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+
           {/* Logo */}
           <View style={styles.logoContainer}>
             <Image
