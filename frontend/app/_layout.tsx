@@ -204,6 +204,9 @@ export default function RootLayout() {
         await loadToken();
         await initializeImages();
         
+        // Initialize crash reporting service
+        await crashReporting.initialize();
+        
         // Initialize offline queue service
         await offlineQueue.initialize();
         
@@ -221,23 +224,30 @@ export default function RootLayout() {
         await checkForUpdates();
       } catch (error) {
         console.error('App initialization error:', error);
+        crashReporting.captureError(error as Error, { type: 'app_initialization' });
       }
     };
     
     initApp();
   }, []);
 
+  // Track screen changes for crash reporting
+  useEffect(() => {
+    crashReporting.setCurrentScreen(pathname);
+  }, [pathname]);
+
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-            animation: 'fade',
-          }}
-        >
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+              animation: 'fade',
+            }}
+          >
           <Stack.Screen name="index" />
           <Stack.Screen name="splash" />
           <Stack.Screen name="(auth)" options={{ headerShown: false }} />
