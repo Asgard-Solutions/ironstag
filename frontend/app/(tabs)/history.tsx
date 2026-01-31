@@ -602,6 +602,71 @@ export default function HistoryScreen() {
                 tintColor={colors.primary}
               />
             }
+            ListHeaderComponent={
+              pendingCount > 0 ? (
+                <View style={styles.pendingSection}>
+                  <View style={styles.pendingSectionHeader}>
+                    <View style={styles.pendingSectionTitleRow}>
+                      <CloudOff size={18} color={colors.primary} />
+                      <Text style={styles.pendingSectionTitle}>
+                        Pending Uploads ({pendingCount})
+                      </Text>
+                    </View>
+                    {isOnline && (
+                      <TouchableOpacity 
+                        style={styles.syncButton}
+                        onPress={handleSyncNow}
+                        disabled={isSyncing}
+                      >
+                        {isSyncing ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <>
+                            <RefreshCw size={14} color={colors.primary} />
+                            <Text style={styles.syncButtonText}>Sync Now</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
+                  {!isOnline && (
+                    <Text style={styles.offlineHelpText}>
+                      You're offline. Scans will upload when you're back online.
+                    </Text>
+                  )}
+                  
+                  {pendingScans.map((pendingScan) => (
+                    <View key={pendingScan.id} style={styles.pendingScanCard}>
+                      <View style={styles.pendingScanRow}>
+                        <View style={styles.pendingScanIconBox}>
+                          <CloudOff size={24} color={colors.textMuted} />
+                        </View>
+                        <View style={styles.pendingScanInfo}>
+                          <Text style={styles.pendingScanTitle}>Pending Scan</Text>
+                          <Text style={styles.pendingScanDate}>
+                            Saved {format(new Date(pendingScan.created_at), 'MMM d, h:mm a')}
+                          </Text>
+                          {pendingScan.retryCount > 0 && (
+                            <Text style={styles.pendingScanRetry}>
+                              {pendingScan.retryCount} retry attempt{pendingScan.retryCount > 1 ? 's' : ''}
+                            </Text>
+                          )}
+                        </View>
+                        <TouchableOpacity 
+                          style={styles.removePendingButton}
+                          onPress={() => handleRemovePendingScan(pendingScan.id)}
+                        >
+                          <Trash2 size={18} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  
+                  <View style={styles.pendingSectionDivider} />
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               hasActiveFilters ? (
                 <View style={styles.noResultsContainer}>
