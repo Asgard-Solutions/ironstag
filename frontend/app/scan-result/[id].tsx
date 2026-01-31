@@ -507,6 +507,15 @@ export default function ScanResultScreen() {
           )}
         </View>
 
+        {/* Tags Section */}
+        <TagsEditor 
+          scanId={scan.id}
+          initialTags={scan.tags || []}
+          onTagsUpdated={(newTags) => {
+            setScan(prev => prev ? { ...prev, tags: newTags } : null);
+          }}
+        />
+
         {/* Feedback Section (Phase 2 Empirical Calibration) */}
         {labelCheckDone && (
           <View style={styles.feedbackSection}>
