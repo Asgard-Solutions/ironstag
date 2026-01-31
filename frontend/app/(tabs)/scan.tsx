@@ -636,7 +636,7 @@ export default function ScanScreen() {
             
             {/* Message */}
             <Text style={upgradeModalStyles.message}>
-              You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
+              You&apos;ve used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
             </Text>
             
             {/* Plan Options */}
