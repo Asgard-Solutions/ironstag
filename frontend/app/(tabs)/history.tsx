@@ -1112,4 +1112,96 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.md,
   },
+  
+  // Pending Scans Section
+  pendingSection: {
+    marginBottom: spacing.md,
+  },
+  pendingSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  pendingSectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pendingSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  syncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.primary + '20',
+    borderRadius: borderRadius.sm,
+  },
+  syncButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  offlineHelpText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    fontStyle: 'italic',
+  },
+  pendingScanCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+    borderStyle: 'dashed',
+  },
+  pendingScanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  pendingScanIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pendingScanInfo: {
+    flex: 1,
+  },
+  pendingScanTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  pendingScanDate: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  pendingScanRetry: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  removePendingButton: {
+    padding: spacing.sm,
+  },
+  pendingSectionDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
 });
