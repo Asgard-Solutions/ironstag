@@ -172,23 +172,28 @@ export default function ScanScreen() {
     }
   };
 
+  // Offline queue hook
+  const { isOnline, pendingCount } = useOfflineQueue();
+
   const analyzeDeer = async () => {
-    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated });
+    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated, isOnline });
     
     if (!capturedImage || !isAuthenticated) {
       console.log('Early return - no image or not authenticated');
       return;
     }
 
-    // Check eligibility before starting analysis
-    console.log('Checking scan eligibility...');
-    const canScan = await checkScanEligibility();
-    console.log('Eligibility result:', canScan);
-    
-    if (!canScan) {
-      setScanStep('main');
-      setCapturedImage(null);
-      return;
+    // Check eligibility before starting analysis (only if online)
+    if (isOnline) {
+      console.log('Checking scan eligibility...');
+      const canScan = await checkScanEligibility();
+      console.log('Eligibility result:', canScan);
+      
+      if (!canScan) {
+        setScanStep('main');
+        setCapturedImage(null);
+        return;
+      }
     }
 
     setScanStep('analyzing');
@@ -202,6 +207,34 @@ export default function ScanScreen() {
 
       // Determine state to send (per-scan override or user profile default)
       const stateToSend = huntingLocation || user?.state || undefined;
+      
+      // If offline, add to queue instead of calling API
+      if (!isOnline) {
+        console.log('[Offline] Adding scan to queue...');
+        
+        await offlineQueue.addToQueue({
+          image_base64: capturedImage,
+          local_image_id: localImageId,
+          notes: undefined,
+          state: stateToSend,
+        });
+        
+        // Show success message for queued scan
+        Alert.alert(
+          '📶 Scan Saved Offline',
+          'Your scan has been saved and will be automatically uploaded when you\'re back online.\n\nYou can view your pending scans in the History tab.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        
+        // Reset state
+        setHuntingLocation(null);
+        setLocationExpanded(false);
+        setScanStep('main');
+        setCapturedImage(null);
+        setAnalyzing(false);
+        return;
+      }
+      
       console.log('Sending to analyze-deer API with state:', stateToSend);
       
       const response = await scanAPI.analyzeDeer({
@@ -231,6 +264,35 @@ export default function ScanScreen() {
     } catch (error: any) {
       console.error('Analyze deer error:', error);
       console.error('Error response:', error.response?.data);
+      
+      // Check if this is a network error - add to queue if offline
+      if (!error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network') || !isOnline)) {
+        console.log('[Network Error] Adding scan to offline queue...');
+        
+        // Get the local image ID we saved earlier
+        const localImageId = await saveImageFromBase64(capturedImage);
+        const stateToSend = huntingLocation || user?.state || undefined;
+        
+        await offlineQueue.addToQueue({
+          image_base64: capturedImage,
+          local_image_id: localImageId,
+          notes: undefined,
+          state: stateToSend,
+        });
+        
+        Alert.alert(
+          '📶 Connection Lost',
+          'Your scan has been saved and will be uploaded automatically when you\'re back online.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        
+        setHuntingLocation(null);
+        setLocationExpanded(false);
+        setScanStep('main');
+        setCapturedImage(null);
+        setAnalyzing(false);
+        return;
+      }
       
       // Check if this is a "free limit reached" error
       if (error.response?.status === 403) {
