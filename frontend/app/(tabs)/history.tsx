@@ -931,6 +931,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
   },
+  // Tags display on scan cards
+  tagsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  tagChipSmall: {
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: borderRadius.sm,
+  },
+  tagChipSmallText: {
+    fontSize: 10,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  moreTagsText: {
+    fontSize: 10,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
   confidenceContainer: {
     alignItems: 'flex-end',
   },
