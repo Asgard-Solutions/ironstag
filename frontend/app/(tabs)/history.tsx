@@ -375,6 +375,19 @@ export default function HistoryScreen() {
               <Text style={styles.dateText}>
                 {format(new Date(item.created_at), 'MMM d, yyyy')}
               </Text>
+              {/* Tags display */}
+              {item.tags && item.tags.length > 0 && (
+                <View style={styles.tagsRow}>
+                  {item.tags.slice(0, 2).map((tag, index) => (
+                    <View key={index} style={styles.tagChipSmall}>
+                      <Text style={styles.tagChipSmallText}>{tag}</Text>
+                    </View>
+                  ))}
+                  {item.tags.length > 2 && (
+                    <Text style={styles.moreTagsText}>+{item.tags.length - 2}</Text>
+                  )}
+                </View>
+              )}
             </View>
             
             {/* Right side - Confidence + Feedback Badge */}
