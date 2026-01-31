@@ -555,6 +555,9 @@ export default function ScanScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.mainContent, { paddingBottom: insets.bottom + spacing.xl }]}>
+        {/* Offline Banner */}
+        <OfflineBanner />
+        
         {/* Target Icon */}
         <View style={styles.targetContainer}>
           <View style={styles.targetOuter}>
