@@ -214,8 +214,25 @@ export default function HistoryScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadScans();
+    await Promise.all([
+      loadScans(),
+      refreshQueue(),
+    ]);
     setRefreshing(false);
+  };
+  
+  // Sync pending scans when coming back online
+  const handleSyncNow = async () => {
+    if (isOnline && pendingCount > 0) {
+      await syncNow();
+      // Refresh the scans list after sync completes
+      await loadScans();
+    }
+  };
+  
+  // Remove a pending scan from the queue
+  const handleRemovePendingScan = async (scanId: string) => {
+    await removeFromQueue(scanId);
   };
   
   // Toggle favorite for a scan
