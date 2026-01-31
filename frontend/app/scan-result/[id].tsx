@@ -63,6 +63,8 @@ interface ScanResult {
   created_at: string;
   // Cloud image storage (R2) - for cross-device access
   image_url?: string | null;
+  // Tags for organization
+  tags?: string[];
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
