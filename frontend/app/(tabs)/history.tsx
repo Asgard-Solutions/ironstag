@@ -632,7 +632,7 @@ export default function HistoryScreen() {
                   
                   {!isOnline && (
                     <Text style={styles.offlineHelpText}>
-                      You're offline. Scans will upload when you're back online.
+                      You&apos;re offline. Scans will upload when you&apos;re back online.
                     </Text>
                   )}
                   
