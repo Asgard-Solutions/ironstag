@@ -9,17 +9,19 @@ import {
   Image,
   TextInput,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart, CloudOff, RefreshCw, Trash2 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { ScanListSkeleton } from '../../components/Skeleton';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
+import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
