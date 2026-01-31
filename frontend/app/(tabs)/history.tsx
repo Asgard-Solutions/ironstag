@@ -145,6 +145,17 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuthStore();
   
+  // Offline queue for pending scans
+  const { 
+    pendingScans, 
+    pendingCount, 
+    isOnline, 
+    isSyncing, 
+    syncNow, 
+    removeFromQueue,
+    refreshQueue,
+  } = useOfflineQueue();
+  
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
