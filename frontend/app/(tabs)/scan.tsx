@@ -670,7 +670,9 @@ export default function ScanScreen() {
                 </View>
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Monthly</Text>
-                  <Text style={upgradeModalStyles.planPrice}>$9.99/mo</Text>
+                  <Text style={upgradeModalStyles.planPrice}>
+                    {monthlyProduct?.price || '$9.99/mo'}
+                  </Text>
                 </View>
               </TouchableOpacity>
 
