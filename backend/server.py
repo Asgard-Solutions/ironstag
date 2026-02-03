@@ -1264,215 +1264,268 @@ async def get_subscription_status(user: dict = Depends(get_current_user)):
 async def check_scan_eligibility_endpoint(user: dict = Depends(get_current_user)):
     return await check_scan_eligibility(user)
 
-@api_router.post("/subscription/create-checkout")
-async def create_checkout_session(data: CheckoutRequest, user: dict = Depends(get_current_user)):
+# ============ IN-APP PURCHASE VALIDATION ENDPOINTS ============
+
+class IAPValidationRequest(BaseModel):
+    """Request model for IAP receipt validation"""
+    receipt_data: str  # Base64 encoded receipt (iOS) or purchase token (Android)
+    platform: str  # "ios" or "android"
+    product_id: str
+    transaction_id: Optional[str] = None
+
+class IAPValidationResponse(BaseModel):
+    """Response model for IAP validation"""
+    is_valid: bool
+    message: str
+    product_id: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    original_transaction_id: Optional[str] = None
+
+@api_router.post("/subscription/validate-iap", response_model=IAPValidationResponse)
+async def validate_iap_receipt(data: IAPValidationRequest, user: dict = Depends(get_current_user)):
+    """
+    Validate an In-App Purchase receipt from iOS or Android.
+    This endpoint verifies the purchase with Apple/Google servers and upgrades the user.
+    """
     try:
-        if not user.get("stripe_customer_id"):
-            customer = stripe.Customer.create(
-                email=user["email"],
-                name=user["name"],
-                metadata={"user_id": user["id"]}
-            )
+        logger.info(f"Validating IAP receipt for user {user['id']}, platform: {data.platform}, product: {data.product_id}")
+        
+        if data.platform == "ios":
+            result = await validate_apple_receipt(data.receipt_data, data.product_id, user)
+        elif data.platform == "android":
+            result = await validate_google_receipt(data.receipt_data, data.product_id, user)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid platform. Must be 'ios' or 'android'")
+        
+        if result["is_valid"]:
+            # Upgrade user to premium
+            expires_at = result.get("expires_at")
             query = users_table.update().where(
                 users_table.c.id == user["id"]
-            ).values(stripe_customer_id=customer.id)
+            ).values(
+                subscription_tier="master_stag",
+                scans_remaining=-1,  # Unlimited
+                subscription_expires_at=expires_at
+            )
             await database.execute(query)
-            customer_id = customer.id
-        else:
-            customer_id = user["stripe_customer_id"]
+            logger.info(f"User {user['id']} upgraded to master_stag via IAP")
         
-        if data.plan == "annual":
-            unit_amount = 8999
-            interval = "year"
-            plan_name = "Master Stag Annual"
-            description = "Unlimited deer scans - Save $30/year!"
-        else:
-            unit_amount = 999
-            interval = "month"
-            plan_name = "Master Stag Monthly"
-            description = "Unlimited deer scans with Iron Stag"
-        
-        session = stripe.checkout.Session.create(
-            customer=customer_id,
-            payment_method_types=["card"],
-            line_items=[{
-                "price_data": {
-                    "currency": "usd",
-                    "product_data": {"name": plan_name, "description": description},
-                    "unit_amount": unit_amount,
-                    "recurring": {"interval": interval}
-                },
-                "quantity": 1
-            }],
-            mode="subscription",
-            success_url="ironstag://subscription/success",
-            cancel_url="ironstag://subscription/cancel",
-            metadata={"user_id": user["id"], "plan": data.plan}
+        return IAPValidationResponse(
+            is_valid=result["is_valid"],
+            message=result["message"],
+            product_id=data.product_id,
+            expires_at=result.get("expires_at"),
+            original_transaction_id=result.get("original_transaction_id")
         )
         
-        return {"checkout_url": session.url, "session_id": session.id}
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@api_router.post("/subscription/webhook")
-async def stripe_webhook(request: Request):
-    """Handle Stripe webhook events for subscription management."""
-    try:
-        # Get raw body and signature header
-        payload = await request.body()
-        sig_header = request.headers.get("stripe-signature")
-        
-        if not sig_header:
-            logger.error("Missing stripe-signature header")
-            raise HTTPException(status_code=400, detail="Missing stripe-signature header")
-        
-        if not STRIPE_WEBHOOK_SECRET:
-            logger.error("STRIPE_WEBHOOK_SECRET not configured")
-            raise HTTPException(status_code=500, detail="Webhook secret not configured")
-        
-        # Verify webhook signature
-        try:
-            event = stripe.Webhook.construct_event(
-                payload,
-                sig_header,
-                STRIPE_WEBHOOK_SECRET
-            )
-        except stripe.error.SignatureVerificationError as e:
-            logger.error(f"Webhook signature verification failed: {e}")
-            raise HTTPException(status_code=400, detail="Invalid signature")
-        
-        logger.info(f"Received Stripe webhook: {event['type']}")
-        
-        if event["type"] == "checkout.session.completed":
-            session = event["data"]["object"]
-            user_id = session.get("metadata", {}).get("user_id")
-            
-            logger.info(f"Checkout completed for user_id: {user_id}")
-            
-            if user_id:
-                query = users_table.update().where(
-                    users_table.c.id == user_id
-                ).values(
-                    subscription_tier="master_stag",
-                    stripe_subscription_id=session.get("subscription"),
-                    scans_remaining=-1
-                )
-                await database.execute(query)
-                logger.info(f"Updated user {user_id} to master_stag subscription")
-        
-        elif event["type"] == "customer.subscription.deleted":
-            subscription = event["data"]["object"]
-            query = users_table.select().where(
-                users_table.c.stripe_subscription_id == subscription["id"]
-            )
-            user = await database.fetch_one(query)
-            
-            if user:
-                query = users_table.update().where(
-                    users_table.c.id == user["id"]
-                ).values(
-                    subscription_tier="tracker",
-                    stripe_subscription_id=None,
-                    scans_remaining=3
-                )
-                await database.execute(query)
-                logger.info(f"Downgraded user {user['id']} to tracker after subscription deletion")
-        
-        elif event["type"] == "invoice.payment_failed":
-            # Handle failed payment
-            invoice = event["data"]["object"]
-            subscription_id = invoice.get("subscription")
-            logger.warning(f"Payment failed for subscription: {subscription_id}")
-        
-        return {"status": "success"}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"IAP validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
-@api_router.post("/subscription/portal")
-async def create_customer_portal(user: dict = Depends(get_current_user)):
+async def validate_apple_receipt(receipt_data: str, product_id: str, user: dict) -> dict:
+    """
+    Validate iOS receipt with Apple's App Store Server API.
+    Uses the modern verifyReceipt endpoint.
+    """
     try:
-        customer_id = user.get("stripe_customer_id")
+        # Apple's production verification URL
+        verify_url = "https://buy.itunes.apple.com/verifyReceipt"
+        sandbox_url = "https://sandbox.itunes.apple.com/verifyReceipt"
         
-        # If no customer ID, create one for premium users
-        if not customer_id:
-            if user.get("subscription_tier") != "master_stag":
-                raise HTTPException(status_code=400, detail="No subscription found. Please upgrade first.")
+        payload = {
+            "receipt-data": receipt_data,
+            "password": APPLE_IAP_SHARED_SECRET,
+            "exclude-old-transactions": True
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Try production first
+            response = await client.post(verify_url, json=payload)
+            result = response.json()
             
-            # Create Stripe customer for manually upgraded users
-            customer = stripe.Customer.create(
-                email=user["email"],
-                name=user["name"],
-                metadata={"user_id": user["id"]}
+            # If status is 21007, the receipt is from sandbox - retry with sandbox URL
+            if result.get("status") == 21007:
+                logger.info("Receipt is from sandbox, retrying with sandbox URL")
+                response = await client.post(sandbox_url, json=payload)
+                result = response.json()
+        
+        status = result.get("status", -1)
+        
+        # Status codes: https://developer.apple.com/documentation/appstorereceipts/status
+        if status == 0:
+            # Valid receipt
+            latest_receipt_info = result.get("latest_receipt_info", [])
+            
+            # Find the latest transaction for our product
+            valid_purchase = None
+            for receipt in latest_receipt_info:
+                if receipt.get("product_id") == product_id:
+                    # Check if subscription is still valid
+                    expires_ms = int(receipt.get("expires_date_ms", 0))
+                    if expires_ms > datetime.utcnow().timestamp() * 1000:
+                        valid_purchase = receipt
+                        break
+            
+            if valid_purchase:
+                expires_at = datetime.fromtimestamp(int(valid_purchase["expires_date_ms"]) / 1000)
+                return {
+                    "is_valid": True,
+                    "message": "Purchase validated successfully",
+                    "expires_at": expires_at,
+                    "original_transaction_id": valid_purchase.get("original_transaction_id")
+                }
+            else:
+                return {
+                    "is_valid": False,
+                    "message": "No valid subscription found for this product"
+                }
+        else:
+            error_messages = {
+                21000: "The request was not made using HTTP POST.",
+                21002: "The data in the receipt-data property was malformed.",
+                21003: "The receipt could not be authenticated.",
+                21004: "The shared secret does not match.",
+                21005: "The receipt server is temporarily unavailable.",
+                21006: "This receipt is valid but the subscription has expired.",
+                21008: "Receipt is from production but sent to sandbox.",
+                21010: "The user account cannot be found."
+            }
+            message = error_messages.get(status, f"Unknown error (status: {status})")
+            return {"is_valid": False, "message": message}
+            
+    except Exception as e:
+        logger.error(f"Apple receipt validation error: {e}")
+        return {"is_valid": False, "message": f"Validation failed: {str(e)}"}
+
+async def validate_google_receipt(purchase_token: str, product_id: str, user: dict) -> dict:
+    """
+    Validate Android purchase token with Google Play API.
+    Note: Requires setting up Google Service Account credentials.
+    """
+    try:
+        if not GOOGLE_SERVICE_ACCOUNT_JSON:
+            logger.warning("Google Service Account not configured, skipping server validation")
+            # For development/testing, accept the purchase
+            # In production, you MUST configure Google service account
+            return {
+                "is_valid": True,
+                "message": "Purchase accepted (server validation skipped)",
+                "expires_at": datetime.utcnow() + timedelta(days=30)
+            }
+        
+        # Parse service account credentials
+        credentials = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+        
+        # Get access token using service account
+        # This is a simplified implementation - production should use google-auth library
+        token_url = "https://oauth2.googleapis.com/token"
+        
+        # Build JWT for service account authentication
+        now = datetime.utcnow()
+        payload = {
+            "iss": credentials["client_email"],
+            "scope": "https://www.googleapis.com/auth/androidpublisher",
+            "aud": token_url,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(hours=1)).timestamp())
+        }
+        
+        signed_jwt = jwt.encode(payload, credentials["private_key"], algorithm="RS256")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Get access token
+            token_response = await client.post(
+                token_url,
+                data={
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    "assertion": signed_jwt
+                }
             )
-            customer_id = customer.id
             
-            # Save the customer ID
-            query = users_table.update().where(
-                users_table.c.id == user["id"]
-            ).values(stripe_customer_id=customer_id)
-            await database.execute(query)
-        
-        session = stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url="ironstag://profile"
-        )
-        
-        return {"portal_url": session.url}
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe portal error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+            if token_response.status_code != 200:
+                return {"is_valid": False, "message": "Failed to authenticate with Google"}
+            
+            access_token = token_response.json().get("access_token")
+            
+            # Verify subscription purchase
+            package_name = APPLE_BUNDLE_ID  # Same package name for Android
+            verify_url = f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package_name}/purchases/subscriptions/{product_id}/tokens/{purchase_token}"
+            
+            verify_response = await client.get(
+                verify_url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            
+            if verify_response.status_code != 200:
+                return {"is_valid": False, "message": f"Google verification failed: {verify_response.status_code}"}
+            
+            result = verify_response.json()
+            
+            # Check subscription state
+            expiry_time_ms = int(result.get("expiryTimeMillis", 0))
+            if expiry_time_ms > datetime.utcnow().timestamp() * 1000:
+                expires_at = datetime.fromtimestamp(expiry_time_ms / 1000)
+                return {
+                    "is_valid": True,
+                    "message": "Purchase validated successfully",
+                    "expires_at": expires_at,
+                    "original_transaction_id": result.get("orderId")
+                }
+            else:
+                return {"is_valid": False, "message": "Subscription has expired"}
+                
+    except Exception as e:
+        logger.error(f"Google receipt validation error: {e}")
+        return {"is_valid": False, "message": f"Validation failed: {str(e)}"}
+
+@api_router.post("/subscription/restore")
+async def restore_purchases(user: dict = Depends(get_current_user)):
+    """
+    Restore purchases for a user. Called when user taps "Restore Purchases".
+    The actual restoration is handled client-side by querying the store.
+    This endpoint is called after client gets the receipt to validate it.
+    """
+    # The client will call validate-iap with the restored receipt
+    # This endpoint exists for any server-side restore logic
+    return {
+        "status": "ready",
+        "message": "Send restored purchase receipts to /subscription/validate-iap"
+    }
 
 @api_router.post("/subscription/cancel")
 async def cancel_subscription(user: dict = Depends(get_current_user)):
+    """
+    Handle subscription cancellation.
+    Note: For IAP, cancellations are handled through the app store.
+    This endpoint is for users manually downgrading or admin actions.
+    """
     try:
         # Check if user is premium
         if user.get("subscription_tier") != "master_stag":
             raise HTTPException(status_code=400, detail="No active subscription to cancel")
         
-        subscription_id = user.get("stripe_subscription_id")
+        # For IAP subscriptions, actual cancellation happens in App Store/Play Store
+        # We can only downgrade manually upgraded users here
+        query = users_table.update().where(
+            users_table.c.id == user["id"]
+        ).values(
+            subscription_tier="tracker",
+            scans_remaining=0,  # They've used their free tier already
+            subscription_cancel_at_period_end=True
+        )
+        await database.execute(query)
         
-        if subscription_id:
-            # User has a real Stripe subscription - cancel it
-            subscription = stripe.Subscription.modify(
-                subscription_id,
-                cancel_at_period_end=True
-            )
+        return {
+            "status": "canceled",
+            "message": "You have been downgraded to Tracker tier. To cancel your App Store/Play Store subscription, please manage it through your device settings."
+        }
             
-            query = users_table.update().where(
-                users_table.c.id == user["id"]
-            ).values(subscription_cancel_at_period_end=True)
-            await database.execute(query)
-            
-            return {
-                "status": "canceled",
-                "cancel_at": subscription.cancel_at,
-                "current_period_end": subscription.current_period_end
-            }
-        else:
-            # User was manually upgraded (no Stripe subscription) - downgrade immediately
-            query = users_table.update().where(
-                users_table.c.id == user["id"]
-            ).values(
-                subscription_tier="tracker",
-                scans_remaining=0,  # They've used their free tier already
-                subscription_cancel_at_period_end=False
-            )
-            await database.execute(query)
-            
-            return {
-                "status": "canceled",
-                "message": "Subscription canceled. You have been downgraded to Tracker tier."
-            }
-            
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe cancel error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe cancel error: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cancel subscription error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.post("/subscription/verify-revenuecat")
