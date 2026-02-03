@@ -96,7 +96,8 @@
       "./plugins/android-large-screen-plugin.js",
       "./plugins/android-large-screen-main-activity.js",
       "./plugins/android-colors-plugin.js",
-      "./plugins/android-large-screen-libs-plugin.js"
+      "./plugins/android-large-screen-libs-plugin.js",
+      "expo-iap"
     ],
     "experiments": {
       "typedRoutes": true
