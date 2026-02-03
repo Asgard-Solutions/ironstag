@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronUp,
   WifiOff,
+  RotateCcw,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -42,6 +43,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { offlineQueue } from '../../services/OfflineQueueService';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
+import { useIAP } from '../../hooks/useIAP';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { StatePicker, getStateName } from '../../components/StatePicker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
