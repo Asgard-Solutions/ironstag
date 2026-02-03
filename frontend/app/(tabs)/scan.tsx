@@ -55,16 +55,16 @@ export default function ScanScreen() {
   const { isAuthenticated, user, updateUser } = useAuthStore();
   const { saveImageFromBase64 } = useImageStore();
   
-  // In-App Purchase hook
+  // RevenueCat hook for IAP
   const { 
     isLoading: iapLoading, 
-    monthlyProduct, 
-    annualProduct, 
+    monthlyPackage, 
+    annualPackage, 
     purchaseMonthly, 
     purchaseAnnual,
     restorePurchases,
     error: iapError,
-  } = useIAP();
+  } = useRevenueCat();
   
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
