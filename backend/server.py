@@ -1532,6 +1532,72 @@ async def cancel_subscription(user: dict = Depends(get_current_user)):
 async def verify_revenuecat(user: dict = Depends(get_current_user)):
     return {"status": "not_implemented"}
 
+class RevenueCatSyncRequest(BaseModel):
+    """Request model for syncing RevenueCat subscription status"""
+    is_premium: bool
+    expires_at: Optional[str] = None
+    product_id: Optional[str] = None
+    original_purchase_date: Optional[str] = None
+
+@api_router.post("/subscription/sync-revenuecat")
+async def sync_revenuecat_subscription(data: RevenueCatSyncRequest, user: dict = Depends(get_current_user)):
+    """
+    Sync subscription status from RevenueCat to our database.
+    Called after successful purchase or restore via RevenueCat SDK.
+    """
+    try:
+        logger.info(f"Syncing RevenueCat subscription for user {user['id']}: is_premium={data.is_premium}")
+        
+        if data.is_premium:
+            # Parse expiration date if provided
+            expires_at = None
+            if data.expires_at:
+                try:
+                    expires_at = datetime.fromisoformat(data.expires_at.replace('Z', '+00:00'))
+                except:
+                    pass
+            
+            # Upgrade user to master_stag
+            query = users_table.update().where(
+                users_table.c.id == user["id"]
+            ).values(
+                subscription_tier="master_stag",
+                scans_remaining=-1,  # Unlimited
+                subscription_expires_at=expires_at
+            )
+            await database.execute(query)
+            
+            logger.info(f"User {user['id']} upgraded to master_stag via RevenueCat")
+            
+            return {
+                "status": "success",
+                "message": "Subscription synced successfully",
+                "subscription_tier": "master_stag",
+                "expires_at": data.expires_at
+            }
+        else:
+            # User is not premium (subscription expired or canceled)
+            query = users_table.update().where(
+                users_table.c.id == user["id"]
+            ).values(
+                subscription_tier="tracker",
+                scans_remaining=0,  # They've used their free scans
+                subscription_expires_at=None
+            )
+            await database.execute(query)
+            
+            logger.info(f"User {user['id']} downgraded to tracker via RevenueCat sync")
+            
+            return {
+                "status": "success",
+                "message": "Subscription status updated",
+                "subscription_tier": "tracker"
+            }
+            
+    except Exception as e:
+        logger.error(f"RevenueCat sync error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 # ============ DEER ANALYSIS ============
 
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
