@@ -7,15 +7,16 @@ import * as ExpoIAP from 'expo-iap';
 import api from '../utils/api';
 
 // Product IDs configured in App Store Connect / Google Play Console
+// These MUST match exactly what you configured in App Store Connect
 export const PRODUCT_IDS = {
   MONTHLY: Platform.select({
-    ios: 'master_stag_monthly',
-    android: 'master_stag_monthly',
-  }) || 'master_stag_monthly',
+    ios: 'com.asgardsolution.ironstag.premium.monthly',
+    android: 'com.asgardsolution.ironstag.premium.monthly',
+  }) || 'com.asgardsolution.ironstag.premium.monthly',
   ANNUAL: Platform.select({
-    ios: 'master_stag_annual', 
-    android: 'master_stag_annual',
-  }) || 'master_stag_annual',
+    ios: 'com.asgardsolution.ironstag.premium.annual', 
+    android: 'com.asgardsolution.ironstag.premium.annual',
+  }) || 'com.asgardsolution.ironstag.premium.annual',
 };
 
 export interface IAPProduct {
