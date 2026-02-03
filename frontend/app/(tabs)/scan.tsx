@@ -671,7 +671,7 @@ export default function ScanScreen() {
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Monthly</Text>
                   <Text style={upgradeModalStyles.planPrice}>
-                    {monthlyProduct?.price || '$9.99/mo'}
+                    {monthlyPackage?.product?.priceString || '$9.99/mo'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -696,7 +696,7 @@ export default function ScanScreen() {
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Annual</Text>
                   <Text style={upgradeModalStyles.planPrice}>
-                    {annualProduct?.price || '$89.99/yr'}
+                    {annualPackage?.product?.priceString || '$89.99/yr'}
                   </Text>
                 </View>
               </TouchableOpacity>
