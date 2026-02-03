@@ -10,10 +10,10 @@ import Purchases, {
   LOG_LEVEL,
 } from 'react-native-purchases';
 
-// RevenueCat API Keys - get these from RevenueCat Dashboard > API Keys
+// RevenueCat API Keys - from RevenueCat Dashboard > API Keys
 const REVENUECAT_API_KEYS = {
-  ios: 'appl_YOUR_IOS_KEY', // Replace with your iOS key from RevenueCat
-  android: 'goog_MZUtDklKjnEPjVzDNqWAiYxPQAV', // Your Android key
+  ios: 'appl_eSwYrXwjGuDNJWReWNrIvMARzFc', // Iron Stag (App Store)
+  android: 'goog_MZUtDk1KjnEPjVzDNqWAiYxPQAV', // Iron Stag (Play Store)
 };
 
 // Entitlement ID from RevenueCat (matches your "premium" entitlement)
