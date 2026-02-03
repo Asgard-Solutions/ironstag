@@ -55,6 +55,17 @@ export default function ScanScreen() {
   const { isAuthenticated, user, updateUser } = useAuthStore();
   const { saveImageFromBase64 } = useImageStore();
   
+  // In-App Purchase hook
+  const { 
+    isLoading: iapLoading, 
+    monthlyProduct, 
+    annualProduct, 
+    purchaseMonthly, 
+    purchaseAnnual,
+    restorePurchases,
+    error: iapError,
+  } = useIAP();
+  
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -63,7 +74,7 @@ export default function ScanScreen() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [scanStep, setScanStep] = useState<ScanStep>('main');
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
   const cameraRef = useRef<CameraView>(null);
