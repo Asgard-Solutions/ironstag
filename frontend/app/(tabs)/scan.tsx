@@ -693,7 +693,9 @@ export default function ScanScreen() {
                 </View>
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Annual</Text>
-                  <Text style={upgradeModalStyles.planPrice}>$89.99/yr</Text>
+                  <Text style={upgradeModalStyles.planPrice}>
+                    {annualProduct?.price || '$89.99/yr'}
+                  </Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -701,29 +703,79 @@ export default function ScanScreen() {
             {/* Buttons */}
             <TouchableOpacity 
               style={upgradeModalStyles.upgradeButton}
-              disabled={checkoutLoading}
+              disabled={purchaseLoading || iapLoading}
               onPress={async () => {
-                setCheckoutLoading(true);
+                setPurchaseLoading(true);
                 try {
-                  const response = await subscriptionAPI.createCheckout(selectedPlan);
-                  const checkoutUrl = response.data.checkout_url;
-                  if (checkoutUrl) {
-                    const canOpen = await Linking.canOpenURL(checkoutUrl);
-                    if (canOpen) {
-                      await Linking.openURL(checkoutUrl);
-                    }
+                  let result;
+                  if (selectedPlan === 'monthly') {
+                    result = await purchaseMonthly();
+                  } else {
+                    result = await purchaseAnnual();
                   }
-                  setShowUpgradeModal(false);
-                } catch (error) {
-                  Alert.alert('Error', 'Failed to start upgrade process.');
+                  
+                  if (result.success) {
+                    // Refresh user data to get updated subscription
+                    const userResponse = await authAPI.getMe();
+                    updateUser(userResponse.data);
+                    
+                    Alert.alert(
+                      '🎉 Welcome to Master Stag!',
+                      'Your subscription is now active. Enjoy unlimited deer scans!',
+                      [{ text: 'OK', style: 'default' }]
+                    );
+                    setShowUpgradeModal(false);
+                  } else if (result.message !== 'Purchase was canceled') {
+                    Alert.alert('Purchase Failed', result.message);
+                  }
+                } catch (error: any) {
+                  Alert.alert('Error', error.message || 'Failed to complete purchase.');
                 } finally {
-                  setCheckoutLoading(false);
+                  setPurchaseLoading(false);
                 }
               }}
             >
-              <Text style={upgradeModalStyles.upgradeButtonText}>
-                {checkoutLoading ? 'Loading...' : 'Continue to Payment'}
-              </Text>
+              {(purchaseLoading || iapLoading) ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+              ) : (
+                <Text style={upgradeModalStyles.upgradeButtonText}>
+                  Subscribe Now
+                </Text>
+              )}
+            </TouchableOpacity>
+            
+            {/* Restore Purchases Button */}
+            <TouchableOpacity 
+              style={upgradeModalStyles.restoreButton}
+              disabled={purchaseLoading || iapLoading}
+              onPress={async () => {
+                setPurchaseLoading(true);
+                try {
+                  const result = await restorePurchases();
+                  
+                  if (result.success) {
+                    // Refresh user data
+                    const userResponse = await authAPI.getMe();
+                    updateUser(userResponse.data);
+                    
+                    Alert.alert(
+                      'Purchases Restored!',
+                      'Your subscription has been restored.',
+                      [{ text: 'OK', style: 'default' }]
+                    );
+                    setShowUpgradeModal(false);
+                  } else {
+                    Alert.alert('Restore Failed', result.message);
+                  }
+                } catch (error: any) {
+                  Alert.alert('Error', error.message || 'Failed to restore purchases.');
+                } finally {
+                  setPurchaseLoading(false);
+                }
+              }}
+            >
+              <RotateCcw size={14} color={colors.primary} />
+              <Text style={upgradeModalStyles.restoreButtonText}>Restore Purchases</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
