@@ -242,7 +242,6 @@ MS_GRAPH_SENDER_EMAIL = os.environ.get('MS_GRAPH_SENDER_EMAIL', 'support@asgards
 
 # Initialize clients
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-stripe.api_key = STRIPE_SECRET_KEY
 
 # Password hasher
 ph = PasswordHasher()
