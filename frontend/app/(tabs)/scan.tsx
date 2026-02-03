@@ -1495,12 +1495,28 @@ const upgradeModalStyles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.sm,
+    minHeight: 48,
   },
   upgradeButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.background,
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  restoreButtonText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '500',
   },
   laterButton: {
     paddingVertical: spacing.sm,
