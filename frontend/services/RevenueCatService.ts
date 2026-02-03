@@ -1,130 +1,97 @@
+/**
+ * RevenueCat Service for Iron Stag
+ * Handles iOS App Store and Google Play purchases via RevenueCat
+ */
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import Purchases, { 
+  PurchasesPackage, 
+  CustomerInfo,
+  PurchasesOffering,
+  LOG_LEVEL,
+} from 'react-native-purchases';
 
-// Type definitions for RevenueCat
-export interface PurchasesPackage {
-  identifier: string;
-  product: {
-    identifier: string;
-    priceString: string;
-    price: number;
-  };
-}
-
-export interface CustomerInfo {
-  entitlements: {
-    active: {
-      [key: string]: {
-        isActive: boolean;
-        expirationDate: string | null;
-      };
-    };
-  };
-}
-
-// Product identifiers (same for iOS and Android)
-export const PRODUCT_IDS = {
-  MONTHLY: 'ironstag_monthly_premium',
-  ANNUAL: 'ironstag_annual_premium',
+// RevenueCat API Keys - get these from RevenueCat Dashboard > API Keys
+const REVENUECAT_API_KEYS = {
+  ios: 'appl_YOUR_IOS_KEY', // Replace with your iOS key from RevenueCat
+  android: 'goog_MZUtDklKjnEPjVzDNqWAiYxPQAV', // Your Android key
 };
 
-// RevenueCat Configuration - Load from environment variables
-const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || '';
-const REVENUECAT_ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '';
-const ENTITLEMENT_ID = 'master_stag';
+// Entitlement ID from RevenueCat (matches your "premium" entitlement)
+export const ENTITLEMENT_ID = 'premium';
 
-/**
- * Check if running in Expo Go (not a native development build)
- */
-function isExpoGo(): boolean {
-  return Constants.appOwnership === 'expo';
+export interface RevenueCatProduct {
+  identifier: string;
+  title: string;
+  description: string;
+  priceString: string;
+  price: number;
+  currencyCode: string;
+  packageType: string;
 }
 
-/**
- * RevenueCat Service
- * 
- * Automatically detects environment:
- * - Expo Go: Uses mock implementations (IAP not available)
- * - Native build: Uses real RevenueCat SDK
- */
+export interface PurchaseResult {
+  success: boolean;
+  message: string;
+  customerInfo?: CustomerInfo;
+}
+
 class RevenueCatService {
-  private initialized = false;
-  private Purchases: any = null;
-
-  /**
-   * Check if RevenueCat is available
-   * Returns false in Expo Go, true in native builds on iOS/Android
-   */
-  isAvailable(): boolean {
-    if (Platform.OS === 'web') return false;
-    if (isExpoGo()) return false;
-    return true;
-  }
-
-  /**
-   * Get the appropriate API key for the current platform
-   */
-  private getApiKey(): string {
-    return Platform.OS === 'ios' ? REVENUECAT_IOS_API_KEY : REVENUECAT_ANDROID_API_KEY;
-  }
+  private isInitialized = false;
 
   /**
    * Initialize RevenueCat SDK
-   * In Expo Go, this is a no-op
    */
-  async initialize(userId?: string): Promise<void> {
-    if (Platform.OS === 'web') {
-      console.log('RevenueCat: Not available on web');
-      return;
-    }
-
-    if (isExpoGo()) {
-      console.log('RevenueCat: Running in Expo Go - IAP not available. Create a development build to test IAP.');
-      return;
-    }
-
-    if (this.initialized) {
-      console.log('RevenueCat: Already initialized');
-      return;
-    }
-
+  async initialize(userId?: string): Promise<boolean> {
     try {
-      // Dynamically import react-native-purchases only in native builds
-      const PurchasesModule = await import('react-native-purchases');
-      this.Purchases = PurchasesModule.default;
-      
-      this.Purchases.setLogLevel(PurchasesModule.LOG_LEVEL.DEBUG);
-      
-      const apiKey = this.getApiKey();
-      
-      if (userId) {
-        await this.Purchases.configure({ apiKey, appUserID: userId });
-      } else {
-        await this.Purchases.configure({ apiKey });
+      if (this.isInitialized) {
+        console.log('[RevenueCat] Already initialized');
+        return true;
       }
+
+      // Get the appropriate API key for the platform
+      const apiKey = Platform.select({
+        ios: REVENUECAT_API_KEYS.ios,
+        android: REVENUECAT_API_KEYS.android,
+        default: REVENUECAT_API_KEYS.android,
+      });
+
+      if (!apiKey || apiKey.includes('YOUR_')) {
+        console.warn('[RevenueCat] API key not configured for this platform');
+        return false;
+      }
+
+      // Enable debug logs in development
+      if (__DEV__) {
+        Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+      }
+
+      // Configure RevenueCat
+      await Purchases.configure({
+        apiKey,
+        appUserID: userId, // Optional: link to your user ID
+      });
+
+      this.isInitialized = true;
+      console.log('[RevenueCat] Initialized successfully');
       
-      this.initialized = true;
-      console.log(`RevenueCat: Initialized successfully on ${Platform.OS}`);
+      return true;
     } catch (error) {
-      console.error('RevenueCat: Initialization failed', error);
+      console.error('[RevenueCat] Initialize error:', error);
+      return false;
     }
   }
 
   /**
-   * Login user to RevenueCat
+   * Login user to RevenueCat (call after user authenticates)
    */
   async login(userId: string): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      console.log('RevenueCat: Login not available');
-      return null;
-    }
-    
     try {
-      const { customerInfo } = await this.Purchases.logIn(userId);
-      return customerInfo as CustomerInfo;
+      const { customerInfo } = await Purchases.logIn(userId);
+      console.log('[RevenueCat] User logged in:', userId);
+      return customerInfo;
     } catch (error) {
-      console.error('RevenueCat: Login failed', error);
-      throw error;
+      console.error('[RevenueCat] Login error:', error);
+      return null;
     }
   }
 
@@ -132,114 +99,146 @@ class RevenueCatService {
    * Logout user from RevenueCat
    */
   async logout(): Promise<void> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return;
-    }
-    
     try {
-      await this.Purchases.logOut();
-      console.log('RevenueCat: Logged out');
+      await Purchases.logOut();
+      console.log('[RevenueCat] User logged out');
     } catch (error) {
-      console.error('RevenueCat: Logout failed', error);
+      console.error('[RevenueCat] Logout error:', error);
     }
   }
 
   /**
-   * Get available subscription offerings
+   * Get available offerings (subscription packages)
    */
-  async getOfferings(): Promise<any | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      console.log('RevenueCat: Offerings not available in Expo Go');
-      return null;
-    }
-    
+  async getOfferings(): Promise<PurchasesOffering | null> {
     try {
-      const offerings = await this.Purchases.getOfferings();
-      return offerings.current;
+      const offerings = await Purchases.getOfferings();
+      
+      if (offerings.current) {
+        console.log('[RevenueCat] Current offering:', offerings.current.identifier);
+        return offerings.current;
+      }
+      
+      console.log('[RevenueCat] No current offering available');
+      return null;
     } catch (error) {
-      console.error('RevenueCat: Failed to get offerings', error);
+      console.error('[RevenueCat] Get offerings error:', error);
       return null;
     }
   }
 
   /**
-   * Get available packages (monthly/annual)
+   * Get available packages formatted for UI
    */
-  async getPackages(): Promise<PurchasesPackage[]> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return [];
-    }
-    
+  async getPackages(): Promise<RevenueCatProduct[]> {
     try {
       const offering = await this.getOfferings();
-      return offering?.availablePackages || [];
+      
+      if (!offering) {
+        return [];
+      }
+
+      return offering.availablePackages.map(pkg => ({
+        identifier: pkg.identifier,
+        title: pkg.product.title,
+        description: pkg.product.description,
+        priceString: pkg.product.priceString,
+        price: pkg.product.price,
+        currencyCode: pkg.product.currencyCode,
+        packageType: pkg.packageType,
+      }));
     } catch (error) {
-      console.error('RevenueCat: Failed to get packages', error);
+      console.error('[RevenueCat] Get packages error:', error);
       return [];
     }
   }
 
   /**
-   * Purchase a subscription package
+   * Purchase a package
    */
-  async purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      console.log('RevenueCat: Purchase not available in Expo Go');
-      return null;
-    }
-    
+  async purchasePackage(pkg: PurchasesPackage): Promise<PurchaseResult> {
     try {
-      const { customerInfo } = await this.Purchases.purchasePackage(pkg as any);
-      return customerInfo as CustomerInfo;
-    } catch (error: any) {
-      if (error.userCancelled) {
-        throw new Error('Purchase cancelled by user');
-      }
-      console.error('RevenueCat: Purchase failed', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Purchase by product ID
-   */
-  async purchaseProduct(productId: string): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      console.log('RevenueCat: Purchase not available in Expo Go');
-      return null;
-    }
-    
-    try {
-      const packages = await this.getPackages();
-      const pkg = packages.find(p => p.product.identifier === productId);
+      console.log('[RevenueCat] Purchasing package:', pkg.identifier);
       
-      if (!pkg) {
-        throw new Error(`Product ${productId} not found`);
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      
+      // Check if the purchase granted the premium entitlement
+      const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+      
+      if (isPremium) {
+        return {
+          success: true,
+          message: 'Purchase successful! You now have premium access.',
+          customerInfo,
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Purchase completed but entitlement not found.',
+          customerInfo,
+        };
       }
-
-      return await this.purchasePackage(pkg);
-    } catch (error) {
-      console.error('RevenueCat: Purchase product failed', error);
-      throw error;
+    } catch (error: any) {
+      console.error('[RevenueCat] Purchase error:', error);
+      
+      // Handle user cancellation
+      if (error.userCancelled) {
+        return {
+          success: false,
+          message: 'Purchase was cancelled',
+        };
+      }
+      
+      return {
+        success: false,
+        message: error.message || 'Purchase failed. Please try again.',
+      };
     }
   }
 
   /**
    * Restore previous purchases
    */
-  async restorePurchases(): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      console.log('RevenueCat: Restore not available in Expo Go');
-      return null;
-    }
-    
+  async restorePurchases(): Promise<PurchaseResult> {
     try {
-      const customerInfo = await this.Purchases.restorePurchases();
-      console.log('RevenueCat: Purchases restored');
-      return customerInfo as CustomerInfo;
+      console.log('[RevenueCat] Restoring purchases...');
+      
+      const customerInfo = await Purchases.restorePurchases();
+      
+      const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+      
+      if (isPremium) {
+        return {
+          success: true,
+          message: 'Purchases restored! You have premium access.',
+          customerInfo,
+        };
+      } else {
+        return {
+          success: false,
+          message: 'No previous purchases found.',
+          customerInfo,
+        };
+      }
+    } catch (error: any) {
+      console.error('[RevenueCat] Restore error:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to restore purchases.',
+      };
+    }
+  }
+
+  /**
+   * Check if user has premium entitlement
+   */
+  async checkPremiumStatus(): Promise<boolean> {
+    try {
+      const customerInfo = await Purchases.getCustomerInfo();
+      return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
     } catch (error) {
-      console.error('RevenueCat: Restore failed', error);
-      throw error;
+      console.error('[RevenueCat] Check premium error:', error);
+      return false;
     }
   }
 
@@ -247,95 +246,45 @@ class RevenueCatService {
    * Get current customer info
    */
   async getCustomerInfo(): Promise<CustomerInfo | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return null;
-    }
-    
     try {
-      return await this.Purchases.getCustomerInfo() as CustomerInfo;
+      return await Purchases.getCustomerInfo();
     } catch (error) {
-      console.error('RevenueCat: Failed to get customer info', error);
+      console.error('[RevenueCat] Get customer info error:', error);
       return null;
     }
   }
 
   /**
-   * Check if user has active premium subscription
+   * Sync purchases with our backend
    */
-  async isPremium(): Promise<boolean> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return false;
-    }
-    
+  async syncWithBackend(userId: string, customerInfo: CustomerInfo): Promise<boolean> {
     try {
-      const customerInfo = await this.getCustomerInfo();
-      if (!customerInfo) return false;
-
+      const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
       const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
-      return entitlement !== undefined && entitlement.isActive;
+      
+      // Call our backend to update subscription status
+      const response = await fetch('/api/subscription/sync-revenuecat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          is_premium: isPremium,
+          expires_at: entitlement?.expirationDate,
+          product_id: entitlement?.productIdentifier,
+          original_purchase_date: entitlement?.originalPurchaseDate,
+        }),
+      });
+      
+      return response.ok;
     } catch (error) {
-      console.error('RevenueCat: Failed to check premium status', error);
+      console.error('[RevenueCat] Sync with backend error:', error);
       return false;
-    }
-  }
-
-  /**
-   * Get subscription expiration date
-   */
-  async getExpirationDate(): Promise<Date | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return null;
-    }
-    
-    try {
-      const customerInfo = await this.getCustomerInfo();
-      if (!customerInfo) return null;
-
-      const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
-      if (!entitlement || !entitlement.expirationDate) return null;
-
-      return new Date(entitlement.expirationDate);
-    } catch (error) {
-      console.error('RevenueCat: Failed to get expiration date', error);
-      return null;
-    }
-  }
-
-  /**
-   * Get formatted price for a product
-   */
-  async getProductPrice(productId: string): Promise<string | null> {
-    if (!this.isAvailable() || !this.Purchases) {
-      return null;
-    }
-    
-    try {
-      const packages = await this.getPackages();
-      const pkg = packages.find(p => p.product.identifier === productId);
-      return pkg?.product.priceString || null;
-    } catch (error) {
-      console.error('RevenueCat: Failed to get product price', error);
-      return null;
-    }
-  }
-
-  /**
-   * Sync purchases with backend
-   */
-  async syncWithBackend(backendSyncFn: (isPremium: boolean, expiresAt: Date | null) => Promise<void>): Promise<void> {
-    if (!this.isAvailable()) {
-      return;
-    }
-    
-    try {
-      const isPremium = await this.isPremium();
-      const expiresAt = await this.getExpirationDate();
-      await backendSyncFn(isPremium, expiresAt);
-    } catch (error) {
-      console.error('RevenueCat: Backend sync failed', error);
     }
   }
 }
 
+// Export singleton instance
 export const revenueCatService = new RevenueCatService();
 export default revenueCatService;
