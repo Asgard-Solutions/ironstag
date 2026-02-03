@@ -228,11 +228,16 @@ password_reset_codes_table = Table(
 
 # API Keys
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
-STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
-STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 REVENUECAT_SECRET_KEY = os.environ.get('REVENUECAT_SECRET_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'iron-stag-secret-key-2025')
 JWT_ALGORITHM = 'HS256'
+
+# Apple IAP Configuration
+APPLE_IAP_SHARED_SECRET = os.environ.get('APPLE_IAP_SHARED_SECRET', '')
+APPLE_BUNDLE_ID = 'io.asgardsolution.ironstag'
+
+# Google Play Configuration  
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON', '')
 
 # Microsoft Graph Configuration
 MS_GRAPH_CLIENT_ID = os.environ.get('MICROSOFT_GRAPH_CLIENT_ID', '')
