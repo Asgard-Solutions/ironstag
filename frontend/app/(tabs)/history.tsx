@@ -19,6 +19,7 @@ import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { ScanListSkeleton } from '../../components/Skeleton';
+import { OfflineBanner } from '../../components/OfflineIndicator';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
@@ -508,6 +509,9 @@ export default function HistoryScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Offline Banner - Show pending scans */}
+      <OfflineBanner />
+
       {scans.length > 0 ? (
         <>
           {/* Search & Filters - Only show when there are scans */}
@@ -606,7 +610,7 @@ export default function HistoryScreen() {
             data={filteredScans}
             keyExtractor={(item) => item.id}
             renderItem={renderScanCard}
-            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xl }]}
+            contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xxl + 20 }]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -698,7 +702,7 @@ export default function HistoryScreen() {
         </>
       ) : (
         <ScrollView 
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xxl + 20 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

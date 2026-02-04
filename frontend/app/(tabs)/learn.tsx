@@ -182,7 +182,7 @@ export default function LearnScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xxl + 20 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Introduction */}

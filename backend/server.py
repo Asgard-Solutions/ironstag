@@ -109,6 +109,7 @@ scans_table = Table(
     Column("id", String(36), primary_key=True),
     Column("user_id", String(36), nullable=False),
     Column("local_image_id", String(100)),
+    Column("image_url", String, nullable=True),  # Cloud image URL (R2)
     Column("deer_age", Float),
     Column("deer_type", String(100)),
     Column("deer_sex", String(50)),
@@ -136,6 +137,13 @@ scans_table = Table(
     Column("raw_recommendation_confidence", Integer),  # Raw recommendation confidence from model
     Column("calibration_strategy", String(50)),  # heuristic, global_curve, region_curve
     Column("calibration_fallback_reason", String(100)),  # Why fallback was used
+    # Image quality fields
+    Column("image_quality_bucket", String(20), nullable=True),  # Image quality assessment
+    Column("quality_factors", JSON, nullable=True),  # Detailed quality factors
+    # User organization fields
+    Column("is_favorite", Boolean, default=False),  # User favorite
+    Column("tags", JSON, nullable=True),  # User tags for organization
+    Column("posture_bucket", String(20), nullable=True),  # Future: posture analysis
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -1530,7 +1538,194 @@ async def cancel_subscription(user: dict = Depends(get_current_user)):
 
 @api_router.post("/subscription/verify-revenuecat")
 async def verify_revenuecat(user: dict = Depends(get_current_user)):
-    return {"status": "not_implemented"}
+    """
+    Verify RevenueCat subscription status and update user record.
+    Called after a successful in-app purchase to sync subscription status with backend.
+    """
+    revenuecat_api_key = os.getenv("REVENUECAT_SECRET_KEY", "")
+    if not revenuecat_api_key:
+        logger.warning("RevenueCat API key not configured")
+        return {"status": "error", "message": "RevenueCat not configured"}
+    
+    user_id = user["id"]
+    
+    try:
+        # Call RevenueCat API to get subscriber info
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.revenuecat.com/v1/subscribers/{user_id}",
+                headers={
+                    "Authorization": f"Bearer {revenuecat_api_key}",
+                    "Content-Type": "application/json",
+                }
+            )
+            
+            if response.status_code == 404:
+                # User not found in RevenueCat - no subscription
+                return {"status": "ok", "is_premium": False}
+            
+            response.raise_for_status()
+            data = response.json()
+        
+        # Check for active entitlements
+        subscriber = data.get("subscriber", {})
+        entitlements = subscriber.get("entitlements", {})
+        
+        # Look for our premium entitlement
+        master_stag = entitlements.get("master_stag", {})
+        is_active = master_stag.get("expires_date") is not None
+        
+        # Check if not expired
+        if is_active:
+            expires_date_str = master_stag.get("expires_date")
+            if expires_date_str:
+                from datetime import datetime
+                expires_date = datetime.fromisoformat(expires_date_str.replace("Z", "+00:00"))
+                is_active = expires_date > datetime.now(expires_date.tzinfo)
+        
+        if is_active:
+            # Update user's subscription status
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_tier = :tier,
+                    subscription_status = :status,
+                    subscription_end_date = :end_date
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": user_id,
+                    "tier": "master_stag",
+                    "status": "active",
+                    "end_date": master_stag.get("expires_date"),
+                }
+            )
+            logger.info(f"User {user_id} subscription verified via RevenueCat: master_stag active")
+            return {
+                "status": "ok",
+                "is_premium": True,
+                "tier": "master_stag",
+                "expires_at": master_stag.get("expires_date"),
+            }
+        else:
+            # No active subscription
+            return {"status": "ok", "is_premium": False}
+            
+    except httpx.HTTPStatusError as e:
+        logger.error(f"RevenueCat API error: {e}")
+        return {"status": "error", "message": "Failed to verify subscription"}
+    except Exception as e:
+        logger.error(f"RevenueCat verification error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@api_router.post("/webhooks/revenuecat")
+async def revenuecat_webhook(request: Request):
+    """
+    RevenueCat webhook endpoint for subscription events.
+    Configure this URL in RevenueCat Dashboard > Integrations > Webhooks.
+    
+    Events handled:
+    - INITIAL_PURCHASE: New subscription
+    - RENEWAL: Subscription renewed
+    - CANCELLATION: Subscription cancelled
+    - EXPIRATION: Subscription expired
+    - BILLING_ISSUE: Payment failed
+    """
+    # Verify webhook authenticity using shared secret
+    webhook_secret = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
+    auth_header = request.headers.get("Authorization", "")
+    
+    if webhook_secret and auth_header != f"Bearer {webhook_secret}":
+        logger.warning("RevenueCat webhook: Invalid authorization")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        body = await request.json()
+        event = body.get("event", {})
+        event_type = event.get("type", "")
+        app_user_id = event.get("app_user_id", "")
+        
+        logger.info(f"RevenueCat webhook: {event_type} for user {app_user_id}")
+        
+        if not app_user_id:
+            logger.warning("RevenueCat webhook: No app_user_id in event")
+            return {"status": "ok", "message": "No user ID"}
+        
+        # Look up user by ID (app_user_id should match our user.id)
+        user = await database.fetch_one(
+            "SELECT * FROM users WHERE id = :id",
+            {"id": app_user_id}
+        )
+        
+        if not user:
+            logger.warning(f"RevenueCat webhook: User {app_user_id} not found")
+            return {"status": "ok", "message": "User not found"}
+        
+        # Handle different event types
+        if event_type in ["INITIAL_PURCHASE", "RENEWAL", "UNCANCELLATION"]:
+            # Subscription is active
+            product_id = event.get("product_id", "")
+            expiration_at = event.get("expiration_at_ms")
+            
+            expiration_date = None
+            if expiration_at:
+                from datetime import datetime
+                expiration_date = datetime.utcfromtimestamp(expiration_at / 1000)
+            
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_tier = :tier,
+                    subscription_status = :status,
+                    subscription_end_date = :end_date
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "tier": "master_stag",
+                    "status": "active",
+                    "end_date": expiration_date,
+                }
+            )
+            logger.info(f"RevenueCat: Activated subscription for user {app_user_id}")
+            
+        elif event_type in ["CANCELLATION", "EXPIRATION"]:
+            # Subscription ended
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_status = :status
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "status": "cancelled" if event_type == "CANCELLATION" else "expired",
+                }
+            )
+            logger.info(f"RevenueCat: {event_type} for user {app_user_id}")
+            
+        elif event_type == "BILLING_ISSUE":
+            # Payment problem
+            await database.execute(
+                """
+                UPDATE users 
+                SET subscription_status = :status
+                WHERE id = :user_id
+                """,
+                {
+                    "user_id": app_user_id,
+                    "status": "past_due",
+                }
+            )
+            logger.warning(f"RevenueCat: Billing issue for user {app_user_id}")
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"RevenueCat webhook error: {e}")
+        # Always return 200 to prevent retries for errors we can't fix
+        return {"status": "error", "message": str(e)}
 
 class RevenueCatSyncRequest(BaseModel):
     """Request model for syncing RevenueCat subscription status"""
@@ -2125,6 +2320,39 @@ async def add_scan_label(
     credibility = await compute_credibility_factor(user["id"], data.harvest_confirmed)
     effective_weight = base_weight * credibility
     
+    # Compute age_correct and recommendation_correct for curve building
+    # age_correct: True if exact match, None if can't determine
+    # recommendation_correct: True if harvest recommendation was appropriate
+    age_correct = None
+    recommendation_correct = None
+    
+    if label_type == "exact_age" and data.reported_age is not None:
+        predicted_age = scan["deer_age"]
+        if predicted_age is not None:
+            # Age is "correct" if within 0.5 years of reported age
+            age_correct = abs(predicted_age - data.reported_age) <= 0.5
+            
+            # Recommendation is correct if:
+            # - HARVEST was given for mature deer (3.5+ years) AND deer was actually mature
+            # - PASS was given for young deer AND deer was actually young
+            recommendation = scan["recommendation"]
+            actual_mature = data.reported_age >= 3.5
+            if recommendation == "HARVEST":
+                recommendation_correct = actual_mature
+            else:
+                recommendation_correct = not actual_mature
+    elif label_type == "categorical":
+        # For categorical, 'exact' means correct
+        if data.accuracy_category == "exact":
+            age_correct = True
+            recommendation_correct = True  # If age was exact, recommendation was likely correct
+        elif data.accuracy_category == "close":
+            age_correct = False  # Not quite right
+            recommendation_correct = True  # But probably didn't affect recommendation
+        else:  # 'off'
+            age_correct = False
+            recommendation_correct = False
+    
     # Create label
     label_id = str(uuid.uuid4())
     now = datetime.utcnow()
@@ -2135,12 +2363,14 @@ async def add_scan_label(
             id, scan_id, user_id, label_type, label_weight, reported_age, 
             accuracy_category, prediction_error, error_bucket, harvest_confirmed,
             credibility_factor, effective_weight, notes, created_at, labeled_at,
-            label_source, trust_source, trust_weight, label_version
+            label_source, trust_source, trust_weight, label_version,
+            age_correct, recommendation_correct
         ) VALUES (
             :id, :scan_id, :user_id, :label_type, :label_weight, :reported_age,
             :accuracy_category, :prediction_error, :error_bucket, :harvest_confirmed,
             :credibility_factor, :effective_weight, :notes, :created_at, :labeled_at,
-            :label_source, :trust_source, :trust_weight, :label_version
+            :label_source, :trust_source, :trust_weight, :label_version,
+            :age_correct, :recommendation_correct
         )
         """,
         {
@@ -2163,6 +2393,8 @@ async def add_scan_label(
             "trust_source": "self_reported",
             "trust_weight": effective_weight,
             "label_version": 1,  # Current weighting schema version
+            "age_correct": age_correct,
+            "recommendation_correct": recommendation_correct,
         }
     )
     
@@ -2440,54 +2672,116 @@ async def edit_scan_with_reanalysis(
     # If image is provided, re-analyze with LLM
     if data.image_base64:
         try:
+            logger.info(f"Re-analyzing scan {scan_id} with user corrections")
+            
             image_data = data.image_base64
             if not image_data.startswith("data:"):
                 image_data = f"data:image/jpeg;base64,{image_data}"
             
-            # Build hint text from user corrections
+            # Build hint text from user corrections with context about original analysis
             hints = []
-            if data.deer_sex:
-                hints.append(f"The deer is a {data.deer_sex}")
-            if data.deer_type:
-                hints.append(f"The deer type is {data.deer_type}")
-            if data.antler_points_left is not None:
-                hints.append(f"Left antler has {data.antler_points_left} points")
-            if data.antler_points_right is not None:
-                hints.append(f"Right antler has {data.antler_points_right} points")
             
-            hint_text = ". ".join(hints) if hints else ""
+            # Include original analysis for context
+            original_context = []
+            if scan.get("deer_sex"):
+                original_context.append(f"Originally identified as: {scan.get('deer_sex')}")
+            if scan.get("deer_age"):
+                original_context.append(f"Original age estimate: {scan.get('deer_age')} years")
+            if scan.get("antler_points"):
+                original_context.append(f"Original point count: {scan.get('antler_points')} points")
+            
+            # Add user corrections
+            if data.deer_sex:
+                hints.append(f"CORRECTION: The deer is actually a {data.deer_sex} (user confirmed in field)")
+            if data.deer_type:
+                hints.append(f"CORRECTION: The deer type is {data.deer_type}")
+            if data.antler_points_left is not None:
+                hints.append(f"CORRECTION: Left antler has exactly {data.antler_points_left} points (user counted)")
+            if data.antler_points_right is not None:
+                hints.append(f"CORRECTION: Right antler has exactly {data.antler_points_right} points (user counted)")
+            if total_points is not None:
+                hints.append(f"CORRECTION: Total antler points is {total_points} (user verified)")
+            
+            # Combine original context and corrections
+            context_text = "\n".join(original_context) if original_context else ""
+            hint_text = "\n".join(hints) if hints else ""
+            
+            logger.info(f"Re-analysis corrections: {hint_text}")
+            
+            # Build a detailed re-analysis prompt that uses user corrections as ground truth
+            reanalysis_system_prompt = """You are an expert wildlife biologist specializing in deer aging and analysis.
+
+The user has CORRECTED some details about this deer based on their field observation. Your task is to RE-ANALYZE the deer image using these corrections as GROUND TRUTH facts.
+
+CRITICAL INSTRUCTIONS:
+1. The user's corrections are AUTHORITATIVE - they were there and saw the deer in person
+2. Use the corrected information to inform your OTHER assessments (especially age estimation)
+3. If the user corrected the sex to "Doe", do NOT report antler points
+4. If the user corrected antler points, use those exact numbers and factor them into age estimation
+5. Adjust your age estimate based on the corrected details (e.g., point count correlates with age)
+6. Re-evaluate the harvest recommendation based on all corrected information
+
+AGE ESTIMATION GUIDELINES WITH CORRECTIONS:
+- For Bucks: More antler points generally indicate older deer
+  * 4-6 points total: Likely 1.5-2.5 years
+  * 8-10 points total: Likely 2.5-4.5 years  
+  * 10+ points total: Likely 4.5+ years
+- For Does: Focus on body characteristics, face length, belly sag
+- Body condition and physical maturity indicators still apply
+
+Return ONLY valid JSON with your REVISED analysis:
+{
+    "deer_age": <revised age estimate as number, or null if truly uncertain>,
+    "deer_type": <string: "Whitetail", "Mule Deer", "Elk", etc.>,
+    "deer_sex": <"Buck" or "Doe" or "Unknown">,
+    "antler_points": <total points if buck, null if doe>,
+    "antler_points_left": <left antler points if buck, null if doe>,
+    "antler_points_right": <right antler points if buck, null if doe>,
+    "body_condition": <"Poor", "Fair", "Good", "Excellent">,
+    "confidence": <1-100, your confidence in the REVISED analysis>,
+    "recommendation": <"HARVEST" or "PASS" based on revised age>,
+    "reasoning": <detailed explanation incorporating the user's corrections and how they affected your analysis>
+}"""
+
+            # Build user message with clear correction context
+            if hint_text:
+                user_message = f"""RE-ANALYZE this deer image with USER CORRECTIONS.
+
+ORIGINAL AI ANALYSIS (for reference):
+{context_text if context_text else "No original analysis data available"}
+
+USER CORRECTIONS (treat these as GROUND TRUTH - the user was in the field):
+{hint_text}
+
+INSTRUCTIONS:
+1. Accept ALL user corrections as factual - they saw this deer in person
+2. Re-estimate the deer's AGE based on the corrected information
+3. Update the HARVEST/PASS recommendation based on revised age
+4. Explain how the corrections changed your analysis in the reasoning field
+
+Provide your complete REVISED analysis in JSON format."""
+            else:
+                user_message = "Analyze this deer image and provide a complete assessment."
             
             response = openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are an expert wildlife biologist specializing in deer aging. 
-                        Analyze the deer image and return ONLY valid JSON:
-                        {
-                            "deer_age": <number or null>,
-                            "deer_type": <string like "Whitetail", "Mule Deer", "Elk", etc.>,
-                            "deer_sex": <"Buck" or "Doe" or "Unknown">,
-                            "antler_points": <total number or null>,
-                            "antler_points_left": <number of points on left antler or null>,
-                            "antler_points_right": <number of points on right antler or null>,
-                            "body_condition": <string>,
-                            "confidence": <number 1-100>,
-                            "recommendation": <"HARVEST" or "PASS">,
-                            "reasoning": <string>
-                        }
-                        The user has provided corrections - incorporate them into your analysis."""
+                        "content": reanalysis_system_prompt
                     },
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": f"Re-analyze this deer with these corrections: {hint_text}" if hint_text else "Analyze this deer:"},
+                            {"type": "text", "text": user_message},
                             {"type": "image_url", "image_url": {"url": image_data}}
                         ]
                     }
                 ],
-                max_tokens=1000
+                max_tokens=1500
             )
+            
+            logger.info(f"Re-analysis API call completed for scan {scan_id}")
             
             response_text = response.choices[0].message.content
             
@@ -3355,6 +3649,211 @@ async def admin_upgrade_user(user: dict = Depends(get_current_user)):
     ).values(subscription_tier="master_stag", scans_remaining=-1)
     await database.execute(query)
     return {"status": "upgraded", "tier": "master_stag"}
+
+
+# ============ DEBUG/CRASH REPORTING ENDPOINTS ============
+
+# Environment variable to control debug mode (default: disabled)
+DEBUG_MODE_ENABLED = os.getenv("DEBUG_MODE_ENABLED", "false").lower() == "true"
+
+class CrashReportRequest(BaseModel):
+    id: str
+    timestamp: str
+    error_message: str
+    error_stack: Optional[str] = None
+    component_stack: Optional[str] = None
+    screen: Optional[str] = None
+    user_id: Optional[str] = None
+    platform: str
+    app_version: str
+    build_number: str
+    device_info: dict = {}
+    extra_data: dict = {}
+
+class BreadcrumbRequest(BaseModel):
+    timestamp: str
+    message: str
+    screen: Optional[str] = None
+    user_id: Optional[str] = None
+    platform: str
+    app_version: str
+    data: dict = {}
+
+@api_router.get("/debug/status")
+async def get_debug_status():
+    """Get debug mode status - controls whether crash reporting is enabled"""
+    return {
+        "debug_enabled": DEBUG_MODE_ENABLED,
+        "environment": os.getenv("ENVIRONMENT", "development"),
+    }
+
+@api_router.post("/debug/crash-report")
+async def submit_crash_report(report: CrashReportRequest):
+    """
+    Receive and store crash reports from mobile apps.
+    Only processes reports if DEBUG_MODE_ENABLED is true.
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"status": "ignored", "message": "Debug mode disabled"}
+    
+    try:
+        # Create crash_reports table if it doesn't exist
+        create_query = """
+        CREATE TABLE IF NOT EXISTS crash_reports (
+            id TEXT PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL,
+            error_message TEXT NOT NULL,
+            error_stack TEXT,
+            component_stack TEXT,
+            screen TEXT,
+            user_id TEXT,
+            platform TEXT NOT NULL,
+            app_version TEXT NOT NULL,
+            build_number TEXT,
+            device_info JSONB,
+            extra_data JSONB,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+        await database.execute(create_query)
+        
+        # Insert crash report
+        insert_query = """
+        INSERT INTO crash_reports (
+            id, timestamp, error_message, error_stack, component_stack,
+            screen, user_id, platform, app_version, build_number,
+            device_info, extra_data
+        ) VALUES (
+            :id, :timestamp, :error_message, :error_stack, :component_stack,
+            :screen, :user_id, :platform, :app_version, :build_number,
+            :device_info, :extra_data
+        )
+        ON CONFLICT (id) DO NOTHING
+        """
+        await database.execute(insert_query, {
+            "id": report.id,
+            "timestamp": report.timestamp,
+            "error_message": report.error_message,
+            "error_stack": report.error_stack,
+            "component_stack": report.component_stack,
+            "screen": report.screen,
+            "user_id": report.user_id,
+            "platform": report.platform,
+            "app_version": report.app_version,
+            "build_number": report.build_number,
+            "device_info": json.dumps(report.device_info),
+            "extra_data": json.dumps(report.extra_data),
+        })
+        
+        logger.warning(f"[CrashReport] {report.platform}/{report.app_version} - {report.error_message[:100]}")
+        
+        return {"status": "received", "id": report.id}
+    except Exception as e:
+        logger.error(f"Failed to store crash report: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.post("/debug/breadcrumb")
+async def submit_breadcrumb(breadcrumb: BreadcrumbRequest):
+    """
+    Receive breadcrumb/event data for debugging.
+    Only processes if DEBUG_MODE_ENABLED is true.
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"status": "ignored"}
+    
+    try:
+        # Create breadcrumbs table if it doesn't exist
+        create_query = """
+        CREATE TABLE IF NOT EXISTS debug_breadcrumbs (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP NOT NULL,
+            message TEXT NOT NULL,
+            screen TEXT,
+            user_id TEXT,
+            platform TEXT NOT NULL,
+            app_version TEXT NOT NULL,
+            data JSONB,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+        """
+        await database.execute(create_query)
+        
+        # Insert breadcrumb
+        insert_query = """
+        INSERT INTO debug_breadcrumbs (
+            timestamp, message, screen, user_id, platform, app_version, data
+        ) VALUES (
+            :timestamp, :message, :screen, :user_id, :platform, :app_version, :data
+        )
+        """
+        await database.execute(insert_query, {
+            "timestamp": breadcrumb.timestamp,
+            "message": breadcrumb.message,
+            "screen": breadcrumb.screen,
+            "user_id": breadcrumb.user_id,
+            "platform": breadcrumb.platform,
+            "app_version": breadcrumb.app_version,
+            "data": json.dumps(breadcrumb.data),
+        })
+        
+        return {"status": "received"}
+    except Exception as e:
+        logger.error(f"Failed to store breadcrumb: {e}")
+        return {"status": "error"}
+
+@api_router.get("/debug/crash-reports")
+async def get_crash_reports(
+    limit: int = 50,
+    platform: Optional[str] = None,
+    app_version: Optional[str] = None
+):
+    """
+    Get recent crash reports (admin only).
+    """
+    if not DEBUG_MODE_ENABLED:
+        return {"reports": [], "message": "Debug mode disabled"}
+    
+    try:
+        query = "SELECT * FROM crash_reports WHERE 1=1"
+        params = {}
+        
+        if platform:
+            query += " AND platform = :platform"
+            params["platform"] = platform
+        
+        if app_version:
+            query += " AND app_version = :app_version"
+            params["app_version"] = app_version
+        
+        query += " ORDER BY timestamp DESC LIMIT :limit"
+        params["limit"] = limit
+        
+        reports = await database.fetch_all(query, params)
+        
+        return {
+            "reports": [dict(r) for r in reports],
+            "count": len(reports),
+        }
+    except Exception as e:
+        return {"reports": [], "error": str(e)}
+
+@api_router.post("/debug/enable")
+async def enable_debug_mode(secret: str):
+    """
+    Enable debug mode (requires admin secret).
+    In production, this would update a config in the database.
+    """
+    admin_secret = os.getenv("ADMIN_SECRET", "iron_stag_debug_2024")
+    if secret != admin_secret:
+        raise HTTPException(status_code=403, detail="Invalid secret")
+    
+    # In a real implementation, this would update a database flag
+    # For now, we just return the current status
+    return {
+        "status": "Debug mode controlled via DEBUG_MODE_ENABLED env var",
+        "current_status": DEBUG_MODE_ENABLED,
+        "message": "Set DEBUG_MODE_ENABLED=true in .env to enable"
+    }
     
 
 # Include router

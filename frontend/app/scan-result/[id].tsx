@@ -12,12 +12,12 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
-  BackHandler,
   RefreshControl,
 } from 'react-native';
-import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
+import * as FileSystem from 'expo-file-system';
 import {
   ArrowLeft,
   Share2,
@@ -132,23 +132,6 @@ export default function ScanResultScreen() {
     loadScan();
   }, [id]);
 
-  // Handle Android hardware back button - navigate to scan tab instead of back through stack
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => {
-        // Navigate to scan tab using replace to avoid stuck states
-        router.replace('/(tabs)/scan');
-        return true; // Prevent default back behavior
-      };
-
-      // Only add listener on Android
-      if (Platform.OS === 'android') {
-        BackHandler.addEventListener('hardwareBackPress', onBackPress);
-        return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
-      }
-      return undefined;
-    }, [])
-  );
   const loadScan = async () => {
     if (!id) return;
     setLoading(true);
@@ -274,32 +257,64 @@ export default function ScanResultScreen() {
       
       // Include image for re-analysis if available
       if (imageUri) {
-        // Convert image URI to base64
         try {
-          const response = await fetch(imageUri);
-          const blob = await response.blob();
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => {
-              const base64 = reader.result as string;
-              resolve(base64);
-            };
-            reader.readAsDataURL(blob);
-          });
-          editData.image_base64 = await base64Promise;
+          let base64Image: string;
+          
+          // Check if it's a cloud URL (R2) or local file
+          if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
+            // Cloud URL - fetch and convert to base64
+            const response = await fetch(imageUri);
+            const blob = await response.blob();
+            const reader = new FileReader();
+            base64Image = await new Promise<string>((resolve, reject) => {
+              reader.onloadend = () => {
+                const result = reader.result as string;
+                // Extract just the base64 part if it includes the data URI prefix
+                resolve(result);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          } else {
+            // Local file URI - use FileSystem to read
+            const base64Data = await FileSystem.readAsStringAsync(imageUri, {
+              encoding: 'base64' as FileSystem.EncodingType,
+            });
+            base64Image = `data:image/jpeg;base64,${base64Data}`;
+          }
+          
+          editData.image_base64 = base64Image;
+          console.log('Image included for re-analysis, length:', base64Image.length);
         } catch (imgError) {
           console.log('Could not include image for re-analysis:', imgError);
-          // Continue without image - will just update fields
+          Alert.alert(
+            'Image Not Available',
+            'Unable to access the original image. The scan will be updated without re-analysis.',
+            [{ text: 'OK' }]
+          );
         }
+      } else {
+        console.log('No image URI available for re-analysis');
+      }
+      
+      // Show loading indicator for re-analysis
+      if (editData.image_base64) {
+        Alert.alert('Re-analyzing', 'Sending image to AI for new analysis...');
       }
       
       const response = await scanAPI.editScan(scan.id, editData);
       setScan(response.data);
       setShowEditModal(false);
-      Alert.alert('Success', 'Scan updated successfully');
-    } catch (error) {
+      
+      if (editData.image_base64) {
+        Alert.alert('Success', 'Scan re-analyzed with your corrections!');
+      } else {
+        Alert.alert('Success', 'Scan details updated');
+      }
+    } catch (error: any) {
       console.error('Failed to update scan:', error);
-      Alert.alert('Error', 'Failed to update scan');
+      const message = error.response?.data?.detail || 'Failed to update scan';
+      Alert.alert('Error', message);
     } finally {
       setIsSubmittingEdit(false);
     }
@@ -310,7 +325,10 @@ export default function ScanResultScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace('/(tabs)/scan')}>
+          <TouchableOpacity 
+            onPress={() => router.replace('/(tabs)/scan')}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <ArrowLeft size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.title}>Scan Results</Text>
@@ -327,7 +345,7 @@ export default function ScanResultScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>Scan not found</Text>
-        <Button title="Go Back" onPress={() => router.back()} />
+        <Button title="Go Back" onPress={() => router.replace('/(tabs)/scan')} />
       </View>
     );
   }
@@ -362,7 +380,11 @@ export default function ScanResultScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.replace('/(tabs)/scan')}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => router.replace('/(tabs)/scan')}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <ArrowLeft size={24} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan Result</Text>
@@ -377,7 +399,7 @@ export default function ScanResultScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xxl + 20 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

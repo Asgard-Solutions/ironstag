@@ -136,9 +136,57 @@ class CalibrationClient:
         response.raise_for_status()
         return response.json()
     
+    def get_curve_details(self, curve_id: str) -> Dict[str, Any]:
+        """Get detailed information about a specific curve."""
+        response = self.session.get(f"{self.base_url}/admin/calibration/curves/{curve_id}")
+        response.raise_for_status()
+        return response.json()
+    
     def get_status(self) -> Dict[str, Any]:
         """Get calibration system status."""
         response = self.session.get(f"{self.base_url}/admin/calibration/status")
+        response.raise_for_status()
+        return response.json()
+    
+    def get_jobs_status(self) -> Dict[str, Any]:
+        """Get calibration jobs status."""
+        response = self.session.get(f"{self.base_url}/admin/calibration/jobs/status")
+        response.raise_for_status()
+        return response.json()
+    
+    def build_curves(self, dry_run: bool = True) -> Dict[str, Any]:
+        """Build calibration curves from labeled data."""
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/build-curves",
+            json={"dry_run": dry_run}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def activate_curve(self, curve_id: str) -> Dict[str, Any]:
+        """Activate a calibration curve."""
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/activate-curve",
+            json={"curve_id": curve_id}
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    def deactivate_curve(self, curve_id: str) -> Dict[str, Any]:
+        """Deactivate a calibration curve."""
+        response = self.session.post(f"{self.base_url}/admin/calibration/deactivate-curve/{curve_id}")
+        response.raise_for_status()
+        return response.json()
+    
+    def recalibrate_scans(self, dry_run: bool = True, region: Optional[str] = None) -> Dict[str, Any]:
+        """Recalibrate existing scans using active curves."""
+        payload = {"dry_run": dry_run}
+        if region:
+            payload["region"] = region
+        response = self.session.post(
+            f"{self.base_url}/admin/calibration/recalibrate-scans",
+            json=payload
+        )
         response.raise_for_status()
         return response.json()
 
@@ -247,31 +295,143 @@ def cmd_build(args):
     """Handle 'build' command - build calibration curves."""
     print_header("Build Calibration Curves")
     
-    if not args.dry_run:
-        print_warning("This will build and potentially activate calibration curves.")
-        if ENVIRONMENT == 'production':
-            print_error("Production environment detected. Use --dry-run first.")
-            sys.exit(1)
+    dry_run = not args.execute
     
-    print_info(f"Scope: {args.scope}")
-    if args.region:
-        print_info(f"Region: {args.region}")
-    print_info(f"Dry run: {args.dry_run}")
+    if not dry_run:
+        print_warning("This will build calibration curves from labeled data.")
+        if ENVIRONMENT == 'production':
+            confirm = input("Type 'YES' to confirm in production: ")
+            if confirm != "YES":
+                print_error("Aborted.")
+                sys.exit(1)
+    
+    print_info(f"Dry run: {dry_run}")
     print()
     
-    # TODO: Implement curve building via API
-    print_warning("Curve building not yet implemented. Coming in Phase 2.")
+    client = CalibrationClient()
+    
+    try:
+        # First check maturity gates
+        stats = client.get_label_stats()
+        
+        print(color("Pre-Build Check:", Colors.BOLD))
+        print(f"  Total labels: {stats.get('total_labels', 0)}")
+        print(f"  Weighted samples: {stats.get('total_weighted_samples', 0):.1f}")
+        print()
+        
+        gates = stats.get('maturity_gates', {})
+        print(color("Maturity Gates:", Colors.BOLD))
+        global_min = gates.get('global_min_samples', False)
+        global_weighted = gates.get('global_min_weighted', False)
+        print(f"  Global min samples (500): {'✅ PASS' if global_min else '❌ NOT MET'}")
+        print(f"  Global weighted samples: {'✅ PASS' if global_weighted else '❌ NOT MET'}")
+        print()
+        
+        if not global_min and not dry_run:
+            print_error("Cannot build curves: insufficient labeled data")
+            print_info("Collect more labels before building curves (need 500+ samples)")
+            sys.exit(1)
+        
+        # Build curves
+        print_info("Building curves...")
+        result = client.build_curves(dry_run=dry_run)
+        
+        print()
+        print(color("Build Results:", Colors.BOLD))
+        print(f"  Curves built: {result.get('curves_built', 0)}")
+        print(f"  Mature curves: {result.get('curves_mature', 0)}")
+        print(f"  Immature curves: {result.get('curves_immature', 0)}")
+        print(f"  Labels processed: {result.get('total_labels_processed', 0)}")
+        print(f"  Regions: {', '.join(result.get('regions_processed', [])) or 'None'}")
+        print(f"  Duration: {result.get('duration_seconds', 0):.2f}s")
+        print(f"  Version: {result.get('version', 'N/A')}")
+        
+        if result.get('errors'):
+            print()
+            print_warning("Errors:")
+            for err in result['errors']:
+                print(f"    - {err}")
+        
+        if dry_run:
+            print()
+            print_info("Dry run complete. Use --execute to persist curves.")
+        else:
+            print_success("Curves built and saved to database (inactive by default)")
+            print_info("Use 'validate' and 'activate' commands to enable curves")
+        
+    except requests.exceptions.RequestException as e:
+        print_error(f"API request failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                detail = e.response.json().get('detail', str(e))
+                print_error(f"  Detail: {detail}")
+            except:
+                pass
+        sys.exit(1)
 
 
 def cmd_validate(args):
     """Handle 'validate' command - validate a curve against gates."""
     print_header("Validate Calibration Curve")
     
-    print_info(f"Curve ID: {args.curve_id}")
+    curve_id = args.curve_id
+    print_info(f"Curve ID: {curve_id}")
     print()
     
-    # TODO: Implement curve validation via API
-    print_warning("Curve validation not yet implemented. Coming in Phase 2.")
+    client = CalibrationClient()
+    
+    try:
+        # Get curve details
+        curve = client.get_curve_details(curve_id)
+        
+        print(color("Curve Details:", Colors.BOLD))
+        print(f"  Type: {curve.get('curve_type', 'N/A')}")
+        print(f"  Region: {curve.get('region_key', 'global')}")
+        print(f"  Version: {curve.get('calibration_version', 'N/A')}")
+        print(f"  Created: {curve.get('created_at', 'N/A')}")
+        print(f"  Active: {curve.get('is_active', False)}")
+        print()
+        
+        # Sample stats
+        sample_count = curve.get('sample_count', 0)
+        min_samples = curve.get('min_samples_required', 500)
+        is_mature = curve.get('is_mature', False)
+        
+        print(color("Validation Gates:", Colors.BOLD))
+        print(f"  Sample count: {sample_count} / {min_samples} required")
+        print(f"  Maturity: {'✅ MATURE' if is_mature else '❌ IMMATURE'}")
+        
+        # Bin statistics
+        bin_stats = curve.get('bin_stats', {})
+        mature_bins = bin_stats.get('mature_bins', 0)
+        total_bins = bin_stats.get('total_bins', 10)
+        print(f"  Mature bins: {mature_bins} / {total_bins}")
+        print()
+        
+        # Show bin details if requested
+        if args.verbose:
+            print(color("Bin Details:", Colors.BOLD))
+            bins = curve.get('bins', [])
+            for i, bin_data in enumerate(bins):
+                min_conf = bin_data.get('min_confidence', 0)
+                max_conf = bin_data.get('max_confidence', 100)
+                samples = bin_data.get('sample_count', 0)
+                calibrated = bin_data.get('calibrated_confidence', 0.5)
+                status = '✅' if samples >= 20 else '⚠️'
+                print(f"    [{min_conf}-{max_conf}%]: {samples} samples, cal={calibrated:.2%} {status}")
+        
+        # Activation recommendation
+        print()
+        if is_mature:
+            print_success(f"Curve is ready for activation")
+            print_info(f"Run: python -m cli.calibration activate --curve-id {curve_id} --confirm")
+        else:
+            print_warning("Curve not yet ready for activation")
+            print_info(f"Need {min_samples - sample_count} more samples")
+        
+    except requests.exceptions.RequestException as e:
+        print_error(f"API request failed: {e}")
+        sys.exit(1)
 
 
 def cmd_activate(args):
@@ -280,13 +440,128 @@ def cmd_activate(args):
     
     if not args.confirm:
         print_error("Activation requires --confirm flag for safety.")
+        print_info("This ensures intentional, human-reviewed activation.")
         sys.exit(1)
     
-    print_info(f"Curve ID: {args.curve_id}")
+    curve_id = args.curve_id
+    print_info(f"Curve ID: {curve_id}")
     print()
     
-    # TODO: Implement curve activation via API
-    print_warning("Curve activation not yet implemented. Coming in Phase 2.")
+    client = CalibrationClient()
+    
+    try:
+        # First validate the curve
+        curve = client.get_curve_details(curve_id)
+        
+        if not curve.get('is_mature', False):
+            print_error("Cannot activate: curve is not mature")
+            print_info(f"Sample count: {curve.get('sample_count', 0)} / {curve.get('min_samples_required', 500)}")
+            sys.exit(1)
+        
+        if curve.get('is_active', False):
+            print_warning("Curve is already active")
+            sys.exit(0)
+        
+        print(color("Activating Curve:", Colors.BOLD))
+        print(f"  Type: {curve.get('curve_type', 'N/A')}")
+        print(f"  Region: {curve.get('region_key', 'global')}")
+        print(f"  Samples: {curve.get('sample_count', 0)}")
+        print()
+        
+        if ENVIRONMENT == 'production':
+            print_warning("PRODUCTION ENVIRONMENT - This will affect live users!")
+            final_confirm = input("Type the curve ID to confirm: ")
+            if final_confirm != curve_id:
+                print_error("Curve ID mismatch. Aborted.")
+                sys.exit(1)
+        
+        # Activate
+        result = client.activate_curve(curve_id)
+        
+        if result.get('success'):
+            print_success(f"Curve activated successfully!")
+            print_info(f"Version: {result.get('calibration_version', 'N/A')}")
+            print()
+            print_info("New scans will now use this calibration curve.")
+            print_info("Use 'recalibrate' command to update existing scans.")
+        else:
+            print_error(f"Activation failed: {result.get('error', 'Unknown error')}")
+            sys.exit(1)
+        
+    except requests.exceptions.RequestException as e:
+        print_error(f"API request failed: {e}")
+        sys.exit(1)
+
+
+def cmd_recalibrate(args):
+    """Handle 'recalibrate' command - update existing scans with active curves."""
+    print_header("Recalibrate Existing Scans")
+    
+    dry_run = not args.execute
+    
+    if not dry_run:
+        print_warning("This will update confidence values for existing scans.")
+        if ENVIRONMENT == 'production':
+            confirm = input("Type 'RECALIBRATE' to confirm in production: ")
+            if confirm != "RECALIBRATE":
+                print_error("Aborted.")
+                sys.exit(1)
+    
+    print_info(f"Dry run: {dry_run}")
+    if args.region:
+        print_info(f"Region: {args.region}")
+    print()
+    
+    client = CalibrationClient()
+    
+    try:
+        # Check if there are active curves
+        curves = client.get_curves_summary()
+        active_curves = [c for c in curves.get('curves', []) if c.get('is_active')]
+        
+        if not active_curves:
+            print_error("No active calibration curves found")
+            print_info("Use 'build' and 'activate' commands to create curves first")
+            sys.exit(1)
+        
+        print(color("Active Curves:", Colors.BOLD))
+        for curve in active_curves:
+            print(f"  - {curve.get('curve_type')} ({curve.get('region_key', 'global')})")
+        print()
+        
+        # Run recalibration
+        print_info("Running recalibration...")
+        result = client.recalibrate_scans(dry_run=dry_run, region=args.region)
+        
+        print()
+        print(color("Recalibration Results:", Colors.BOLD))
+        print(f"  Scans processed: {result.get('scans_processed', 0)}")
+        print(f"  Scans updated: {result.get('scans_updated', 0)}")
+        print(f"  Scans skipped (no change): {result.get('scans_skipped', 0)}")
+        print(f"  Duration: {result.get('duration_seconds', 0):.2f}s")
+        print(f"  Curve version: {result.get('curve_version', 'N/A')}")
+        
+        if result.get('errors'):
+            print()
+            print_warning("Errors:")
+            for err in result['errors']:
+                print(f"    - {err}")
+        
+        if dry_run:
+            print()
+            print_info("Dry run complete. Use --execute to apply changes.")
+        else:
+            print_success("Recalibration complete!")
+        
+    except requests.exceptions.RequestException as e:
+        print_error(f"API request failed: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                detail = e.response.json().get('detail', str(e))
+                print_error(f"  Detail: {detail}")
+            except:
+                pass
+        sys.exit(1)
 
 
 # ============================================================================
@@ -322,21 +597,30 @@ Examples:
     
     # Build command
     build_parser = subparsers.add_parser("build", help="Build calibration curves")
-    build_parser.add_argument("--scope", choices=["global", "region"], required=True, help="Curve scope")
-    build_parser.add_argument("--region", help="Region key (required if scope=region)")
-    build_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting")
-    build_parser.add_argument("--execute", action="store_true", help="Actually persist the curve")
+    build_parser.add_argument("--scope", choices=["global", "region"], default="global", help="Curve scope (default: global)")
+    build_parser.add_argument("--region", help="Region key (optional, for region-specific curves)")
+    build_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting (default)")
+    build_parser.add_argument("--execute", action="store_true", help="Actually persist the curves")
     build_parser.set_defaults(func=cmd_build)
     
     # Validate command
     validate_parser = subparsers.add_parser("validate", help="Validate curve against activation gates")
     validate_parser.add_argument("--curve-id", required=True, help="Curve UUID to validate")
+    validate_parser.add_argument("--verbose", "-v", action="store_true", help="Show bin-level details")
     validate_parser.set_defaults(func=cmd_validate)
     
     # Activate command
     activate_parser = subparsers.add_parser("activate", help="Human-gated curve activation")
     activate_parser.add_argument("--curve-id", required=True, help="Curve UUID to activate")
     activate_parser.add_argument("--confirm", action="store_true", help="Confirm activation (required)")
+    activate_parser.set_defaults(func=cmd_activate)
+    
+    # Recalibrate command
+    recalibrate_parser = subparsers.add_parser("recalibrate", help="Recalibrate existing scans with active curves")
+    recalibrate_parser.add_argument("--region", help="Only recalibrate scans in this region")
+    recalibrate_parser.add_argument("--dry-run", action="store_true", default=True, help="Preview without persisting (default)")
+    recalibrate_parser.add_argument("--execute", action="store_true", help="Actually update scans")
+    recalibrate_parser.set_defaults(func=cmd_recalibrate)
     activate_parser.set_defaults(func=cmd_activate)
     
     args = parser.parse_args()
