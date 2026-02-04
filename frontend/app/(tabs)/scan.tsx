@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronUp,
   WifiOff,
+  RotateCcw,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -42,7 +43,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
 import { offlineQueue } from '../../services/OfflineQueueService';
 import { useOfflineQueue } from '../../hooks/useOfflineQueue';
-import { revenueCatService, PRODUCT_IDS } from '../../services/RevenueCatService';
+import { useRevenueCat } from '../../hooks/useRevenueCat';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { StatePicker, getStateName } from '../../components/StatePicker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
@@ -54,6 +55,17 @@ export default function ScanScreen() {
   const { isAuthenticated, user, updateUser } = useAuthStore();
   const { saveImageFromBase64 } = useImageStore();
   
+  // RevenueCat hook for IAP
+  const { 
+    isLoading: iapLoading, 
+    monthlyPackage, 
+    annualPackage, 
+    purchaseMonthly, 
+    purchaseAnnual,
+    restorePurchases,
+    error: iapError,
+  } = useRevenueCat();
+  
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -62,7 +74,7 @@ export default function ScanScreen() {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [scanStep, setScanStep] = useState<ScanStep>('main');
   const [disclaimerChecked, setDisclaimerChecked] = useState(false);
   const cameraRef = useRef<CameraView>(null);
@@ -173,7 +185,7 @@ export default function ScanScreen() {
     }
   };
 
-  // Get offline queue status
+  // Offline queue hook
   const { isOnline, pendingCount } = useOfflineQueue();
 
   const analyzeDeer = async () => {
@@ -184,19 +196,35 @@ export default function ScanScreen() {
       return;
     }
 
-    // Save image to local storage first (always do this regardless of online status)
-    console.log('Saving image to local storage...');
-    const localImageId = await saveImageFromBase64(capturedImage);
-    console.log('Image saved with ID:', localImageId);
-
-    // Determine state to send (per-scan override or user profile default)
-    const stateToSend = huntingLocation || user?.state || undefined;
-
-    // Check if we're offline - if so, queue the scan
-    if (!isOnline) {
-      console.log('[OfflineQueue] Device is offline, queueing scan...');
+    // Check eligibility before starting analysis (only if online)
+    if (isOnline) {
+      console.log('Checking scan eligibility...');
+      const canScan = await checkScanEligibility();
+      console.log('Eligibility result:', canScan);
       
-      try {
+      if (!canScan) {
+        setScanStep('main');
+        setCapturedImage(null);
+        return;
+      }
+    }
+
+    setScanStep('analyzing');
+    setAnalyzing(true);
+
+    try {
+      // Save image to local storage first
+      console.log('Saving image to local storage...');
+      const localImageId = await saveImageFromBase64(capturedImage);
+      console.log('Image saved with ID:', localImageId);
+
+      // Determine state to send (per-scan override or user profile default)
+      const stateToSend = huntingLocation || user?.state || undefined;
+      
+      // If offline, add to queue instead of calling API
+      if (!isOnline) {
+        console.log('[Offline] Adding scan to queue...');
+        
         await offlineQueue.addToQueue({
           image_base64: capturedImage,
           local_image_id: localImageId,
@@ -204,43 +232,22 @@ export default function ScanScreen() {
           state: stateToSend,
         });
         
+        // Show success message for queued scan
+        Alert.alert(
+          '📶 Scan Saved Offline',
+          'Your scan has been saved and will be automatically uploaded when you\'re back online.\n\nYou can view your pending scans in the History tab.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        
         // Reset state
         setHuntingLocation(null);
         setLocationExpanded(false);
-        setCapturedImage(null);
-        setScanStep('main');
-        
-        // Show success message
-        Alert.alert(
-          '📶 Scan Queued',
-          'You\'re currently offline. Your scan has been saved and will be automatically uploaded when you\'re back online.',
-          [{ text: 'OK', style: 'default' }]
-        );
-        return;
-      } catch (error) {
-        console.error('[OfflineQueue] Failed to queue scan:', error);
-        Alert.alert('Error', 'Failed to save scan for later. Please try again.');
         setScanStep('main');
         setCapturedImage(null);
+        setAnalyzing(false);
         return;
       }
-    }
-
-    // We're online - check eligibility before starting analysis
-    console.log('Checking scan eligibility...');
-    const canScan = await checkScanEligibility();
-    console.log('Eligibility result:', canScan);
-    
-    if (!canScan) {
-      setScanStep('main');
-      setCapturedImage(null);
-      return;
-    }
-
-    setScanStep('analyzing');
-    setAnalyzing(true);
-
-    try {
+      
       console.log('Sending to analyze-deer API with state:', stateToSend);
       
       const response = await scanAPI.analyzeDeer({
@@ -271,33 +278,31 @@ export default function ScanScreen() {
       console.error('Analyze deer error:', error);
       console.error('Error response:', error.response?.data);
       
-      // Check if this is a network error - offer to queue
-      if (!error.response && (error.message === 'Network Error' || error.code === 'ECONNABORTED')) {
+      // Check if this is a network error - add to queue if offline
+      if (!error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network') || !isOnline)) {
+        console.log('[Network Error] Adding scan to offline queue...');
+        
+        // Get the local image ID we saved earlier
+        const localImageId = await saveImageFromBase64(capturedImage);
+        const stateToSend = huntingLocation || user?.state || undefined;
+        
+        await offlineQueue.addToQueue({
+          image_base64: capturedImage,
+          local_image_id: localImageId,
+          notes: undefined,
+          state: stateToSend,
+        });
+        
         Alert.alert(
           '📶 Connection Lost',
-          'Lost connection while uploading. Would you like to save this scan and retry when you\'re back online?',
-          [
-            { text: 'Discard', style: 'cancel', onPress: () => {
-              setScanStep('main');
-              setCapturedImage(null);
-            }},
-            { text: 'Save for Later', onPress: async () => {
-              try {
-                await offlineQueue.addToQueue({
-                  image_base64: capturedImage!,
-                  local_image_id: localImageId,
-                  notes: undefined,
-                  state: stateToSend,
-                });
-                Alert.alert('Saved', 'Scan queued for upload when online.');
-              } catch (queueError) {
-                Alert.alert('Error', 'Failed to save scan.');
-              }
-              setScanStep('main');
-              setCapturedImage(null);
-            }}
-          ]
+          'Your scan has been saved and will be uploaded automatically when you\'re back online.',
+          [{ text: 'OK', style: 'default' }]
         );
+        
+        setHuntingLocation(null);
+        setLocationExpanded(false);
+        setScanStep('main');
+        setCapturedImage(null);
         setAnalyzing(false);
         return;
       }
@@ -562,10 +567,10 @@ export default function ScanScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Offline Banner */}
-      <OfflineBanner />
-
       <ScrollView contentContainerStyle={[styles.mainContent, { paddingBottom: insets.bottom + spacing.xl }]}>
+        {/* Offline Banner */}
+        <OfflineBanner />
+        
         {/* Target Icon */}
         <View style={styles.targetContainer}>
           <View style={styles.targetOuter}>
@@ -644,7 +649,7 @@ export default function ScanScreen() {
             
             {/* Message */}
             <Text style={upgradeModalStyles.message}>
-              You've used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
+              You&apos;ve used all 3 of your free scans. Upgrade to Master Stag for unlimited AI-powered deer analysis.
             </Text>
             
             {/* Plan Options */}
@@ -665,7 +670,9 @@ export default function ScanScreen() {
                 </View>
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Monthly</Text>
-                  <Text style={upgradeModalStyles.planPrice}>$9.99/mo</Text>
+                  <Text style={upgradeModalStyles.planPrice}>
+                    {monthlyPackage?.product?.priceString || '$9.99/mo'}
+                  </Text>
                 </View>
               </TouchableOpacity>
 
@@ -688,7 +695,9 @@ export default function ScanScreen() {
                 </View>
                 <View style={upgradeModalStyles.planInfo}>
                   <Text style={upgradeModalStyles.planName}>Annual</Text>
-                  <Text style={upgradeModalStyles.planPrice}>$89.99/yr</Text>
+                  <Text style={upgradeModalStyles.planPrice}>
+                    {annualPackage?.product?.priceString || '$89.99/yr'}
+                  </Text>
                 </View>
               </TouchableOpacity>
             </View>
@@ -696,59 +705,79 @@ export default function ScanScreen() {
             {/* Buttons */}
             <TouchableOpacity 
               style={upgradeModalStyles.upgradeButton}
-              disabled={checkoutLoading}
+              disabled={purchaseLoading || iapLoading}
               onPress={async () => {
-                setCheckoutLoading(true);
+                setPurchaseLoading(true);
                 try {
-                  // Use RevenueCat for iOS and Android, Stripe for web
-                  if (Platform.OS !== 'web' && revenueCatService.isAvailable()) {
-                    // Native mobile purchase via RevenueCat
-                    const productId = selectedPlan === 'monthly' 
-                      ? PRODUCT_IDS.MONTHLY 
-                      : PRODUCT_IDS.ANNUAL;
-                    
-                    const customerInfo = await revenueCatService.purchaseProduct(productId);
-                    
-                    if (customerInfo) {
-                      // Verify with backend and update user state
-                      await subscriptionAPI.verifyRevenueCat();
-                      await refreshUser();
-                      
-                      Alert.alert(
-                        '🎉 Welcome to Premium!',
-                        'Your subscription is now active. Enjoy unlimited scans!',
-                        [{ text: 'OK', style: 'default' }]
-                      );
-                    }
-                    setShowUpgradeModal(false);
+                  let result;
+                  if (selectedPlan === 'monthly') {
+                    result = await purchaseMonthly();
                   } else {
-                    // Web or Expo Go - use Stripe checkout
-                    const response = await subscriptionAPI.createCheckout(selectedPlan);
-                    const checkoutUrl = response.data.checkout_url;
-                    if (checkoutUrl) {
-                      const canOpen = await Linking.canOpenURL(checkoutUrl);
-                      if (canOpen) {
-                        await Linking.openURL(checkoutUrl);
-                      }
-                    }
+                    result = await purchaseAnnual();
+                  }
+                  
+                  if (result.success) {
+                    // Refresh user data to get updated subscription
+                    const userResponse = await authAPI.getMe();
+                    updateUser(userResponse.data);
+                    
+                    Alert.alert(
+                      '🎉 Welcome to Master Stag!',
+                      'Your subscription is now active. Enjoy unlimited deer scans!',
+                      [{ text: 'OK', style: 'default' }]
+                    );
                     setShowUpgradeModal(false);
+                  } else if (result.message !== 'Purchase was canceled') {
+                    Alert.alert('Purchase Failed', result.message);
                   }
                 } catch (error: any) {
-                  if (error.message === 'Purchase cancelled by user') {
-                    // User cancelled - don't show error
-                    console.log('Purchase cancelled by user');
-                  } else {
-                    console.error('Purchase error:', error);
-                    Alert.alert('Error', 'Failed to complete purchase. Please try again.');
-                  }
+                  Alert.alert('Error', error.message || 'Failed to complete purchase.');
                 } finally {
-                  setCheckoutLoading(false);
+                  setPurchaseLoading(false);
                 }
               }}
             >
-              <Text style={upgradeModalStyles.upgradeButtonText}>
-                {checkoutLoading ? 'Processing...' : 'Subscribe Now'}
-              </Text>
+              {(purchaseLoading || iapLoading) ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+              ) : (
+                <Text style={upgradeModalStyles.upgradeButtonText}>
+                  Subscribe Now
+                </Text>
+              )}
+            </TouchableOpacity>
+            
+            {/* Restore Purchases Button */}
+            <TouchableOpacity 
+              style={upgradeModalStyles.restoreButton}
+              disabled={purchaseLoading || iapLoading}
+              onPress={async () => {
+                setPurchaseLoading(true);
+                try {
+                  const result = await restorePurchases();
+                  
+                  if (result.success) {
+                    // Refresh user data
+                    const userResponse = await authAPI.getMe();
+                    updateUser(userResponse.data);
+                    
+                    Alert.alert(
+                      'Purchases Restored!',
+                      'Your subscription has been restored.',
+                      [{ text: 'OK', style: 'default' }]
+                    );
+                    setShowUpgradeModal(false);
+                  } else {
+                    Alert.alert('Restore Failed', result.message);
+                  }
+                } catch (error: any) {
+                  Alert.alert('Error', error.message || 'Failed to restore purchases.');
+                } finally {
+                  setPurchaseLoading(false);
+                }
+              }}
+            >
+              <RotateCcw size={14} color={colors.primary} />
+              <Text style={upgradeModalStyles.restoreButtonText}>Restore Purchases</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -1468,12 +1497,28 @@ const upgradeModalStyles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     width: '100%',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: spacing.sm,
+    minHeight: 48,
   },
   upgradeButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.background,
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  restoreButtonText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '500',
   },
   laterButton: {
     paddingVertical: spacing.sm,

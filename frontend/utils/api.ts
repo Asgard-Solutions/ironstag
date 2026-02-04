@@ -164,10 +164,15 @@ export const subscriptionAPI = {
 
   checkEligibility: () => api.get('/subscription/scan-eligibility'),
 
-  createCheckout: (plan: 'monthly' | 'annual' = 'monthly') => 
-    api.post('/subscription/create-checkout', { plan }),
+  // IAP validation endpoint
+  validateIAP: (data: { 
+    receipt_data: string; 
+    platform: string; 
+    product_id: string; 
+    transaction_id?: string 
+  }) => api.post('/subscription/validate-iap', data),
 
-  getPortalUrl: () => api.post('/subscription/portal'),
+  restorePurchases: () => api.post('/subscription/restore'),
 
   cancelSubscription: () => api.post('/subscription/cancel'),
 

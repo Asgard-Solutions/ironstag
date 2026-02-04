@@ -9,11 +9,12 @@ import {
   Image,
   TextInput,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart, CloudOff, RefreshCw, Trash2 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -21,6 +22,7 @@ import { ScanListSkeleton } from '../../components/Skeleton';
 import { OfflineBanner } from '../../components/OfflineIndicator';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
+import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
@@ -144,6 +146,17 @@ export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, user } = useAuthStore();
   
+  // Offline queue for pending scans
+  const { 
+    pendingScans, 
+    pendingCount, 
+    isOnline, 
+    isSyncing, 
+    syncNow, 
+    removeFromQueue,
+    refreshQueue,
+  } = useOfflineQueue();
+  
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -202,8 +215,25 @@ export default function HistoryScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadScans();
+    await Promise.all([
+      loadScans(),
+      refreshQueue(),
+    ]);
     setRefreshing(false);
+  };
+  
+  // Sync pending scans when coming back online
+  const handleSyncNow = async () => {
+    if (isOnline && pendingCount > 0) {
+      await syncNow();
+      // Refresh the scans list after sync completes
+      await loadScans();
+    }
+  };
+  
+  // Remove a pending scan from the queue
+  const handleRemovePendingScan = async (scanId: string) => {
+    await removeFromQueue(scanId);
   };
   
   // Toggle favorite for a scan
@@ -346,6 +376,19 @@ export default function HistoryScreen() {
               <Text style={styles.dateText}>
                 {format(new Date(item.created_at), 'MMM d, yyyy')}
               </Text>
+              {/* Tags display */}
+              {item.tags && item.tags.length > 0 && (
+                <View style={styles.tagsRow}>
+                  {item.tags.slice(0, 2).map((tag, index) => (
+                    <View key={index} style={styles.tagChipSmall}>
+                      <Text style={styles.tagChipSmallText}>{tag}</Text>
+                    </View>
+                  ))}
+                  {item.tags.length > 2 && (
+                    <Text style={styles.moreTagsText}>+{item.tags.length - 2}</Text>
+                  )}
+                </View>
+              )}
             </View>
             
             {/* Right side - Confidence + Feedback Badge */}
@@ -575,6 +618,71 @@ export default function HistoryScreen() {
                 onRefresh={onRefresh}
                 tintColor={colors.primary}
               />
+            }
+            ListHeaderComponent={
+              pendingCount > 0 ? (
+                <View style={styles.pendingSection}>
+                  <View style={styles.pendingSectionHeader}>
+                    <View style={styles.pendingSectionTitleRow}>
+                      <CloudOff size={18} color={colors.primary} />
+                      <Text style={styles.pendingSectionTitle}>
+                        Pending Uploads ({pendingCount})
+                      </Text>
+                    </View>
+                    {isOnline && (
+                      <TouchableOpacity 
+                        style={styles.syncButton}
+                        onPress={handleSyncNow}
+                        disabled={isSyncing}
+                      >
+                        {isSyncing ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <>
+                            <RefreshCw size={14} color={colors.primary} />
+                            <Text style={styles.syncButtonText}>Sync Now</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
+                  {!isOnline && (
+                    <Text style={styles.offlineHelpText}>
+                      You&apos;re offline. Scans will upload when you&apos;re back online.
+                    </Text>
+                  )}
+                  
+                  {pendingScans.map((pendingScan) => (
+                    <View key={pendingScan.id} style={styles.pendingScanCard}>
+                      <View style={styles.pendingScanRow}>
+                        <View style={styles.pendingScanIconBox}>
+                          <CloudOff size={24} color={colors.textMuted} />
+                        </View>
+                        <View style={styles.pendingScanInfo}>
+                          <Text style={styles.pendingScanTitle}>Pending Scan</Text>
+                          <Text style={styles.pendingScanDate}>
+                            Saved {format(new Date(pendingScan.created_at), 'MMM d, h:mm a')}
+                          </Text>
+                          {pendingScan.retryCount > 0 && (
+                            <Text style={styles.pendingScanRetry}>
+                              {pendingScan.retryCount} retry attempt{pendingScan.retryCount > 1 ? 's' : ''}
+                            </Text>
+                          )}
+                        </View>
+                        <TouchableOpacity 
+                          style={styles.removePendingButton}
+                          onPress={() => handleRemovePendingScan(pendingScan.id)}
+                        >
+                          <Trash2 size={18} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  
+                  <View style={styles.pendingSectionDivider} />
+                </View>
+              ) : null
             }
             ListEmptyComponent={
               hasActiveFilters ? (
@@ -827,6 +935,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
   },
+  // Tags display on scan cards
+  tagsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  tagChipSmall: {
+    backgroundColor: colors.primary + '15',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: borderRadius.sm,
+  },
+  tagChipSmallText: {
+    fontSize: 10,
+    color: colors.primary,
+    fontWeight: '500',
+  },
+  moreTagsText: {
+    fontSize: 10,
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
   confidenceContainer: {
     alignItems: 'flex-end',
   },
@@ -1019,6 +1151,98 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  
+  // Pending Scans Section
+  pendingSection: {
+    marginBottom: spacing.md,
+  },
+  pendingSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  pendingSectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pendingSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  syncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.primary + '20',
+    borderRadius: borderRadius.sm,
+  },
+  syncButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  offlineHelpText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    fontStyle: 'italic',
+  },
+  pendingScanCard: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+    borderStyle: 'dashed',
+  },
+  pendingScanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  pendingScanIconBox: {
+    width: 50,
+    height: 50,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pendingScanInfo: {
+    flex: 1,
+  },
+  pendingScanTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  pendingScanDate: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  pendingScanRetry: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  removePendingButton: {
+    padding: spacing.sm,
+  },
+  pendingSectionDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
 });

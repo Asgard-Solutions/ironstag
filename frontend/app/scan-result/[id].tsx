@@ -37,6 +37,7 @@ import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
+import { TagsEditor } from '../../components/TagsEditor';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import { colors, spacing, borderRadius } from '../../constants/theme';
@@ -63,6 +64,8 @@ interface ScanResult {
   created_at: string;
   // Cloud image storage (R2) - for cross-device access
   image_url?: string | null;
+  // Tags for organization
+  tags?: string[];
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
@@ -525,6 +528,15 @@ export default function ScanResultScreen() {
             </Text>
           )}
         </View>
+
+        {/* Tags Section */}
+        <TagsEditor 
+          scanId={scan.id}
+          initialTags={scan.tags || []}
+          onTagsUpdated={(newTags) => {
+            setScan(prev => prev ? { ...prev, tags: newTags } : null);
+          }}
+        />
 
         {/* Feedback Section (Phase 2 Empirical Calibration) */}
         {labelCheckDone && (
