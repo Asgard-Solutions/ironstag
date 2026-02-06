@@ -63,6 +63,7 @@ export default function ScanScreen() {
     purchaseMonthly, 
     purchaseAnnual,
     restorePurchases,
+    refreshStatus: refreshIAPStatus,
     error: iapError,
   } = useRevenueCat();
   
@@ -702,13 +703,41 @@ export default function ScanScreen() {
               </TouchableOpacity>
             </View>
             
+            {/* If offerings failed to load, surface an explicit error + retry for App Review */}
+            {iapError ? (
+              <View style={upgradeModalStyles.iapErrorBox}>
+                <Text style={upgradeModalStyles.iapErrorTitle}>Purchase Options Unavailable</Text>
+                <Text style={upgradeModalStyles.iapErrorText}>{iapError}</Text>
+                <TouchableOpacity
+                  style={upgradeModalStyles.iapRetryButton}
+                  disabled={iapLoading || purchaseLoading}
+                  onPress={async () => {
+                    try {
+                      await refreshIAPStatus();
+                    } catch (e) {
+                      // ignore
+                    }
+                  }}
+                >
+                  <Text style={upgradeModalStyles.iapRetryButtonText}>
+                    {iapLoading ? 'Loading…' : 'Try Again'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             {/* Buttons */}
             <TouchableOpacity 
               style={upgradeModalStyles.upgradeButton}
-              disabled={purchaseLoading || iapLoading}
+              disabled={purchaseLoading || iapLoading || (!!iapError && (!monthlyPackage && !annualPackage))}
               onPress={async () => {
                 setPurchaseLoading(true);
                 try {
+                  // If packages are missing, attempt a quick refresh (common during first launch)
+                  if (!monthlyPackage && !annualPackage) {
+                    await refreshIAPStatus();
+                  }
+
                   let result;
                   if (selectedPlan === 'monthly') {
                     result = await purchaseMonthly();
@@ -1591,6 +1620,41 @@ const upgradeModalStyles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: colors.background,
+  },
+  iapErrorBox: {
+    width: '100%',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    marginBottom: spacing.md,
+  },
+  iapErrorTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  iapErrorText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+  },
+  iapRetryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(200, 162, 74, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 162, 74, 0.35)',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.sm,
+  },
+  iapRetryButtonText: {
+    color: colors.primary,
+    fontWeight: '600',
+    fontSize: 12,
   },
   // Hunting location styles
   locationSection: {

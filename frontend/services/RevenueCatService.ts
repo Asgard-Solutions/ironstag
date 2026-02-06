@@ -113,13 +113,25 @@ class RevenueCatService {
   async getOfferings(): Promise<PurchasesOffering | null> {
     try {
       const offerings = await Purchases.getOfferings();
-      
+
+      // Prefer the "current" offering (RevenueCat dashboard setting)
       if (offerings.current) {
         console.log('[RevenueCat] Current offering:', offerings.current.identifier);
         return offerings.current;
       }
-      
-      console.log('[RevenueCat] No current offering available');
+
+      // Fallback: if current offering isn't set but offerings exist, pick the first.
+      // This prevents a "no packages available" UX in review when currentOffering is misconfigured.
+      const allOfferings = Object.values(offerings.all ?? {});
+      if (allOfferings.length > 0) {
+        console.warn(
+          '[RevenueCat] No current offering set. Falling back to first offering:',
+          allOfferings[0]?.identifier
+        );
+        return allOfferings[0] ?? null;
+      }
+
+      console.log('[RevenueCat] No offerings available');
       return null;
     } catch (error) {
       console.error('[RevenueCat] Get offerings error:', error);

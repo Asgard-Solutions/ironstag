@@ -78,10 +78,27 @@ export function useRevenueCat(): UseRevenueCatReturn {
     try {
       const offering = await revenueCatService.getOfferings();
       if (offering) {
-        setPackages(offering.availablePackages);
+        const pkgs = offering.availablePackages ?? [];
+        setPackages(pkgs);
+
+        if (pkgs.length === 0 && Platform.OS !== 'web') {
+          setError(
+            'No purchase options available right now. Please try again in a moment.'
+          );
+        }
+      } else {
+        setPackages([]);
+        if (Platform.OS !== 'web') {
+          setError(
+            'Unable to load purchase options. Please try again. (If this persists, check RevenueCat offering configuration.)'
+          );
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[useRevenueCat] Load offerings error:', err);
+      if (Platform.OS !== 'web') {
+        setError(err?.message || 'Failed to load purchase options');
+      }
     }
   };
 
