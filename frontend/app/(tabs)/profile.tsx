@@ -799,18 +799,39 @@ export default function ProfileScreen() {
 
     setRestoreLoading(true);
     try {
-      const customerInfo = await revenueCatService.restorePurchases();
-      const isPremium = await revenueCatService.isPremium();
+      // Initialize RevenueCat if needed
+      await revenueCatService.initialize(user?.id);
+      if (user?.id) {
+        await revenueCatService.login(user.id);
+      }
       
-      if (isPremium) {
-        // Update user state to reflect premium status
-        updateUser({ subscription_tier: 'master_stag' });
+      // Restore purchases
+      const result = await revenueCatService.restorePurchases();
+      
+      if (result.success && result.customerInfo) {
+        // Sync with backend
+        console.log('[Profile] Restore successful, syncing with backend...');
+        const synced = await revenueCatService.syncWithBackend(result.customerInfo);
+        
+        if (!synced) {
+          console.warn('[Profile] Backend sync failed after restore');
+        }
+        
+        // Refresh user data from backend
+        try {
+          const meResponse = await authAPI.getMe();
+          updateUser(meResponse.data);
+        } catch (meError) {
+          // Even if refresh fails, update local state
+          updateUser({ subscription_tier: 'master_stag', scans_remaining: -1 });
+        }
+        
         Alert.alert('Success', 'Your purchases have been restored! You now have Master Stag access.');
       } else {
-        Alert.alert('No Purchases Found', 'We could not find any previous purchases to restore.');
+        Alert.alert('No Purchases Found', result.message || 'We could not find any previous purchases to restore.');
       }
     } catch (error: any) {
-      console.error('Restore purchases error:', error);
+      console.error('[Profile] Restore purchases error:', error);
       Alert.alert('Error', 'Failed to restore purchases. Please try again later.');
     } finally {
       setRestoreLoading(false);
