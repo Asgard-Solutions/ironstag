@@ -368,23 +368,104 @@ export default function ProfileScreen() {
   const handleCheckout = async (plan: 'monthly' | 'annual') => {
     setShowPlanSelector(false);
     setUpgradeLoading(true);
+    
     try {
-      const response = await subscriptionAPI.createCheckout(plan);
-      const checkoutUrl = response.data.checkout_url;
-      
-      if (checkoutUrl) {
-        // Open Stripe checkout in the system browser
-        const canOpen = await Linking.canOpenURL(checkoutUrl);
-        if (canOpen) {
-          await Linking.openURL(checkoutUrl);
+      // For iOS/Android: Use RevenueCat
+      if (Platform.OS === 'ios' || Platform.OS === 'android') {
+        console.log('[Profile] Starting RevenueCat purchase flow for plan:', plan);
+        
+        // Initialize RevenueCat if not already
+        const initialized = await revenueCatService.initialize(user?.id);
+        if (!initialized) {
+          Alert.alert('Error', 'Unable to connect to the App Store. Please try again.');
+          return;
+        }
+        
+        // Login to RevenueCat with user ID
+        if (user?.id) {
+          await revenueCatService.login(user.id);
+        }
+        
+        // Get offerings
+        const offering = await revenueCatService.getOfferings();
+        if (!offering || offering.availablePackages.length === 0) {
+          console.error('[Profile] No offerings/packages available');
+          Alert.alert('Error', 'No subscription packages available. Please try again later.');
+          return;
+        }
+        
+        console.log('[Profile] Available packages:', offering.availablePackages.map(p => p.identifier));
+        
+        // Find the correct package based on plan
+        let targetPackage = null;
+        for (const pkg of offering.availablePackages) {
+          const pkgId = pkg.identifier.toLowerCase();
+          if (plan === 'monthly' && (pkgId.includes('monthly') || pkg.packageType === 'MONTHLY')) {
+            targetPackage = pkg;
+            break;
+          }
+          if (plan === 'annual' && (pkgId.includes('annual') || pkgId.includes('yearly') || pkg.packageType === 'ANNUAL')) {
+            targetPackage = pkg;
+            break;
+          }
+        }
+        
+        // Fallback: if only one package, use it
+        if (!targetPackage && offering.availablePackages.length === 1) {
+          targetPackage = offering.availablePackages[0];
+        }
+        
+        if (!targetPackage) {
+          console.error('[Profile] Could not find package for plan:', plan);
+          Alert.alert('Error', `The ${plan} plan is not available. Please try the other option.`);
+          return;
+        }
+        
+        console.log('[Profile] Purchasing package:', targetPackage.identifier);
+        
+        // Purchase the package
+        const result = await revenueCatService.purchasePackage(targetPackage);
+        
+        if (result.success && result.customerInfo) {
+          // Sync with backend
+          console.log('[Profile] Purchase successful, syncing with backend...');
+          const synced = await revenueCatService.syncWithBackend(result.customerInfo);
+          
+          if (!synced) {
+            console.warn('[Profile] Backend sync failed, but purchase was successful');
+          }
+          
+          // Refresh user data from backend
+          try {
+            const meResponse = await authAPI.getMe();
+            updateUser(meResponse.data);
+          } catch (meError) {
+            // Even if refresh fails, update local state
+            updateUser({ subscription_tier: 'master_stag', scans_remaining: -1 });
+          }
+          
+          Alert.alert(
+            '🎉 Welcome to Master Stag!',
+            'Your subscription is now active. Enjoy unlimited deer scans!',
+            [{ text: 'OK' }]
+          );
+        } else if (result.message === 'Purchase was cancelled') {
+          // User cancelled - no error message needed
+          console.log('[Profile] Purchase cancelled by user');
         } else {
-          Alert.alert('Error', 'Unable to open checkout. Please try again.');
+          Alert.alert('Purchase Failed', result.message || 'Unable to complete purchase. Please try again.');
         }
       } else {
-        Alert.alert('Error', 'Failed to create checkout session.');
+        // Web: Show message that web checkout isn't supported
+        Alert.alert(
+          'Not Available',
+          'Subscriptions must be purchased through the iOS or Android app.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Failed to start upgrade process.';
+      console.error('[Profile] Checkout error:', error);
+      const message = error.message || 'Failed to start upgrade process.';
       Alert.alert('Error', typeof message === 'string' ? message : 'Failed to start upgrade process.');
     } finally {
       setUpgradeLoading(false);
