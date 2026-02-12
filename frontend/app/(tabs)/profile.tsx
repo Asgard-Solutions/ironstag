@@ -473,33 +473,39 @@ export default function ProfileScreen() {
   };
 
   const handleManageSubscription = async () => {
-    // Show subscription management modal for premium users
-    setShowSubscriptionManager(true);
+    // For iOS/Android, show instructions to manage via App Store/Play Store
+    if (Platform.OS === 'ios') {
+      Alert.alert(
+        'Manage Subscription',
+        'To manage or cancel your subscription, go to:\n\nSettings → Apple ID → Subscriptions → Iron Stag',
+        [
+          { text: 'Open Settings', onPress: () => Linking.openURL('App-prefs://') },
+          { text: 'OK', style: 'cancel' }
+        ]
+      );
+    } else if (Platform.OS === 'android') {
+      Alert.alert(
+        'Manage Subscription',
+        'To manage or cancel your subscription, go to:\n\nGoogle Play Store → Menu → Subscriptions → Iron Stag',
+        [
+          { text: 'Open Play Store', onPress: () => Linking.openURL('https://play.google.com/store/account/subscriptions') },
+          { text: 'OK', style: 'cancel' }
+        ]
+      );
+    } else {
+      // Web: Show subscription management modal
+      setShowSubscriptionManager(true);
+    }
   };
 
   const openStripePortal = async () => {
+    // This is no longer used for iOS/Android - subscriptions managed via App Store/Play Store
+    Alert.alert(
+      'Manage Subscription',
+      'Please manage your subscription through the App Store (iOS) or Google Play Store (Android).',
+      [{ text: 'OK' }]
+    );
     setShowSubscriptionManager(false);
-    setUpgradeLoading(true);
-    try {
-      const response = await subscriptionAPI.getPortalUrl();
-      const portalUrl = response.data.portal_url;
-      
-      if (portalUrl) {
-        const canOpen = await Linking.canOpenURL(portalUrl);
-        if (canOpen) {
-          await Linking.openURL(portalUrl);
-        } else {
-          Alert.alert('Error', 'Unable to open subscription portal.');
-        }
-      } else {
-        Alert.alert('Error', 'Failed to load subscription portal.');
-      }
-    } catch (error: any) {
-      const message = error.response?.data?.detail || 'Failed to open subscription management.';
-      Alert.alert('Error', typeof message === 'string' ? message : 'Failed to open subscription management.');
-    } finally {
-      setUpgradeLoading(false);
-    }
   };
 
   const handleCancelSubscription = () => {
