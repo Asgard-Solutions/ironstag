@@ -172,6 +172,12 @@ export const subscriptionAPI = {
     transaction_id?: string 
   }) => api.post('/subscription/validate-iap', data),
 
+  // RevenueCat sync endpoint
+  syncRevenueCat: (data: {
+    is_premium: boolean;
+    expires_at?: string | null;
+  }) => api.post('/subscription/sync-revenuecat', data),
+
   restorePurchases: () => api.post('/subscription/restore'),
 
   cancelSubscription: () => api.post('/subscription/cancel'),
