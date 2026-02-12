@@ -271,29 +271,60 @@ class RevenueCatService {
   }
 
   /**
-   * Sync purchases with our backend
+   * Check if RevenueCat is available on this platform
    */
-  async syncWithBackend(userId: string, customerInfo: CustomerInfo): Promise<boolean> {
+  isAvailable(): boolean {
+    return Platform.OS === 'ios' || Platform.OS === 'android';
+  }
+
+  /**
+   * Alias for checkPremiumStatus for easier usage
+   */
+  async isPremium(): Promise<boolean> {
+    return this.checkPremiumStatus();
+  }
+
+  /**
+   * Sync purchases with our backend
+   * Uses absolute URL and auth token for native apps
+   */
+  async syncWithBackend(customerInfo: CustomerInfo): Promise<boolean> {
     try {
-      const isPremium = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+      const isPremiumStatus = customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
       const entitlement = customerInfo.entitlements.active[ENTITLEMENT_ID];
       
+      // Get auth token from store
+      const token = useAuthStore.getState().token;
+      if (!token) {
+        console.error('[RevenueCat] No auth token available for backend sync');
+        return false;
+      }
+
+      // Build absolute URL for native apps
+      const syncUrl = `${API_URL}/api/subscription/sync-revenuecat`;
+      console.log('[RevenueCat] Syncing with backend:', syncUrl);
+      
       // Call our backend to update subscription status
-      const response = await fetch('/api/subscription/sync-revenuecat', {
+      const response = await fetch(syncUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          user_id: userId,
-          is_premium: isPremium,
-          expires_at: entitlement?.expirationDate,
-          product_id: entitlement?.productIdentifier,
-          original_purchase_date: entitlement?.originalPurchaseDate,
+          is_premium: isPremiumStatus,
+          expires_at: entitlement?.expirationDate || null,
         }),
       });
       
-      return response.ok;
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[RevenueCat] Backend sync failed:', response.status, errorText);
+        return false;
+      }
+      
+      console.log('[RevenueCat] Backend sync successful');
+      return true;
     } catch (error) {
       console.error('[RevenueCat] Sync with backend error:', error);
       return false;
