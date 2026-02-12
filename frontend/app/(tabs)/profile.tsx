@@ -373,24 +373,48 @@ export default function ProfileScreen() {
       // For iOS/Android: Use RevenueCat
       if (Platform.OS === 'ios' || Platform.OS === 'android') {
         console.log('[Profile] Starting RevenueCat purchase flow for plan:', plan);
+        console.log('[Profile] User ID:', user?.id);
         
         // Initialize RevenueCat if not already
         const initialized = await revenueCatService.initialize(user?.id);
+        console.log('[Profile] RevenueCat initialized:', initialized);
+        
         if (!initialized) {
-          Alert.alert('Error', 'Unable to connect to the App Store. Please try again.');
+          Alert.alert('Error', 'Unable to connect to the App Store. Please check your internet connection and try again.');
           return;
         }
         
         // Login to RevenueCat with user ID
         if (user?.id) {
+          console.log('[Profile] Logging into RevenueCat with user ID...');
           await revenueCatService.login(user.id);
         }
         
         // Get offerings
+        console.log('[Profile] Fetching offerings...');
         const offering = await revenueCatService.getOfferings();
-        if (!offering || offering.availablePackages.length === 0) {
-          console.error('[Profile] No offerings/packages available');
-          Alert.alert('Error', 'No subscription packages available. Please try again later.');
+        console.log('[Profile] Offering received:', offering?.identifier);
+        console.log('[Profile] Available packages:', offering?.availablePackages?.map(p => ({
+          id: p.identifier,
+          type: p.packageType,
+          product: p.product?.identifier
+        })));
+        
+        if (!offering) {
+          console.error('[Profile] No offering returned from RevenueCat');
+          Alert.alert(
+            'Setup Required', 
+            'Subscription packages are not yet available. Please ensure you have a "default" offering configured in RevenueCat with products attached.\n\nCheck RevenueCat Dashboard → Products → Offerings.'
+          );
+          return;
+        }
+        
+        if (!offering.availablePackages || offering.availablePackages.length === 0) {
+          console.error('[Profile] Offering has no packages:', offering.identifier);
+          Alert.alert(
+            'No Packages', 
+            'The subscription offering has no packages configured. Please add Monthly and/or Annual packages in RevenueCat.'
+          );
           return;
         }
         
@@ -400,11 +424,14 @@ export default function ProfileScreen() {
         let targetPackage = null;
         for (const pkg of offering.availablePackages) {
           const pkgId = pkg.identifier.toLowerCase();
-          if (plan === 'monthly' && (pkgId.includes('monthly') || pkg.packageType === 'MONTHLY')) {
+          const pkgType = pkg.packageType;
+          console.log('[Profile] Checking package:', pkgId, 'type:', pkgType);
+          
+          if (plan === 'monthly' && (pkgId.includes('monthly') || pkgType === 'MONTHLY' || pkgId === '$rc_monthly')) {
             targetPackage = pkg;
             break;
           }
-          if (plan === 'annual' && (pkgId.includes('annual') || pkgId.includes('yearly') || pkg.packageType === 'ANNUAL')) {
+          if (plan === 'annual' && (pkgId.includes('annual') || pkgId.includes('yearly') || pkgType === 'ANNUAL' || pkgId === '$rc_annual')) {
             targetPackage = pkg;
             break;
           }
@@ -412,24 +439,33 @@ export default function ProfileScreen() {
         
         // Fallback: if only one package, use it
         if (!targetPackage && offering.availablePackages.length === 1) {
+          console.log('[Profile] Only one package available, using it as fallback');
+          targetPackage = offering.availablePackages[0];
+        }
+        
+        // Second fallback: pick first package
+        if (!targetPackage && offering.availablePackages.length > 0) {
+          console.log('[Profile] Could not match plan, using first package as fallback');
           targetPackage = offering.availablePackages[0];
         }
         
         if (!targetPackage) {
-          console.error('[Profile] Could not find package for plan:', plan);
-          Alert.alert('Error', `The ${plan} plan is not available. Please try the other option.`);
+          console.error('[Profile] Could not find any package for plan:', plan);
+          Alert.alert('Error', `No ${plan} subscription package found. Please try again later.`);
           return;
         }
         
-        console.log('[Profile] Purchasing package:', targetPackage.identifier);
+        console.log('[Profile] Purchasing package:', targetPackage.identifier, 'Product:', targetPackage.product?.identifier);
         
         // Purchase the package
         const result = await revenueCatService.purchasePackage(targetPackage);
+        console.log('[Profile] Purchase result:', result);
         
         if (result.success && result.customerInfo) {
           // Sync with backend
           console.log('[Profile] Purchase successful, syncing with backend...');
           const synced = await revenueCatService.syncWithBackend(result.customerInfo);
+          console.log('[Profile] Backend sync result:', synced);
           
           if (!synced) {
             console.warn('[Profile] Backend sync failed, but purchase was successful');
@@ -440,6 +476,7 @@ export default function ProfileScreen() {
             const meResponse = await authAPI.getMe();
             updateUser(meResponse.data);
           } catch (meError) {
+            console.warn('[Profile] Failed to refresh user data, updating locally');
             // Even if refresh fails, update local state
             updateUser({ subscription_tier: 'master_stag', scans_remaining: -1 });
           }
@@ -453,6 +490,7 @@ export default function ProfileScreen() {
           // User cancelled - no error message needed
           console.log('[Profile] Purchase cancelled by user');
         } else {
+          console.error('[Profile] Purchase failed:', result.message);
           Alert.alert('Purchase Failed', result.message || 'Unable to complete purchase. Please try again.');
         }
       } else {
