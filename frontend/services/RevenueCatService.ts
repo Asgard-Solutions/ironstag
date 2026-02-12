@@ -9,12 +9,16 @@ import Purchases, {
   PurchasesOffering,
   LOG_LEVEL,
 } from 'react-native-purchases';
+import { useAuthStore } from '../stores/authStore';
 
 // RevenueCat API Keys - from RevenueCat Dashboard > API Keys
 const REVENUECAT_API_KEYS = {
   ios: 'appl_eSwYrXwjGuDNJWReWNrIvMARzFc', // Iron Stag (App Store)
   android: 'goog_MZUtDk1KjnEPjVzDNqWAiYxPQAV', // Iron Stag (Play Store)
 };
+
+// Backend API URL - must be absolute for native apps
+const API_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 // Entitlement ID from RevenueCat (matches your "premium" entitlement)
 export const ENTITLEMENT_ID = 'premium';
