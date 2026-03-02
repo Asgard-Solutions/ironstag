@@ -1358,9 +1358,9 @@ const disclaimerStyles = StyleSheet.create({
     textAlign: 'center',
   },
   criticalCard: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.error,
     marginBottom: spacing.md,
   },
   criticalHeader: {
