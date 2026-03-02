@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   noticeCard: {
-    backgroundColor: '#FEF3E2',
+    backgroundColor: colors.warningBg,
     marginBottom: spacing.xl,
   },
   noticeHeader: {
