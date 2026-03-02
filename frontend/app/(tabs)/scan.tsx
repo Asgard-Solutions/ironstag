@@ -999,7 +999,7 @@ function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: Disclai
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
