@@ -14,7 +14,12 @@ export const Card: React.FC<CardProps> = ({
   variant = 'default',
 }) => {
   return (
-    <View style={[styles.card, styles[variant], style]}>
+    <View style={[
+      styles.card, 
+      styles[variant],
+      variant === 'elevated' ? shadows.cardElevated : shadows.card,
+      style
+    ]}>
       {children}
     </View>
   );
