@@ -1340,7 +1340,7 @@ const disclaimerStyles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.errorBg,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
