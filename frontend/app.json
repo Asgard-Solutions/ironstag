@@ -37,7 +37,7 @@
       "versionCode": 24,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/stag_icon.png",
-        "backgroundColor": "#0E1A14"
+        "backgroundColor": "#0F1418"
       },
       "permissions": [
         "android.permission.CAMERA",
