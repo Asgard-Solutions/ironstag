@@ -77,9 +77,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: borderRadius.md,
     gap: spacing.sm,
+    ...shadows.button,
   },
   primary: {
     backgroundColor: colors.primary,
+    ...shadows.buttonPrimary,
   },
   secondary: {
     backgroundColor: colors.backgroundCard,
@@ -88,9 +90,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.primary,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   ghost: {
     backgroundColor: 'transparent',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   smallSize: {
     paddingVertical: spacing.sm,
