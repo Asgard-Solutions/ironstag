@@ -753,10 +753,14 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
   },
   harvestBadge: {
-    backgroundColor: colors.harvest + '20',
+    backgroundColor: colors.harvestBg,
+    borderWidth: 1,
+    borderColor: colors.harvestBorder,
   },
   passBadge: {
-    backgroundColor: colors.pass + '20',
+    backgroundColor: colors.passBg,
+    borderWidth: 1,
+    borderColor: colors.passBorder,
   },
   recommendationText: {
     fontSize: 16,
