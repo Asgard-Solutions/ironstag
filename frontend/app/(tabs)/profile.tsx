@@ -2044,7 +2044,7 @@ const styles = StyleSheet.create({
 
   // Storage Card
   storageCard: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     marginBottom: spacing.md,
@@ -2058,17 +2058,17 @@ const styles = StyleSheet.create({
   storageTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
   },
   storageInfo: {
     fontSize: 14,
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 2,
   },
   cleanupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     marginTop: spacing.md,
@@ -2077,20 +2077,20 @@ const styles = StyleSheet.create({
   cleanupLabel: {
     flex: 1,
     fontSize: 14,
-    color: '#333',
+    color: colors.textPrimary,
     marginLeft: spacing.sm,
   },
   cleanupValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: colors.textPrimary,
     marginRight: spacing.xs,
   },
   cleanupButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: colors.passBg,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     marginBottom: spacing.sm,
@@ -2102,22 +2102,22 @@ const styles = StyleSheet.create({
   cleanupButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#D97706',
+    color: colors.pass,
   },
   cleanupDateText: {
     fontSize: 11,
-    color: '#92400E',
+    color: colors.textMuted,
     marginTop: 2,
   },
   cleanupDateDue: {
-    color: '#059669',
+    color: colors.success,
     fontWeight: '600',
   },
   clearAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.errorBg,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     marginBottom: spacing.sm,
@@ -2129,7 +2129,7 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
   buttonDisabled: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.surface,
     opacity: 0.6,
   },
   buttonTextDisabled: {
@@ -2137,7 +2137,7 @@ const styles = StyleSheet.create({
   },
   storageNote: {
     fontSize: 11,
-    color: '#888',
+    color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.xs,
     lineHeight: 16,
@@ -2810,7 +2810,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#FFF',
+    backgroundColor: colors.textPrimary,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,

@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { subscriptionAPI } from '../../utils/api';
 import { useAuthStore } from '../../stores/authStore';
+import { colors } from '../../constants/theme';
 
 export default function SubscriptionSuccess() {
   const router = useRouter();
@@ -113,7 +114,7 @@ export default function SubscriptionSuccess() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

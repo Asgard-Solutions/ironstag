@@ -311,7 +311,7 @@ export default function LearnScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',

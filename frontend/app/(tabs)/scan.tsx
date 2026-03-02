@@ -999,7 +999,7 @@ function DisclaimerScreen({ onClose, onAccept, isAccepted, acceptedAt }: Disclai
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -1283,7 +1283,7 @@ const styles = StyleSheet.create({
 const disclaimerStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -1318,12 +1318,14 @@ const disclaimerStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    backgroundColor: colors.harvestBg,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
     gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.harvestBorder,
   },
   acceptedText: {
     fontSize: 13,
@@ -1338,7 +1340,7 @@ const disclaimerStyles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.errorBg,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
@@ -1356,9 +1358,9 @@ const disclaimerStyles = StyleSheet.create({
     textAlign: 'center',
   },
   criticalCard: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.error,
     marginBottom: spacing.md,
   },
   criticalHeader: {

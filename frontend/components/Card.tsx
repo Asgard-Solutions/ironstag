@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-import { colors, borderRadius, spacing } from '../constants/theme';
+import { colors, borderRadius, spacing, shadows } from '../constants/theme';
 
 interface CardProps {
   children: React.ReactNode;
@@ -14,7 +14,12 @@ export const Card: React.FC<CardProps> = ({
   variant = 'default',
 }) => {
   return (
-    <View style={[styles.card, styles[variant], style]}>
+    <View style={[
+      styles.card, 
+      styles[variant],
+      variant === 'elevated' ? shadows.cardElevated : shadows.card,
+      style
+    ]}>
       {children}
     </View>
   );
@@ -30,11 +35,6 @@ const styles = StyleSheet.create({
   },
   elevated: {
     backgroundColor: colors.backgroundCard,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
   },
   outlined: {
     backgroundColor: 'transparent',

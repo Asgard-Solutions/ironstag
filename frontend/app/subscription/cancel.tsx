@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../../constants/theme';
 
 export default function SubscriptionCancel() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function SubscriptionCancel() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   button: {
-    backgroundColor: '#D4A574',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     paddingHorizontal: 48,
     borderRadius: 12,
