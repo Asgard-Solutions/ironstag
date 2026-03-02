@@ -99,7 +99,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: spacing.lg,
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: spacing.lg,
-    backgroundColor: '#0E1A14',
+    backgroundColor: colors.background,
   },
   continueButton: {
     flexDirection: 'row',
