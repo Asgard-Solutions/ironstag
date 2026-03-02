@@ -38,15 +38,15 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.backgroundCard,
+          backgroundColor: colors.navBackground,
           borderTopColor: colors.border,
           borderTopWidth: 1,
           height: tabBarHeight,
           paddingTop: spacing.sm,
           paddingBottom: tabBarPaddingBottom,
         },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textMuted,
+        tabBarActiveTintColor: colors.navActive,
+        tabBarInactiveTintColor: colors.navInactive,
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '500',
