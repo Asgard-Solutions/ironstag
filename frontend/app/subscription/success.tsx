@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { subscriptionAPI } from '../../utils/api';
 import { useAuthStore } from '../../stores/authStore';
+import { colors } from '../../constants/theme';
 
 export default function SubscriptionSuccess() {
   const router = useRouter();
