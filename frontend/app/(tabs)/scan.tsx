@@ -31,8 +31,6 @@ import {
   ArrowLeft,
   Crown,
   MapPin,
-  ChevronDown,
-  ChevronUp,
   WifiOff,
   RotateCcw,
 } from 'lucide-react-native';
@@ -83,7 +81,6 @@ export default function ScanScreen() {
   // Hunting location state (per-scan override)
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [huntingLocation, setHuntingLocation] = useState<string | null>(null);
-  const [locationExpanded, setLocationExpanded] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
@@ -459,72 +456,44 @@ export default function ScanScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Hunting Location Override (collapsible) */}
-        <View style={styles.locationSection}>
-          <TouchableOpacity 
-            style={styles.locationHeader}
-            onPress={() => setLocationExpanded(!locationExpanded)}
-          >
-            <View style={styles.locationHeaderLeft}>
-              <MapPin size={16} color={huntingLocation ? colors.primary : colors.textMuted} />
-              <Text style={styles.locationHeaderText}>
-                {huntingLocation 
-                  ? `Hunting in ${getStateName(huntingLocation)}` 
-                  : user?.state 
-                    ? `Using home state (${user.state})`
-                    : 'Set hunting location'}
-              </Text>
-            </View>
-            {locationExpanded ? (
-              <ChevronUp size={18} color={colors.textMuted} />
-            ) : (
-              <ChevronDown size={18} color={colors.textMuted} />
-            )}
-          </TouchableOpacity>
-          
-          {locationExpanded && (
-            <View style={styles.locationContent}>
-              <Text style={styles.locationHelpText}>
-                {user?.state 
-                  ? `Your home state is ${getStateName(user.state)}. Override below if hunting elsewhere.`
-                  : 'Set a location to improve age estimation accuracy for this region.'}
-              </Text>
-              <TouchableOpacity 
-                style={styles.locationSelectButton}
-                onPress={() => setShowLocationPicker(true)}
-              >
-                <MapPin size={18} color={colors.primary} />
-                <Text style={styles.locationSelectText}>
-                  {huntingLocation ? getStateName(huntingLocation) : 'Select State'}
-                </Text>
-              </TouchableOpacity>
-              {huntingLocation && (
-                <TouchableOpacity 
-                  style={styles.locationClearButton}
-                  onPress={() => setHuntingLocation(null)}
-                >
-                  <Text style={styles.locationClearText}>
-                    Use home state instead
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </View>
-
         <View style={[styles.previewControls, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Button
-            title="Retake"
-            onPress={resetCapture}
-            variant="outline"
-            style={styles.previewButton}
-          />
-          <Button
-            title="Analyze Deer"
-            onPress={analyzeDeer}
-            style={styles.previewButton}
-            disabled={!isPremium && scansRemaining === 0}
-          />
+          <View style={styles.previewButtonRow}>
+            <Button
+              title="Retake"
+              onPress={resetCapture}
+              variant="outline"
+              style={styles.previewButton}
+            />
+            <Button
+              title="Analyze Deer"
+              onPress={analyzeDeer}
+              style={styles.previewButton}
+              disabled={!isPremium && scansRemaining === 0}
+            />
+          </View>
+          <View style={styles.locationInlineRow}>
+            <View style={styles.locationInlineLeft}>
+              <View style={styles.locationInlineIconWrap}>
+                <MapPin size={16} color={colors.primary} />
+              </View>
+              <View style={styles.locationInlineCopy}>
+                <Text style={styles.locationInlineLabel}>Hunting Location</Text>
+                <Text style={styles.locationInlineText}>
+                  {huntingLocation
+                    ? `${getStateName(huntingLocation)} (${huntingLocation})`
+                    : user?.state
+                      ? `${getStateName(user.state)} (${user.state})`
+                      : 'Select State'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.locationInlineChange}
+              onPress={() => setShowLocationPicker(true)}
+            >
+              <Text style={styles.locationInlineChangeText}>Change</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* State Picker Modal */}
@@ -588,6 +557,15 @@ export default function ScanScreen() {
         <Text style={styles.scanDescription}>
           Take or upload a clear photo of the deer. Our AI will analyze body characteristics, antler development, and other indicators to provide an age estimation.
         </Text>
+        <View style={styles.scanTipCard}>
+          <View style={styles.scanTipHeader}>
+            <Info size={16} color={colors.primary} />
+            <Text style={styles.scanTipTitle}>For Best Estimate</Text>
+          </View>
+          <Text style={styles.scanTipText}>
+            Use a full-body side view when possible. Keep the deer centered and in focus, with the head, chest, belly, and legs visible. Avoid long-distance shots, heavy shadows, and photos with multiple deer.
+          </Text>
+        </View>
 
         {/* Scans Remaining */}
         {user?.subscription_tier !== 'master_stag' && (
@@ -1085,6 +1063,31 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     paddingHorizontal: spacing.md,
   },
+  scanTipCard: {
+    width: '100%',
+    backgroundColor: 'rgba(200, 162, 74, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(200, 162, 74, 0.28)',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  scanTipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  scanTipTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  scanTipText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
   scansRemainingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1233,13 +1236,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   previewControls: {
-    flexDirection: 'row',
     gap: spacing.md,
     padding: spacing.lg,
     backgroundColor: colors.backgroundCard,
   },
+  previewButtonRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
   previewButton: {
     flex: 1,
+  },
+  locationInlineRow: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  locationInlineLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  locationInlineIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(184, 149, 74, 0.12)',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  locationInlineCopy: {
+    flex: 1,
+  },
+  locationInlineLabel: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  locationInlineText: {
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  locationInlineChange: {
+    minWidth: 96,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationInlineChangeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
   },
   analyzingContainer: {
     justifyContent: 'center',
@@ -1657,73 +1722,5 @@ const upgradeModalStyles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
     fontSize: 12,
-  },
-  // Hunting location styles
-  locationSection: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.md,
-    backgroundColor: colors.backgroundCard,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  locationHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  locationHeaderText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    flex: 1,
-  },
-  locationContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-  },
-  locationHelpText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    lineHeight: 18,
-  },
-  locationSelectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: 'rgba(200, 162, 74, 0.1)',
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  locationSelectText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.primary,
-  },
-  locationClearButton: {
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  locationClearText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    textDecorationLine: 'underline',
   },
 });

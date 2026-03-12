@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { X, Check, Target, AlertCircle } from 'lucide-react-native';
 import { colors, spacing, borderRadius } from '../constants/theme';
 import { scanAPI } from '../utils/api';
@@ -21,10 +22,31 @@ interface LabelFeedbackModalProps {
   onClose: () => void;
   scanId: string;
   predictedAge: number | null;
+  quickFeedbackEnabled?: boolean;
   onLabelSubmitted?: () => void;
 }
 
 type LabelMode = 'select' | 'exact' | 'quick';
+
+const AGE_SOURCE_OPTIONS = [
+  { label: 'Select source...', value: '' },
+  { label: 'Jawbone', value: 'jawbone' },
+  { label: 'Tooth wear', value: 'tooth_wear' },
+  { label: 'Taxidermist', value: 'taxidermist' },
+  { label: 'Biologist assessment', value: 'biologist_assessment' },
+  { label: 'Hunter best estimate', value: 'hunter_best_estimate' },
+  { label: 'Other', value: 'other' },
+] as const;
+
+const LABELER_ROLE_OPTIONS = [
+  { label: 'Self', value: 'self' },
+  { label: 'Guide', value: 'guide' },
+  { label: 'Biologist', value: 'biologist' },
+  { label: 'Taxidermist', value: 'taxidermist' },
+  { label: 'Admin', value: 'admin' },
+  { label: 'Processor', value: 'processor' },
+  { label: 'Unknown', value: 'unknown' },
+] as const;
 
 /**
  * Label Feedback Modal for Phase 2 Empirical Calibration
@@ -39,22 +61,31 @@ export function LabelFeedbackModal({
   onClose,
   scanId,
   predictedAge,
+  quickFeedbackEnabled = true,
   onLabelSubmitted,
 }: LabelFeedbackModalProps) {
   const [mode, setMode] = useState<LabelMode>('select');
   const [exactAge, setExactAge] = useState('');
+  const [ageSource, setAgeSource] = useState('');
+  const [labelerRole, setLabelerRole] = useState('self');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const resetAndClose = () => {
     setMode('select');
     setExactAge('');
+    setAgeSource('');
+    setLabelerRole('self');
     onClose();
   };
 
   const handleSubmitExactAge = async () => {
     const age = parseFloat(exactAge);
-    if (isNaN(age) || age < 0 || age > 15) {
-      Alert.alert('Invalid Age', 'Please enter a valid age between 0 and 15 years.');
+    if (isNaN(age) || age < 0 || age > 15.5) {
+      Alert.alert('Invalid Age', 'Please enter a valid age between 0 and 15.5 years.');
+      return;
+    }
+    if (!ageSource) {
+      Alert.alert('Age Source Needed', 'Select how the exact age was determined so we can weight the label correctly.');
       return;
     }
     
@@ -63,6 +94,8 @@ export function LabelFeedbackModal({
       await scanAPI.addLabel(scanId, {
         reported_age: age,
         harvest_confirmed: true,
+        age_source: ageSource as any,
+        labeler_role: labelerRole as any,
       });
       Alert.alert('Thanks!', 'Your feedback helps improve accuracy for everyone.');
       onLabelSubmitted?.();
@@ -125,12 +158,21 @@ export function LabelFeedbackModal({
       </TouchableOpacity>
       
       <TouchableOpacity 
-        style={styles.modeButton}
-        onPress={() => setMode('quick')}
+        style={[styles.modeButton, !quickFeedbackEnabled && styles.modeButtonDisabled]}
+        onPress={() => {
+          if (quickFeedbackEnabled) {
+            setMode('quick');
+          }
+        }}
+        disabled={!quickFeedbackEnabled}
       >
         <View style={styles.modeButtonContent}>
           <Text style={styles.modeButtonTitle}>Quick feedback</Text>
-          <Text style={styles.modeButtonSubtitle}>Was it spot on, close, or way off?</Text>
+          <Text style={styles.modeButtonSubtitle}>
+            {quickFeedbackEnabled
+              ? 'Was it spot on, close, or way off?'
+              : 'Unlocks 7 days after the scan so you have time to compare it in the field.'}
+          </Text>
         </View>
         <AlertCircle size={20} color={colors.textMuted} />
       </TouchableOpacity>
@@ -164,11 +206,47 @@ export function LabelFeedbackModal({
         />
         <Text style={styles.inputSuffix}>years</Text>
       </View>
+
+      <View style={styles.fieldGroup}>
+        <Text style={styles.fieldLabel}>How was the age determined?</Text>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={ageSource}
+            onValueChange={(value) => setAgeSource(value)}
+            style={styles.picker}
+            dropdownIconColor={colors.textPrimary}
+          >
+            {AGE_SOURCE_OPTIONS.map((option) => (
+              <Picker.Item key={option.value || 'blank'} label={option.label} value={option.value} />
+            ))}
+          </Picker>
+        </View>
+      </View>
+
+      <View style={styles.fieldGroup}>
+        <Text style={styles.fieldLabel}>Who supplied the age?</Text>
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={labelerRole}
+            onValueChange={(value) => setLabelerRole(value)}
+            style={styles.picker}
+            dropdownIconColor={colors.textPrimary}
+          >
+            {LABELER_ROLE_OPTIONS.map((option) => (
+              <Picker.Item key={option.value} label={option.label} value={option.value} />
+            ))}
+          </Picker>
+        </View>
+      </View>
+
+      <Text style={styles.helperText}>
+        Exact-age labels are most useful when the source is jawbone, tooth wear, or a professional assessment.
+      </Text>
       
       <TouchableOpacity 
         style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
         onPress={handleSubmitExactAge}
-        disabled={isSubmitting || !exactAge}
+        disabled={isSubmitting || !exactAge || !ageSource}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.white} size="small" />
@@ -345,6 +423,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  modeButtonDisabled: {
+    opacity: 0.55,
+  },
   modeButtonContent: {
     flex: 1,
   },
@@ -400,6 +481,33 @@ const styles = StyleSheet.create({
   inputSuffix: {
     fontSize: 18,
     color: colors.textMuted,
+  },
+  fieldGroup: {
+    width: '100%',
+    marginBottom: spacing.md,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  pickerWrapper: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  picker: {
+    color: colors.textPrimary,
+  },
+  helperText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: spacing.lg,
   },
   submitButton: {
     backgroundColor: colors.primary,

@@ -3,11 +3,12 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
+import hashlib
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict, Any
+from typing import Callable, List, Optional, Dict, Any, Tuple
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -28,7 +29,8 @@ from region_calibration import (
     get_region_calibration_metadata,
     get_calibration_status,
     get_all_regions,
-    RegionCalibrationConfig
+    RegionCalibrationConfig,
+    determine_region,
 )
 
 # Import calibration jobs module for Phase 2 empirical calibration
@@ -36,6 +38,7 @@ from calibration_jobs import (
     build_curves_from_labels,
     activate_curve,
     deactivate_curve,
+    load_active_curves,
     recalibrate_scans,
     get_curves_summary,
     get_curve_details,
@@ -64,7 +67,20 @@ from adaptive_calibration import (
     TrustSource,
     DriftSeverity,
     MaturityLevel,
-    RecommendationType
+    RecommendationType,
+    get_season_bucket,
+)
+from bc_typical_whitetail import (
+    build_bc_score_record,
+    get_bc_score_type_label,
+    is_bc_score_type_allowed_for_scan,
+    is_supported_bc_score_type,
+    normalize_bc_score_entry,
+    normalize_saved_bc_score,
+)
+from analysis_consensus import (
+    merge_consensus_analyses,
+    should_trigger_selective_consensus,
 )
 
 ROOT_DIR = Path(__file__).parent
@@ -111,6 +127,10 @@ scans_table = Table(
     Column("local_image_id", String(100)),
     Column("image_url", String, nullable=True),  # Cloud image URL (R2)
     Column("deer_age", Float),
+    Column("age_bucket", String(50), nullable=True),
+    Column("age_range", String(50), nullable=True),
+    Column("buck_age_class", String(10), nullable=True),
+    Column("age_evidence", JSON, nullable=True),
     Column("deer_type", String(100)),
     Column("deer_sex", String(50)),
     Column("antler_points", Integer),
@@ -137,6 +157,12 @@ scans_table = Table(
     Column("raw_recommendation_confidence", Integer),  # Raw recommendation confidence from model
     Column("calibration_strategy", String(50)),  # heuristic, global_curve, region_curve
     Column("calibration_fallback_reason", String(100)),  # Why fallback was used
+    Column("season_bucket", String(50), nullable=True),  # Prompt-time seasonal context
+    Column("analysis_prompt_version", String(50), nullable=True),
+    Column("analysis_model", String(100), nullable=True),
+    Column("age_estimation_allowed", Boolean, nullable=True),
+    Column("retake_reason", Text, nullable=True),
+    Column("visible_age_cues", JSON, nullable=True),
     # Image quality fields
     Column("image_quality_bucket", String(20), nullable=True),  # Image quality assessment
     Column("quality_factors", JSON, nullable=True),  # Detailed quality factors
@@ -144,6 +170,16 @@ scans_table = Table(
     Column("is_favorite", Boolean, default=False),  # User favorite
     Column("tags", JSON, nullable=True),  # User tags for organization
     Column("posture_bucket", String(20), nullable=True),  # Future: posture analysis
+    # Harvest + unofficial score fields
+    Column("harvest_confirmed", Boolean, default=False),
+    Column("harvested_at", DateTime, nullable=True),
+    Column("boone_crockett_score", JSON, nullable=True),
+    Column("boone_crockett_gross", Float, nullable=True),
+    Column("boone_crockett_net", Float, nullable=True),
+    Column("boone_crockett_final_score", Float, nullable=True),
+    Column("boone_crockett_status", String(20), nullable=True),
+    Column("boone_crockett_calculated_at", DateTime, nullable=True),
+    Column("boone_crockett_updated_at", DateTime, nullable=True),
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -152,6 +188,20 @@ scan_labels_table = Table(
     metadata,
     Column("id", String(36), primary_key=True),
     Column("scan_id", String(36), nullable=False),
+    Column("user_id", String(36), nullable=True),
+    Column("label_type", String(20), nullable=True),
+    Column("label_weight", Float, nullable=True),
+    Column("reported_age", Float, nullable=True),
+    Column("accuracy_category", String(20), nullable=True),
+    Column("prediction_error", Float, nullable=True),
+    Column("error_bucket", String(20), nullable=True),
+    Column("harvest_confirmed", Boolean, nullable=True),
+    Column("credibility_factor", Float, nullable=True),
+    Column("effective_weight", Float, nullable=True),
+    Column("notes", Text, nullable=True),
+    Column("labeled_at", DateTime, nullable=True),
+    Column("age_source", String(50), nullable=True),
+    Column("labeler_role", String(50), nullable=True),
     Column("label_source", String(50)),  # expert, user_self_report, admin_review
     Column("true_age_bucket", String(20)),  # Age range bucket
     Column("age_correct", Boolean),  # Was age estimation correct
@@ -236,6 +286,9 @@ password_reset_codes_table = Table(
 
 # API Keys
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_ANALYSIS_MODEL = os.environ.get('OPENAI_ANALYSIS_MODEL', 'gpt-4o').strip() or 'gpt-4o'
+OPENAI_REANALYSIS_MODEL = os.environ.get('OPENAI_REANALYSIS_MODEL', '').strip() or OPENAI_ANALYSIS_MODEL
+OPENAI_MODEL_AB_TEST_CANDIDATE = os.environ.get('OPENAI_MODEL_AB_TEST_CANDIDATE', 'gpt-4.1').strip() or 'gpt-4.1'
 REVENUECAT_SECRET_KEY = os.environ.get('REVENUECAT_SECRET_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'iron-stag-secret-key-2025')
 JWT_ALGORITHM = 'HS256'
@@ -271,6 +324,235 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def get_bool_env(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return int(value.strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def get_float_env(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        return float(value.strip())
+    except (TypeError, ValueError):
+        return default
+
+
+SELECTIVE_CONSENSUS_ENABLED = get_bool_env("SELECTIVE_CONSENSUS_ENABLED", True)
+SELECTIVE_CONSENSUS_TOTAL_PASSES = max(1, get_int_env("SELECTIVE_CONSENSUS_TOTAL_PASSES", 3))
+SELECTIVE_CONSENSUS_TRIGGER_MAX_AGE_CONFIDENCE = max(
+    0,
+    min(100, get_int_env("SELECTIVE_CONSENSUS_TRIGGER_MAX_AGE_CONFIDENCE", 78)),
+)
+SELECTIVE_CONSENSUS_TRIGGER_MAX_RECOMMENDATION_CONFIDENCE = max(
+    0,
+    min(100, get_int_env("SELECTIVE_CONSENSUS_TRIGGER_MAX_RECOMMENDATION_CONFIDENCE", 80)),
+)
+SELECTIVE_CONSENSUS_TRIGGER_HARVEST_WINDOW = max(
+    0.0,
+    get_float_env("SELECTIVE_CONSENSUS_TRIGGER_HARVEST_WINDOW", 0.5),
+)
+SELECTIVE_CONSENSUS_AGE_SPREAD_PENALTY_PER_HALF_YEAR = max(
+    0,
+    get_int_env("SELECTIVE_CONSENSUS_AGE_SPREAD_PENALTY_PER_HALF_YEAR", 8),
+)
+SELECTIVE_CONSENSUS_DISAGREEMENT_PENALTY = max(
+    0,
+    get_int_env("SELECTIVE_CONSENSUS_DISAGREEMENT_PENALTY", 12),
+)
+
+
+def model_uses_max_completion_tokens(model_name: Optional[str]) -> bool:
+    normalized = str(model_name or "").strip().lower()
+    return normalized.startswith("gpt-5")
+
+
+def build_chat_completion_request(
+    *,
+    model: str,
+    messages: List[Dict[str, Any]],
+    max_output_tokens: int,
+    temperature: float = 0,
+) -> Dict[str, Any]:
+    request: Dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if model_uses_max_completion_tokens(model):
+        request["max_completion_tokens"] = max_output_tokens
+        request["reasoning_effort"] = "none"
+    else:
+        request["max_tokens"] = max_output_tokens
+    return request
+
+
+def run_model_analysis_pass(
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: List[Dict[str, Any]],
+    max_output_tokens: int,
+    prompt_version: str,
+    context: Dict[str, Any],
+    post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    response = openai_client.chat.completions.create(
+        **build_chat_completion_request(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_content,
+                },
+            ],
+            max_output_tokens=max_output_tokens,
+            temperature=0,
+        )
+    )
+    response_text = response.choices[0].message.content or ""
+    try:
+        parsed_analysis = parse_json_response(response_text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if post_parse is not None:
+        parsed_analysis = post_parse(parsed_analysis)
+    parsed_analysis["analysis_model"] = model
+    return normalize_model_analysis(
+        parsed_analysis,
+        prompt_version=prompt_version,
+        context=context,
+    )
+
+
+def maybe_apply_selective_consensus(
+    *,
+    initial_analysis: Dict[str, Any],
+    total_passes: int,
+    pass_builder: Callable[[], Optional[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    if not should_trigger_selective_consensus(
+        initial_analysis,
+        enabled=SELECTIVE_CONSENSUS_ENABLED,
+        max_age_confidence=SELECTIVE_CONSENSUS_TRIGGER_MAX_AGE_CONFIDENCE,
+        max_recommendation_confidence=SELECTIVE_CONSENSUS_TRIGGER_MAX_RECOMMENDATION_CONFIDENCE,
+        harvest_window=SELECTIVE_CONSENSUS_TRIGGER_HARVEST_WINDOW,
+        harvest_threshold=HARVEST_RECOMMENDATION_MIN_AGE,
+    ):
+        return initial_analysis
+
+    analyses: List[Dict[str, Any]] = [initial_analysis]
+    target_passes = max(2, total_passes)
+    for _ in range(target_passes - 1):
+        extra_analysis = pass_builder()
+        if extra_analysis is not None:
+            analyses.append(extra_analysis)
+
+    if len(analyses) < 2:
+        return initial_analysis
+
+    merged_analysis, consensus_meta = merge_consensus_analyses(
+        analyses,
+        age_spread_penalty_per_half_year=SELECTIVE_CONSENSUS_AGE_SPREAD_PENALTY_PER_HALF_YEAR,
+        disagreement_penalty=SELECTIVE_CONSENSUS_DISAGREEMENT_PENALTY,
+    )
+    if not merged_analysis:
+        return initial_analysis
+
+    merged_analysis["consensus"] = consensus_meta
+    return merged_analysis
+
+
+OPENAI_MODEL_AB_TEST_ENABLED = get_bool_env('OPENAI_MODEL_AB_TEST_ENABLED', False)
+OPENAI_MODEL_AB_TEST_PERCENT = max(0, min(100, get_int_env('OPENAI_MODEL_AB_TEST_PERCENT', 50)))
+OPENAI_MODEL_AB_TEST_SALT = os.environ.get('OPENAI_MODEL_AB_TEST_SALT', 'ironstag-model-ab-v1').strip() or 'ironstag-model-ab-v1'
+LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS = max(0, get_int_env('LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS', 60))
+
+# Cache active empirical curves so live scans can use them without a DB read on every request.
+live_active_curve_cache: Dict[Tuple[str, Optional[str]], Dict[str, Any]] = {}
+live_active_curve_cache_loaded_at: Optional[datetime] = None
+
+
+def invalidate_live_curve_cache(reason: str) -> None:
+    global live_active_curve_cache
+    global live_active_curve_cache_loaded_at
+
+    live_active_curve_cache = {}
+    live_active_curve_cache_loaded_at = None
+    logger.info("Invalidated live calibration curve cache (%s)", reason)
+
+
+async def get_live_active_curves(force_refresh: bool = False) -> Dict[Tuple[str, Optional[str]], Dict[str, Any]]:
+    global live_active_curve_cache
+    global live_active_curve_cache_loaded_at
+
+    if not RegionCalibrationConfig.CALIBRATION_ENABLED:
+        return {}
+    if not RegionCalibrationConfig.CALIBRATION_CURVES_ENABLED:
+        return {}
+
+    now = datetime.utcnow()
+    if (
+        not force_refresh
+        and live_active_curve_cache_loaded_at is not None
+        and LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS > 0
+        and (now - live_active_curve_cache_loaded_at).total_seconds() < LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS
+    ):
+        return live_active_curve_cache
+
+    try:
+        live_active_curve_cache = await load_active_curves(database, calibration_curves_table)
+        live_active_curve_cache_loaded_at = now
+        logger.info(
+            "Loaded %s active calibration curves for live inference",
+            len(live_active_curve_cache),
+        )
+    except Exception as exc:
+        if live_active_curve_cache_loaded_at is None:
+            logger.warning("Failed to load active calibration curves: %s", exc)
+            return {}
+
+        logger.warning(
+            "Failed to refresh active calibration curves; reusing %s cached curves: %s",
+            len(live_active_curve_cache),
+            exc,
+        )
+
+    return live_active_curve_cache
+
+
+def get_live_curve_cache_metadata() -> Dict[str, Any]:
+    curve_types: Dict[str, int] = {}
+    for (curve_type, _), curve in live_active_curve_cache.items():
+        key = curve_type or str(curve.get("curve_type") or "unknown")
+        curve_types[key] = curve_types.get(key, 0) + 1
+
+    return {
+        "enabled": RegionCalibrationConfig.CALIBRATION_CURVES_ENABLED,
+        "active_count": len(live_active_curve_cache),
+        "last_loaded_at": live_active_curve_cache_loaded_at.isoformat() if live_active_curve_cache_loaded_at else None,
+        "cache_ttl_seconds": LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS,
+        "by_curve_type": curve_types,
+    }
 
 # ============ PYDANTIC MODELS ============
 
@@ -343,6 +625,17 @@ class DeerAnalysisResponse(BaseModel):
     user_id: str
     local_image_id: str
     deer_age: Optional[float] = None
+    age_bucket: Optional[str] = None
+    age_range: Optional[str] = None
+    buck_age_class: Optional[str] = None
+    age_evidence: Optional[List[Dict[str, str]]] = None
+    cue_checklist: Optional[Dict[str, str]] = None
+    alternate_age: Optional[float] = None
+    why_not_primary: Optional[str] = None
+    abstain_reason: Optional[str] = None
+    foreshortening_risk: Optional[str] = None
+    camera_angle_risk: Optional[str] = None
+    distance_risk: Optional[str] = None
     deer_type: Optional[str] = None
     deer_sex: Optional[str] = None
     antler_points: Optional[int] = None
@@ -362,14 +655,36 @@ class DeerAnalysisResponse(BaseModel):
     region_key: Optional[str] = None
     calibration_strategy: Optional[str] = None
     calibration_fallback_reason: Optional[str] = None
+    image_quality_bucket: Optional[str] = None
+    quality_factors: Optional[Dict[str, Any]] = None
+    posture_bucket: Optional[str] = None
+    analysis_prompt_version: Optional[str] = None
+    analysis_model: Optional[str] = None
+    age_estimation_allowed: Optional[bool] = None
+    retake_reason: Optional[str] = None
+    visible_age_cues: Optional[List[str]] = None
+    consensus: Optional[Dict[str, Any]] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
     # Favorites and Tags
     is_favorite: Optional[bool] = False
     tags: Optional[List[str]] = None
+    # Harvest + unofficial score
+    harvest_confirmed: Optional[bool] = False
+    harvested_at: Optional[datetime] = None
+    boone_crockett_score: Optional[Dict[str, Any]] = None
+    boone_crockett_gross: Optional[float] = None
+    boone_crockett_net: Optional[float] = None
+    boone_crockett_final_score: Optional[float] = None
+    boone_crockett_status: Optional[str] = None
+    boone_crockett_calculated_at: Optional[datetime] = None
+    boone_crockett_updated_at: Optional[datetime] = None
 
 class ScanUpdate(BaseModel):
     notes: Optional[str] = None
+    harvest_confirmed: Optional[bool] = None
+    boone_crockett_measurements: Optional[Dict[str, Any]] = None
+    boone_crockett_disclaimer_accepted: Optional[bool] = None
 
 class ScanEditRequest(BaseModel):
     """Request model for editing scan details and re-analyzing with LLM"""
@@ -397,6 +712,10 @@ class ScanLabelRequest(BaseModel):
     
     # Was this deer harvested? (affects credibility)
     harvest_confirmed: bool = Field(False, description="True if user harvested this deer")
+
+    # Exact-age evidence metadata
+    age_source: Optional[str] = Field(None, description="'jawbone' | 'tooth_wear' | 'taxidermist' | 'biologist_assessment' | 'hunter_best_estimate' | 'other' | 'unknown'")
+    labeler_role: Optional[str] = Field(None, description="'self' | 'guide' | 'biologist' | 'admin' | 'taxidermist' | 'processor' | 'unknown'")
     
     # Optional notes
     notes: Optional[str] = None
@@ -414,6 +733,9 @@ class ScanLabelResponse(BaseModel):
     error_bucket: Optional[str] = None  # 'exact' | 'within_half' | 'within_one' | 'off'
     prediction_error: Optional[float] = None
     harvest_confirmed: bool
+    age_source: Optional[str] = None
+    labeler_role: Optional[str] = None
+    trust_source: Optional[str] = None
     created_at: datetime
 
 
@@ -430,8 +752,36 @@ class LabelStatsResponse(BaseModel):
     by_region: Dict[str, int]
     by_error_bucket: Dict[str, int]
     by_image_quality: Dict[str, int]
+    by_season_bucket: Dict[str, int] = Field(default_factory=dict)
+    by_posture_bucket: Dict[str, int] = Field(default_factory=dict)
+    by_age_estimation_allowed: Dict[str, int] = Field(default_factory=dict)
+    by_age_source: Dict[str, int] = Field(default_factory=dict)
+    by_labeler_role: Dict[str, int] = Field(default_factory=dict)
     total_weighted_samples: float  # Sum of effective weights
     maturity_gates: Dict[str, bool]  # Which gates are met
+    exact_age_mae: Optional[float] = None
+    exact_age_within_half_accuracy: Optional[float] = None
+    exact_age_coverage: Optional[float] = None
+    by_prompt_version: Dict[str, int] = Field(default_factory=dict)
+    exact_age_mae_by_prompt_version: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_prompt_version: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_prompt_version: Dict[str, float] = Field(default_factory=dict)
+    by_analysis_model: Dict[str, int] = Field(default_factory=dict)
+    exact_age_mae_by_analysis_model: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_analysis_model: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_analysis_model: Dict[str, float] = Field(default_factory=dict)
+    exact_age_mae_by_region: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_region: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_region: Dict[str, float] = Field(default_factory=dict)
+    exact_age_mae_by_season_bucket: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_season_bucket: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_season_bucket: Dict[str, float] = Field(default_factory=dict)
+    exact_age_mae_by_image_quality: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_image_quality: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_image_quality: Dict[str, float] = Field(default_factory=dict)
+    exact_age_mae_by_posture_bucket: Dict[str, float] = Field(default_factory=dict)
+    exact_age_within_half_by_posture_bucket: Dict[str, float] = Field(default_factory=dict)
+    exact_age_coverage_by_posture_bucket: Dict[str, float] = Field(default_factory=dict)
 
 
 class PasswordResetRequest(BaseModel):
@@ -481,6 +831,10 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_left INTEGER")
         # Add antler_points_right column if it doesn't exist
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_right INTEGER")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_bucket VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_range VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS buck_age_class VARCHAR(10)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_evidence JSON")
         
         # Confidence calibration columns (added for v1-heuristic calibration)
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_confidence INTEGER")
@@ -497,11 +851,19 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS raw_recommendation_confidence INTEGER")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_strategy VARCHAR(50)")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS calibration_fallback_reason VARCHAR(100)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS season_bucket VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS analysis_prompt_version VARCHAR(50)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS analysis_model VARCHAR(100)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_estimation_allowed BOOLEAN")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS retake_reason TEXT")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS visible_age_cues JSON")
         
         # Create indexes for region calibration queries
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_region_key ON scans(region_key)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_calibration_version ON scans(calibration_version)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_age_uncertain ON scans(age_uncertain)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_analysis_model ON scans(analysis_model)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_age_estimation_allowed ON scans(age_estimation_allowed)")
         
         # Phase 2: Create scan_labels table for empirical calibration
         await database.execute("""
@@ -530,6 +892,8 @@ async def startup():
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS effective_weight FLOAT")  # label_weight * credibility_factor
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS notes TEXT")
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS labeled_at TIMESTAMP")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS age_source VARCHAR(50)")
+        await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS labeler_role VARCHAR(50)")
         
         # Phase 2 Enhanced: Add image quality and posture columns to scans
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS image_quality_bucket VARCHAR(20)")  # 'excellent' | 'good' | 'fair' | 'poor'
@@ -543,6 +907,18 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS tags JSON")  # Array of tag strings
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_is_favorite ON scans(is_favorite)")
+
+        # Harvest + unofficial score fields
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS harvest_confirmed BOOLEAN DEFAULT FALSE")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS harvested_at TIMESTAMP")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_score JSON")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_gross FLOAT")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_net FLOAT")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_final_score FLOAT")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_status VARCHAR(20)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_calculated_at TIMESTAMP")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS boone_crockett_updated_at TIMESTAMP")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_harvest_confirmed ON scans(harvest_confirmed)")
         
         # Label versioning for safe weight recomputation in future
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_version INTEGER DEFAULT 1")
@@ -553,6 +929,8 @@ async def startup():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_error_bucket ON scan_labels(error_bucket)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_created_at ON scan_labels(created_at)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_version ON scan_labels(label_version)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_age_source ON scan_labels(age_source)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_labeler_role ON scan_labels(labeler_role)")
         
         # Phase 2: Create calibration_curves table for empirical calibration
         await database.execute("""
@@ -630,11 +1008,14 @@ async def startup():
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
+
+    await get_live_active_curves(force_refresh=True)
     
     logger.info("Database connected and tables created")
 
 @app.on_event("shutdown")
 async def shutdown():
+    invalidate_live_curve_cache("shutdown")
     await database.disconnect()
     logger.info("Database disconnected")
 
@@ -655,6 +1036,1086 @@ def verify_token(token: str) -> str:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+ANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist"
+REANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist-reanalysis"
+
+REGION_PROMPT_HINTS = {
+    "midwest": "Large-bodied deer are common. Use body maturity more than antler spread.",
+    "northeast": "Be conservative with mass-based aging when winter coats and terrain hide proportions.",
+    "plains": "Distance and open-country images often flatten depth. Favor visible body proportions over antlers.",
+    "southeast": "Smaller-bodied deer are common. Do not over-age based on antler count alone.",
+    "south_texas": "South Texas bucks can carry mature antlers on smaller frames. Body cues must dominate age.",
+    "northern": "Heavy coats can exaggerate bulk. Use chest, belly, and leg-to-body ratio carefully.",
+    "unknown": "Regional context is limited. Use only visible body evidence."
+}
+
+SEASON_PROMPT_HINTS = {
+    "pre_rut": "Necks may begin to swell. Do not over-age based on early rut mass alone.",
+    "rut": "Rut can inflate neck thickness and posture. Body frame, chest, belly, and face should dominate age.",
+    "post_rut": "Post-rut bucks may look run down. Separate fatigue from true old age.",
+    "late_season": "Winter coats and weight loss can distort condition. Use proportions more than fat cover.",
+    "off_season": "Antlers and body condition can be atypical. Stay conservative if cues are weak."
+}
+
+BODY_CONDITION_VALUES = {"poor": "Poor", "fair": "Fair", "good": "Good", "excellent": "Excellent", "unknown": "Unknown"}
+QUALITY_BUCKET_VALUES = {"excellent", "good", "fair", "poor"}
+POSTURE_BUCKET_VALUES = {"broadside", "angled", "head_down", "frontal", "rear", "unknown"}
+QUALITY_FACTOR_VALUES = {
+    "body_visibility": {"high", "medium", "low"},
+    "head_visibility": {"high", "medium", "low"},
+    "lighting": {"good", "mixed", "poor", "unknown"},
+    "occlusion": {"low", "medium", "high", "unknown"},
+    "distance_estimate": {"close", "medium", "far", "unknown"},
+    "blur": {"low", "medium", "high", "unknown"},
+}
+AGE_EVIDENCE_IMPACTS = {"older", "younger", "neutral", "unknown"}
+VISIBLE_AGE_CUE_VALUES = {
+    "chest_depth",
+    "belly_sag",
+    "backline",
+    "leg_to_body_ratio",
+    "leg_apparent_length",
+    "face_length",
+    "neck_brisket",
+    "neck_to_face_ratio",
+    "body_mass",
+    "hindquarters",
+    "chest_vs_hindquarters",
+    "waistline",
+    "head_blockiness",
+    "forehead_muzzle",
+    "tarsal_staining",
+}
+CRITICAL_AGE_CUE_VALUES = {
+    "chest_depth",
+    "belly_sag",
+    "backline",
+    "leg_to_body_ratio",
+    "face_length",
+    "body_mass",
+}
+REQUIRED_CUE_CHECKLIST_KEYS = {
+    "chest_depth",
+    "belly_sag",
+    "backline",
+    "leg_to_body_ratio",
+    "face_length",
+    "neck_brisket",
+    "body_mass",
+    "chest_vs_hindquarters",
+    "head_blockiness",
+}
+MIN_VISIBLE_CRITICAL_AGE_CUES = max(1, get_int_env("MIN_VISIBLE_CRITICAL_AGE_CUES", 3))
+CHECKLIST_VISIBILITY_VALUES = {"visible", "not_visible", "unclear"}
+RISK_LEVEL_VALUES = {"low", "medium", "high"}
+ABSTAIN_REASON_VALUES = {
+    "insufficient_profile",
+    "heavy_occlusion",
+    "low_resolution_or_blur",
+    "distance_or_perspective",
+    "pose_not_supported",
+    "mixed_or_conflicting_cues",
+    "insufficient_visible_age_cues",
+    "other",
+}
+BUCK_AGE_CLASS_VALUES = {"1.5", "2.5", "3.5", "4.5", "5.5", "6.5+"}
+BUCK_AGE_CLASS_TO_AGE = {
+    "1.5": 1.5,
+    "2.5": 2.5,
+    "3.5": 3.5,
+    "4.5": 4.5,
+    "5.5": 5.5,
+    "6.5+": 6.5,
+}
+BUCK_AGE_CLASS_PROMPT_GUIDANCE = """
+Buck age-class rubric:
+- 1.5: doe-like body, long-looking legs, thin neck, narrow chest, little muscle definition
+- 2.5: lean waist and shoulders, hindquarters larger than chest, flat belly/back, minimal neck swelling
+- 3.5: chest and shoulders now heavier than hindquarters, athletic and tight frame, neck wider than face during rut
+- 4.5: neck blends into shoulders, deeper chest, waistline has dropped, fully mature frame
+- 5.5: shoulder and neck mass look heavy, belly rounds or sags, head appears blockier, legs look short for the body
+- 6.5+: very heavy body, obvious belly/back sag, loose skin in face/brisket, darker or grayer forehead/muzzle
+"""
+AGE_QUALITY_GATE_MESSAGES = {
+    "poor_image_quality": "The image quality is too poor for a reliable age estimate.",
+    "body_visibility_low": "Too little of the body is visible to judge chest, belly, and frame proportions.",
+    "occlusion_high": "Heavy occlusion is hiding the main body-aging cues.",
+    "blur_high": "The image is too blurry to read body proportions confidently.",
+    "profile_not_visible": "A frontal or rear pose does not show the body profile needed for accurate aging.",
+    "model_insufficient_evidence": "Visible body cues are too limited for a defensible age estimate.",
+    "insufficient_visible_age_cues": "There are not enough visible age cues to support a numeric age.",
+    "critical_cues_missing": "Critical body-aging cues are not visible enough for a reliable age call.",
+    "incomplete_cue_checklist": "The required cue checklist is incomplete, so a reliable age cannot be provided.",
+}
+AGE_SOURCE_VALUES = {
+    "jawbone",
+    "tooth_wear",
+    "taxidermist",
+    "biologist_assessment",
+    "hunter_best_estimate",
+    "other",
+    "unknown",
+}
+LABELER_ROLE_VALUES = {
+    "self",
+    "guide",
+    "biologist",
+    "admin",
+    "taxidermist",
+    "processor",
+    "unknown",
+}
+AGE_SOURCE_RELIABILITY = {
+    "jawbone": 1.0,
+    "tooth_wear": 0.88,
+    "taxidermist": 0.84,
+    "biologist_assessment": 0.96,
+    "hunter_best_estimate": 0.60,
+    "other": 0.72,
+    "unknown": 0.55,
+}
+LABELER_ROLE_RELIABILITY = {
+    "self": 1.0,
+    "guide": 0.82,
+    "biologist": 1.0,
+    "admin": 0.95,
+    "taxidermist": 0.88,
+    "processor": 0.82,
+    "unknown": 0.65,
+}
+AGE_RETAKE_TIP = "Retake tip: use a full-body broadside photo with the deer centered, in focus, and unobstructed."
+
+
+def stable_percent_bucket(value: str) -> int:
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % 100
+
+
+def select_analysis_model(
+    *,
+    user_id: str,
+    local_image_id: Optional[str],
+    default_model: Optional[str] = None,
+) -> Tuple[str, str]:
+    control_model = (default_model or OPENAI_ANALYSIS_MODEL).strip() or OPENAI_ANALYSIS_MODEL
+
+    if (
+        not OPENAI_MODEL_AB_TEST_ENABLED
+        or OPENAI_MODEL_AB_TEST_PERCENT <= 0
+        or OPENAI_MODEL_AB_TEST_CANDIDATE == control_model
+    ):
+        return control_model, "control"
+
+    if OPENAI_MODEL_AB_TEST_PERCENT >= 100:
+        return OPENAI_MODEL_AB_TEST_CANDIDATE, "candidate"
+
+    assignment_key = f"{OPENAI_MODEL_AB_TEST_SALT}:{user_id}:{local_image_id or 'unknown'}"
+    if stable_percent_bucket(assignment_key) < OPENAI_MODEL_AB_TEST_PERCENT:
+        return OPENAI_MODEL_AB_TEST_CANDIDATE, "candidate"
+    return control_model, "control"
+
+
+def resolve_reanalysis_model(scan: Dict[str, Any], user_id: str) -> Tuple[str, str]:
+    persisted_model = str(scan.get("analysis_model") or "").strip()
+    if persisted_model:
+        return persisted_model, "persisted"
+
+    return select_analysis_model(
+        user_id=user_id,
+        local_image_id=scan.get("local_image_id") or scan.get("id"),
+        default_model=OPENAI_REANALYSIS_MODEL,
+    )
+
+
+def clamp_confidence(value: Any) -> Optional[int]:
+    """Clamp model-provided confidence values to the API's 0-100 range."""
+    if value is None or value == "":
+        return None
+    try:
+        return max(0, min(100, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_estimated_age(value: Any) -> Optional[float]:
+    """Normalize free-form model ages into the app's half-year hunting convention."""
+    if value is None or value == "":
+        return None
+    try:
+        age = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if age <= 0:
+        return None
+
+    age = max(0.5, min(15.5, age))
+    normalized = round(age - 0.5) + 0.5
+    normalized = max(0.5, min(15.5, normalized))
+    return float(f"{normalized:.1f}")
+
+
+def derive_age_bucket(age: Optional[float]) -> Optional[str]:
+    if age is None:
+        return None
+    if age < 1.0:
+        return "fawn"
+    if age < 2.0:
+        return "yearling"
+    if age < 4.0:
+        return "young_adult"
+    if age < 6.0:
+        return "mature"
+    return "older"
+
+
+def derive_age_range(age: Optional[float]) -> Optional[str]:
+    if age is None:
+        return None
+    if age < 1.0:
+        return "0.5"
+    if age < 2.0:
+        return "1.5"
+    if age < 4.0:
+        return "2.5-3.5"
+    if age < 6.0:
+        return "4.5-5.5"
+    return "6.5+"
+
+
+HARVEST_RECOMMENDATION_MIN_AGE = 3.5
+
+
+def is_mature_harvest_age(age: Optional[float]) -> bool:
+    return age is not None and age >= HARVEST_RECOMMENDATION_MIN_AGE
+
+
+def derive_management_recommendation(
+    value: Any,
+    deer_age: Optional[float],
+    age_estimation_allowed: Optional[bool],
+) -> Optional[str]:
+    cleaned = str(value or "").strip().upper()
+    if cleaned in {"HARVEST", "PASS"}:
+        return cleaned
+    if age_estimation_allowed is False or deer_age is None:
+        return None
+    return "HARVEST" if is_mature_harvest_age(deer_age) else "PASS"
+
+
+def normalize_buck_age_class(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+
+    cleaned = str(value).strip().lower()
+    cleaned = (
+        cleaned
+        .replace("years old", "")
+        .replace("year old", "")
+        .replace("years-old", "")
+        .replace("year-old", "")
+        .replace("years", "")
+        .replace("year", "")
+        .replace("bucks", "")
+        .replace("buck", "")
+        .replace("½", ".5")
+        .replace("plus", "+")
+        .replace(" ", "")
+    )
+
+    if cleaned in {"6.5+", "6.5andup", "6.5_up", "6.5orolder"}:
+        return "6.5+"
+
+    try:
+        age = float(cleaned.rstrip("+"))
+    except (TypeError, ValueError):
+        return None
+
+    if age >= 6.5 or cleaned.endswith("+"):
+        return "6.5+"
+
+    class_age = normalize_estimated_age(age)
+    if class_age is None:
+        return None
+
+    normalized = f"{class_age:.1f}"
+    return normalized if normalized in BUCK_AGE_CLASS_VALUES else None
+
+
+def derive_buck_age_class(age: Optional[float], deer_sex: Optional[str]) -> Optional[str]:
+    if deer_sex != "Buck" or age is None:
+        return None
+    if age < 2.0:
+        return "1.5"
+    if age < 3.0:
+        return "2.5"
+    if age < 4.0:
+        return "3.5"
+    if age < 5.0:
+        return "4.5"
+    if age < 6.0:
+        return "5.5"
+    return "6.5+"
+
+
+def resolve_buck_age_from_class(age: Optional[float], buck_age_class: Optional[str]) -> Optional[float]:
+    if buck_age_class is None:
+        return age
+
+    class_age = BUCK_AGE_CLASS_TO_AGE[buck_age_class]
+    if age is None:
+        return class_age
+
+    if buck_age_class == "6.5+":
+        return age if age >= 6.5 else 6.5
+
+    return age if abs(age - class_age) <= 0.5 else class_age
+
+
+def normalize_deer_type(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if cleaned in {"whitetail", "white-tailed deer", "white tailed deer", "whitetail deer"}:
+        return "Whitetail"
+    if cleaned in {"mule deer", "mule"}:
+        return "Mule Deer"
+    return str(value).strip() or None
+
+
+def normalize_deer_sex(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if cleaned == "buck":
+        return "Buck"
+    if cleaned == "doe":
+        return "Doe"
+    if cleaned == "unknown":
+        return "Unknown"
+    return str(value).strip() or None
+
+
+def normalize_body_condition(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    return BODY_CONDITION_VALUES.get(cleaned, str(value).strip() or None)
+
+
+def normalize_quality_bucket(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_")
+    return cleaned if cleaned in QUALITY_BUCKET_VALUES else None
+
+
+def normalize_posture_bucket(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_")
+    return cleaned if cleaned in POSTURE_BUCKET_VALUES else None
+
+
+def normalize_antler_points(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        points = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return max(0, points)
+
+
+def normalize_quality_factors(value: Any) -> Dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+
+    normalized: Dict[str, str] = {}
+    for key, allowed_values in QUALITY_FACTOR_VALUES.items():
+        raw = value.get(key)
+        if raw is None:
+            continue
+        cleaned = str(raw).strip().lower().replace(" ", "_")
+        if cleaned in allowed_values:
+            normalized[key] = cleaned
+    return normalized
+
+
+def normalize_age_evidence(value: Any) -> List[Dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+
+    evidence: List[Dict[str, str]] = []
+    for item in value[:8]:
+        if not isinstance(item, dict):
+            continue
+        feature = str(item.get("feature", "")).strip()
+        observation = str(item.get("observation", "")).strip()
+        impact = str(item.get("impact", "unknown")).strip().lower()
+        if not feature or not observation:
+            continue
+        if impact not in AGE_EVIDENCE_IMPACTS:
+            impact = "unknown"
+        evidence.append(
+            {
+                "feature": feature[:80],
+                "observation": observation[:240],
+                "impact": impact,
+            }
+        )
+    return evidence
+
+
+def normalize_optional_bool(value: Any) -> Optional[bool]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    cleaned = str(value).strip().lower()
+    if cleaned in {"true", "yes", "1"}:
+        return True
+    if cleaned in {"false", "no", "0"}:
+        return False
+    return None
+
+
+def normalize_visible_age_cues(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+
+    cues: List[str] = []
+    seen = set()
+    for item in value[:8]:
+        raw = item
+        if isinstance(item, dict):
+            raw = item.get("cue") or item.get("feature")
+        cleaned = str(raw or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if cleaned in VISIBLE_AGE_CUE_VALUES and cleaned not in seen:
+            cues.append(cleaned)
+            seen.add(cleaned)
+    return cues
+
+
+def normalize_cue_checklist(value: Any) -> Dict[str, str]:
+    checklist: Dict[str, str] = {}
+
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, dict):
+        items = [{"cue": key, "visibility": raw} for key, raw in value.items()]
+    else:
+        return checklist
+
+    for item in items[:24]:
+        if not isinstance(item, dict):
+            continue
+        cue = item.get("cue") or item.get("feature")
+        cleaned_cue = str(cue or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if cleaned_cue not in VISIBLE_AGE_CUE_VALUES:
+            continue
+        visibility = item.get("visibility")
+        if visibility is None and "visible" in item:
+            visibility = "visible" if bool(item.get("visible")) else "not_visible"
+        cleaned_visibility = str(visibility or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if cleaned_visibility in CHECKLIST_VISIBILITY_VALUES:
+            checklist[cleaned_cue] = cleaned_visibility
+    return checklist
+
+
+def normalize_risk_level(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    return cleaned if cleaned in RISK_LEVEL_VALUES else None
+
+
+def normalize_abstain_reason(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    if cleaned in ABSTAIN_REASON_VALUES:
+        return cleaned
+    return "other"
+
+
+def derive_visible_age_cues_from_evidence(evidence: List[Dict[str, str]]) -> List[str]:
+    cues: List[str] = []
+    seen = set()
+    for item in evidence:
+        cleaned = str(item.get("feature") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if cleaned in VISIBLE_AGE_CUE_VALUES and cleaned not in seen:
+            cues.append(cleaned)
+            seen.add(cleaned)
+    return cues
+
+
+def normalize_age_source(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    return cleaned if cleaned in AGE_SOURCE_VALUES else "other"
+
+
+def normalize_labeler_role(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    cleaned = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    return cleaned if cleaned in LABELER_ROLE_VALUES else "unknown"
+
+
+def compute_age_source_multiplier(age_source: Optional[str]) -> float:
+    return AGE_SOURCE_RELIABILITY.get(age_source or "unknown", AGE_SOURCE_RELIABILITY["unknown"])
+
+
+def compute_labeler_role_multiplier(labeler_role: Optional[str]) -> float:
+    return LABELER_ROLE_RELIABILITY.get(labeler_role or "unknown", LABELER_ROLE_RELIABILITY["unknown"])
+
+
+def derive_label_trust_source(
+    *,
+    age_source: Optional[str],
+    labeler_role: Optional[str],
+    harvest_confirmed: bool,
+) -> str:
+    if labeler_role == "admin":
+        return TrustSource.ADMIN.value
+    if labeler_role in {"biologist", "taxidermist"} or age_source in {"taxidermist", "biologist_assessment"}:
+        return TrustSource.EXPERT.value
+    if harvest_confirmed or labeler_role == "guide" or age_source in {"jawbone", "tooth_wear"}:
+        return TrustSource.TRUSTED_USER.value
+    return TrustSource.SELF_REPORTED.value
+
+
+def derive_label_source(age_source: Optional[str], labeler_role: Optional[str], harvest_confirmed: bool) -> str:
+    if labeler_role == "admin":
+        return "admin_review"
+    if labeler_role in {"biologist", "taxidermist"} or age_source in {"taxidermist", "biologist_assessment"}:
+        return "expert_review"
+    if harvest_confirmed and age_source in {"jawbone", "tooth_wear"}:
+        return "harvest_measurement"
+    return "user_self_report"
+
+
+def build_age_quality_gate_reason(blockers: List[str], model_reason: Optional[str] = None) -> str:
+    reasons: List[str] = []
+    seen = set()
+
+    for blocker in blockers:
+        message = AGE_QUALITY_GATE_MESSAGES.get(blocker)
+        if message and message not in seen:
+            reasons.append(message)
+            seen.add(message)
+
+    cleaned_model_reason = str(model_reason or "").strip()
+    if cleaned_model_reason:
+        clipped = cleaned_model_reason[:220]
+        if clipped not in seen:
+            reasons.append(clipped)
+
+    if not reasons:
+        reasons.append("Visible body cues are too limited for a reliable age estimate.")
+
+    reasons.append(AGE_RETAKE_TIP)
+    return " ".join(reasons)
+
+
+def derive_abstain_reason_from_blockers(blockers: List[str]) -> str:
+    if "profile_not_visible" in blockers:
+        return "pose_not_supported"
+    if "occlusion_high" in blockers:
+        return "heavy_occlusion"
+    if "blur_high" in blockers or "poor_image_quality" in blockers:
+        return "low_resolution_or_blur"
+    if "critical_cues_missing" in blockers or "insufficient_visible_age_cues" in blockers:
+        return "insufficient_visible_age_cues"
+    return "insufficient_profile"
+
+
+def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    quality_factors = normalized.get("quality_factors") or {}
+    blockers: List[str] = []
+
+    if normalized.get("image_quality_bucket") == "poor":
+        blockers.append("poor_image_quality")
+    if quality_factors.get("body_visibility") == "low":
+        blockers.append("body_visibility_low")
+    if quality_factors.get("occlusion") == "high":
+        blockers.append("occlusion_high")
+    if quality_factors.get("blur") == "high":
+        blockers.append("blur_high")
+    if normalized.get("posture_bucket") in {"frontal", "rear"}:
+        blockers.append("profile_not_visible")
+
+    if normalized.get("age_estimation_allowed") is False:
+        blockers.append("model_insufficient_evidence")
+
+    visible_age_cues = normalized.get("visible_age_cues") or []
+    if not visible_age_cues:
+        visible_age_cues = derive_visible_age_cues_from_evidence(normalized.get("age_evidence") or [])
+        normalized["visible_age_cues"] = visible_age_cues
+
+    cue_checklist = normalize_cue_checklist(normalized.get("cue_checklist"))
+    normalized["cue_checklist"] = cue_checklist
+    missing_required_checklist_keys = sorted(REQUIRED_CUE_CHECKLIST_KEYS.difference(cue_checklist.keys()))
+    if missing_required_checklist_keys:
+        blockers.append("incomplete_cue_checklist")
+
+    if cue_checklist:
+        visible_from_checklist = [cue for cue, state in cue_checklist.items() if state == "visible"]
+        for cue in visible_from_checklist:
+            if cue not in visible_age_cues:
+                visible_age_cues.append(cue)
+        normalized["visible_age_cues"] = visible_age_cues
+
+    critical_visible_count = len([cue for cue in visible_age_cues if cue in CRITICAL_AGE_CUE_VALUES])
+    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES:
+        blockers.append("critical_cues_missing")
+
+    if normalized.get("deer_age") is None and len(visible_age_cues) < 2:
+        blockers.append("insufficient_visible_age_cues")
+
+    blockers = list(dict.fromkeys(blockers))
+
+    if blockers:
+        normalized["age_estimation_allowed"] = False
+        normalized["retake_reason"] = build_age_quality_gate_reason(blockers, normalized.get("retake_reason"))
+        if normalized.get("abstain_reason") is None:
+            normalized["abstain_reason"] = derive_abstain_reason_from_blockers(blockers)
+        normalized["deer_age"] = None
+        normalized["age_bucket"] = None
+        normalized["age_range"] = None
+        normalized["buck_age_class"] = None
+        normalized["recommendation"] = None
+        normalized["raw_age_confidence"] = 0
+        normalized["raw_recommendation_confidence"] = 0
+        normalized["confidence"] = 0
+        normalized["reasoning"] = normalized["retake_reason"]
+    else:
+        normalized["age_estimation_allowed"] = True if normalized.get("age_estimation_allowed") is None else bool(normalized.get("age_estimation_allowed"))
+        normalized["retake_reason"] = None
+        normalized["abstain_reason"] = None
+
+    return normalized
+
+
+def build_scan_context(
+    scan_state: Optional[str],
+    user_profile_state: Optional[str],
+    scan_datetime: datetime,
+    notes: Optional[str] = None,
+) -> Dict[str, Any]:
+    region_info = determine_region(scan_state=scan_state, user_profile_state=user_profile_state)
+    season_bucket = get_season_bucket(scan_datetime, region_info.region_key.value)
+    clean_notes = notes.strip() if isinstance(notes, str) and notes.strip() else None
+
+    return {
+        "state": region_info.region_state,
+        "region_key": region_info.region_key.value,
+        "region_source": region_info.region_source.value,
+        "season_bucket": season_bucket,
+        "notes": clean_notes,
+    }
+
+
+def format_scan_context_for_prompt(context: Dict[str, Any]) -> str:
+    region_key = context.get("region_key") or "unknown"
+    season_bucket = context.get("season_bucket") or "unknown"
+    lines = [
+        "Field context:",
+        f"- User-reported state: {context.get('state') or 'unknown'}",
+        f"- Region profile: {region_key}",
+        f"- Seasonal phase: {season_bucket}",
+        f"- Regional caution: {REGION_PROMPT_HINTS.get(region_key, REGION_PROMPT_HINTS['unknown'])}",
+        f"- Seasonal caution: {SEASON_PROMPT_HINTS.get(season_bucket, 'Use season only as supporting context, never as proof of age.')}",
+    ]
+    if context.get("notes"):
+        lines.append(f"- Hunter notes (supplemental, not ground truth): {context['notes']}")
+    return "\n".join(lines)
+
+
+def parse_json_response(response_text: str) -> Dict[str, Any]:
+    if not response_text:
+        raise ValueError("Empty model response")
+
+    if "```json" in response_text:
+        json_str = response_text.split("```json", 1)[1].split("```", 1)[0]
+    elif "```" in response_text:
+        json_str = response_text.split("```", 1)[1].split("```", 1)[0]
+    else:
+        json_str = response_text
+
+    parsed = json.loads(json_str.strip())
+    if not isinstance(parsed, dict):
+        raise ValueError("Model response was not a JSON object")
+    return parsed
+
+
+def normalize_model_analysis(
+    analysis: Dict[str, Any],
+    *,
+    prompt_version: str,
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Normalize model output into stable fields used by storage and calibration."""
+    normalized = dict(analysis)
+    normalized["analysis_prompt_version"] = prompt_version
+    normalized["analysis_context"] = {
+        "state": context.get("state"),
+        "region_key": context.get("region_key"),
+        "region_source": context.get("region_source"),
+        "season_bucket": context.get("season_bucket"),
+    }
+
+    if not normalized.get("is_valid_deer", False):
+        normalized["detected_subject"] = str(normalized.get("detected_subject") or "Unknown").strip() or "Unknown"
+        normalized["message"] = (
+            str(normalized.get("message")).strip()
+            if normalized.get("message")
+            else "This app is designed for Whitetail and Mule Deer only."
+        )
+        return normalized
+
+    stage_1 = normalized.get("stage_1_observations")
+    if isinstance(stage_1, dict):
+        if normalized.get("cue_checklist") is None and stage_1.get("cue_checklist") is not None:
+            normalized["cue_checklist"] = stage_1.get("cue_checklist")
+
+    stage_2 = normalized.get("stage_2_age_decision")
+    if isinstance(stage_2, dict):
+        if normalized.get("deer_age") is None and stage_2.get("primary_age") is not None:
+            normalized["deer_age"] = stage_2.get("primary_age")
+        if normalized.get("alternate_age") is None and stage_2.get("alternate_age") is not None:
+            normalized["alternate_age"] = stage_2.get("alternate_age")
+        if normalized.get("why_not_primary") is None and stage_2.get("why_not_primary") is not None:
+            normalized["why_not_primary"] = stage_2.get("why_not_primary")
+        if normalized.get("abstain_reason") is None and stage_2.get("abstain_reason") is not None:
+            normalized["abstain_reason"] = stage_2.get("abstain_reason")
+
+    normalized["deer_type"] = normalize_deer_type(normalized.get("deer_type"))
+    normalized["deer_sex"] = normalize_deer_sex(normalized.get("deer_sex"))
+    normalized["body_condition"] = normalize_body_condition(normalized.get("body_condition"))
+    normalized["buck_age_class"] = normalize_buck_age_class(normalized.get("buck_age_class"))
+    normalized["analysis_model"] = str(normalized.get("analysis_model") or "").strip() or None
+    normalized["age_estimation_allowed"] = normalize_optional_bool(normalized.get("age_estimation_allowed"))
+    normalized["retake_reason"] = str(normalized.get("retake_reason") or "").strip()[:280] or None
+    normalized["abstain_reason"] = normalize_abstain_reason(normalized.get("abstain_reason"))
+    normalized["visible_age_cues"] = normalize_visible_age_cues(normalized.get("visible_age_cues"))
+    normalized["cue_checklist"] = normalize_cue_checklist(normalized.get("cue_checklist"))
+    normalized["image_quality_bucket"] = normalize_quality_bucket(normalized.get("image_quality_bucket")) or "fair"
+    normalized["posture_bucket"] = normalize_posture_bucket(normalized.get("posture_bucket")) or "unknown"
+    foreshortening_risk = normalize_risk_level(
+        normalized.get("foreshortening_risk") or normalized.get("camera_angle_risk")
+    )
+    normalized["foreshortening_risk"] = foreshortening_risk
+    normalized["camera_angle_risk"] = foreshortening_risk
+    normalized["distance_risk"] = normalize_risk_level(normalized.get("distance_risk"))
+    normalized["quality_factors"] = normalize_quality_factors(normalized.get("quality_factors"))
+    normalized["age_evidence"] = normalize_age_evidence(normalized.get("age_evidence"))
+
+    antler_points_left = normalize_antler_points(normalized.get("antler_points_left"))
+    antler_points_right = normalize_antler_points(normalized.get("antler_points_right"))
+    antler_points_total = normalize_antler_points(normalized.get("antler_points"))
+
+    if normalized.get("deer_sex") == "Doe":
+        antler_points_left = None
+        antler_points_right = None
+        antler_points_total = None
+    elif antler_points_left is not None and antler_points_right is not None:
+        antler_points_total = antler_points_left + antler_points_right
+
+    normalized["antler_points_left"] = antler_points_left
+    normalized["antler_points_right"] = antler_points_right
+    normalized["antler_points"] = antler_points_total
+
+    age_confidence = clamp_confidence(normalized.get("age_confidence"))
+    recommendation_confidence = clamp_confidence(normalized.get("recommendation_confidence"))
+    legacy_confidence = clamp_confidence(normalized.get("confidence"))
+
+    if age_confidence is None:
+        age_confidence = legacy_confidence
+    if recommendation_confidence is None:
+        recommendation_confidence = legacy_confidence or age_confidence
+
+    angle_risk = normalize_risk_level(
+        normalized.get("foreshortening_risk") or normalized.get("camera_angle_risk")
+    )
+    distance_risk = normalize_risk_level(normalized.get("distance_risk"))
+    risk_penalty = 0
+    if angle_risk == "high":
+        risk_penalty += 10
+    elif angle_risk == "medium":
+        risk_penalty += 5
+    if distance_risk == "high":
+        risk_penalty += 10
+    elif distance_risk == "medium":
+        risk_penalty += 5
+    if risk_penalty:
+        if age_confidence is not None:
+            age_confidence = max(0, age_confidence - risk_penalty)
+        if recommendation_confidence is not None:
+            recommendation_confidence = max(0, recommendation_confidence - risk_penalty)
+
+    normalized["raw_age_confidence"] = age_confidence
+    normalized["raw_recommendation_confidence"] = recommendation_confidence
+    normalized["confidence"] = recommendation_confidence or age_confidence or 0
+
+    normalized.pop("age_confidence", None)
+    normalized.pop("recommendation_confidence", None)
+
+    deer_age = normalize_estimated_age(normalized.get("deer_age"))
+    alternate_age = normalize_estimated_age(normalized.get("alternate_age"))
+    buck_age_class = normalized.get("buck_age_class")
+
+    if normalized.get("deer_sex") != "Buck":
+        buck_age_class = None
+    else:
+        if buck_age_class is None:
+            buck_age_class = derive_buck_age_class(deer_age, normalized.get("deer_sex"))
+        deer_age = resolve_buck_age_from_class(deer_age, buck_age_class)
+
+    normalized["deer_age"] = deer_age
+    normalized["alternate_age"] = alternate_age
+    normalized["age_bucket"] = derive_age_bucket(deer_age)
+    normalized["age_range"] = derive_age_range(deer_age)
+    normalized["buck_age_class"] = buck_age_class
+
+    normalized["recommendation"] = derive_management_recommendation(
+        normalized.get("recommendation"),
+        deer_age,
+        normalized.get("age_estimation_allowed"),
+    )
+    normalized["why_not_primary"] = str(normalized.get("why_not_primary") or "").strip()[:220] or None
+
+    # Penalize confidence if the model's alternate age meaningfully disagrees.
+    if deer_age is not None and alternate_age is not None and abs(deer_age - alternate_age) > 0.5:
+        normalized["raw_age_confidence"] = max(0, int((normalized.get("raw_age_confidence") or 0) - 10))
+        normalized["raw_recommendation_confidence"] = max(
+            0,
+            int((normalized.get("raw_recommendation_confidence") or 0) - 8),
+        )
+        normalized["confidence"] = normalized["raw_recommendation_confidence"] or normalized["raw_age_confidence"] or 0
+
+    normalized["reasoning"] = str(normalized.get("reasoning") or "").strip() or None
+
+    return apply_age_estimation_gate(normalized)
+
+
+def build_analysis_system_prompt() -> str:
+    return f"""You are an expert wildlife biologist specializing in deer identification and field-aging from photos.
+
+Return ONLY valid JSON. Do not include markdown fences or commentary.
+
+First determine whether the image contains a valid deer for this app. Only Whitetail and Mule Deer are valid.
+
+If the image does NOT contain a valid deer, return:
+{{
+  "is_valid_deer": false,
+  "detected_subject": "<what is in the image>",
+  "message": "<friendly message explaining the app is for Whitetail and Mule Deer only>"
+}}
+
+If the image DOES contain a valid deer, return:
+{{
+  "is_valid_deer": true,
+  "stage_1_observations": {{
+    "summary": "<2-3 sentence body-profile summary>",
+    "cue_checklist": [
+      {{"cue": "<cue>", "visibility": "<visible|not_visible|unclear>"}}
+    ]
+  }},
+  "stage_2_age_decision": {{
+    "primary_age": <number or null>,
+    "alternate_age": <number or null>,
+    "why_not_primary": "<short explanation or null>",
+    "abstain_reason": <"insufficient_profile" | "heavy_occlusion" | "low_resolution_or_blur" | "distance_or_perspective" | "pose_not_supported" | "mixed_or_conflicting_cues" | "insufficient_visible_age_cues" | "other" | null>
+  }},
+  "age_estimation_allowed": <true or false>,
+  "retake_reason": <string or null>,
+  "abstain_reason": <same enum or null>,
+  "visible_age_cues": [
+    <"chest_depth" | "belly_sag" | "backline" | "leg_to_body_ratio" | "leg_apparent_length" | "face_length" | "neck_brisket" | "neck_to_face_ratio" | "body_mass" | "hindquarters" | "chest_vs_hindquarters" | "waistline" | "head_blockiness" | "forehead_muzzle" | "tarsal_staining">
+  ],
+  "deer_age": <number or null>,
+  "alternate_age": <number or null>,
+  "why_not_primary": <string or null>,
+  "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
+  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
+  "age_confidence": <0-100>,
+  "recommendation_confidence": <0-100>,
+  "deer_type": <"Whitetail" or "Mule Deer">,
+  "deer_sex": <"Buck" or "Doe" or "Unknown">,
+  "antler_points": <integer or null>,
+  "antler_points_left": <integer or null>,
+  "antler_points_right": <integer or null>,
+  "body_condition": <"Poor" | "Fair" | "Good" | "Excellent" | "Unknown">,
+  "image_quality_bucket": <"excellent" | "good" | "fair" | "poor">,
+  "posture_bucket": <"broadside" | "angled" | "head_down" | "frontal" | "rear" | "unknown">,
+  "foreshortening_risk": <"low" | "medium" | "high">,
+  "distance_risk": <"low" | "medium" | "high">,
+  "cue_checklist": {{
+    "<cue>": <"visible" | "not_visible" | "unclear">
+  }},
+  "quality_factors": {{
+    "body_visibility": <"high" | "medium" | "low">,
+    "head_visibility": <"high" | "medium" | "low">,
+    "lighting": <"good" | "mixed" | "poor" | "unknown">,
+    "occlusion": <"low" | "medium" | "high" | "unknown">,
+    "distance_estimate": <"close" | "medium" | "far" | "unknown">,
+    "blur": <"low" | "medium" | "high" | "unknown">
+  }},
+  "age_evidence": [
+    {{"feature": "<cue>", "observation": "<what you observed>", "impact": "<older|younger|neutral|unknown>"}}
+  ],
+  "confidence": <0-100>,
+  "recommendation": <"HARVEST" or "PASS" or null>,
+  "reasoning": "<brief explanation>"
+}}
+
+Critical rules:
+- Use a two-stage method: (1) observation checklist, (2) age decision.
+- Fill `cue_checklist` for every major cue in this set: chest_depth, belly_sag, backline, leg_to_body_ratio, face_length, neck_brisket, body_mass, chest_vs_hindquarters, head_blockiness.
+- `cue_checklist` must include every key cue listed above with visibility `visible`, `not_visible`, or `unclear`.
+- If any required checklist key is missing, set `age_estimation_allowed` to false.
+- Do not set `age_estimation_allowed` true unless at least {MIN_VISIBLE_CRITICAL_AGE_CUES} critical cues are marked visible.
+- Body morphology is the primary basis for age. Antlers are only a weak secondary cue.
+- Use visible cues such as chest depth, belly sag, backline, leg length, face length, neck/brisket, chest-vs-hindquarter balance, waistline, head blockiness, tarsal staining, and overall body mass.
+- For bucks, first place the deer into the nearest buck age class, then make the numeric age align with that class.
+{BUCK_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+- For does, age from body profile only. If chest depth, belly line, backline, leg-to-body ratio, face length, and overall body mass are clearly visible, provide the best half-year estimate instead of defaulting to null.
+- For does, do not require antlers or buck-specific cues before giving an age estimate.
+- Rut-swollen necks, coat thickness, and perspective can mislead. Stay conservative.
+- `visible_age_cues` must only list cues that are clearly visible in the image.
+- If image_quality_bucket is `poor`, or body_visibility is `low`, or occlusion is `high`, or blur is `high`, or posture is `frontal` or `rear`, set `age_estimation_allowed` to false.
+- If key body cues are not clearly visible, set `age_estimation_allowed` to false.
+- When `age_estimation_allowed` is false:
+  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `recommendation` to null
+  - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
+  - provide `abstain_reason` from the enum
+  - provide a concise `retake_reason`
+- When `age_estimation_allowed` is true, set `retake_reason` to null.
+- When `age_estimation_allowed` is true, set `abstain_reason` to null.
+- Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
+- If `alternate_age` is provided, `why_not_primary` is required.
+- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
+- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- If deer_age is not null, use the half-year hunting convention and keep it to a single estimate such as 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, etc.
+- age_bucket and age_range must align with deer_age. If deer_age is null, set both to null.
+- For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
+- For does, do not force an age when evidence is weak.
+- For bucks, antler count may refine the estimate but must never dominate it.
+- Antler point count can never be a standalone basis for age.
+- If the deer is a doe, antler fields must be null.
+- Use `foreshortening_risk` and `distance_risk` to reflect perspective uncertainty.
+- Set confidence equal to recommendation_confidence for backward compatibility.
+- Provide 3 to 6 concise age_evidence items whenever possible."""
+
+
+def build_reanalysis_system_prompt() -> str:
+    return f"""You are an expert wildlife biologist specializing in deer aging and analysis.
+
+The user corrected some scan details after seeing the deer in person. Treat those corrections as authoritative facts.
+
+Return ONLY valid JSON. Do not include markdown fences or commentary.
+
+Return:
+{{
+  "stage_1_observations": {{
+    "summary": "<2-3 sentence body-profile summary>",
+    "cue_checklist": [
+      {{"cue": "<cue>", "visibility": "<visible|not_visible|unclear>"}}
+    ]
+  }},
+  "stage_2_age_decision": {{
+    "primary_age": <number or null>,
+    "alternate_age": <number or null>,
+    "why_not_primary": "<short explanation or null>",
+    "abstain_reason": <"insufficient_profile" | "heavy_occlusion" | "low_resolution_or_blur" | "distance_or_perspective" | "pose_not_supported" | "mixed_or_conflicting_cues" | "insufficient_visible_age_cues" | "other" | null>
+  }},
+  "age_estimation_allowed": <true or false>,
+  "retake_reason": <string or null>,
+  "abstain_reason": <same enum or null>,
+  "visible_age_cues": [
+    <"chest_depth" | "belly_sag" | "backline" | "leg_to_body_ratio" | "leg_apparent_length" | "face_length" | "neck_brisket" | "neck_to_face_ratio" | "body_mass" | "hindquarters" | "chest_vs_hindquarters" | "waistline" | "head_blockiness" | "forehead_muzzle" | "tarsal_staining">
+  ],
+  "deer_age": <number or null>,
+  "alternate_age": <number or null>,
+  "why_not_primary": <string or null>,
+  "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
+  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
+  "age_confidence": <0-100>,
+  "recommendation_confidence": <0-100>,
+  "deer_type": <"Whitetail" or "Mule Deer">,
+  "deer_sex": <"Buck" or "Doe" or "Unknown">,
+  "antler_points": <integer or null>,
+  "antler_points_left": <integer or null>,
+  "antler_points_right": <integer or null>,
+  "body_condition": <"Poor" | "Fair" | "Good" | "Excellent" | "Unknown">,
+  "image_quality_bucket": <"excellent" | "good" | "fair" | "poor">,
+  "posture_bucket": <"broadside" | "angled" | "head_down" | "frontal" | "rear" | "unknown">,
+  "foreshortening_risk": <"low" | "medium" | "high">,
+  "distance_risk": <"low" | "medium" | "high">,
+  "cue_checklist": {{
+    "<cue>": <"visible" | "not_visible" | "unclear">
+  }},
+  "quality_factors": {{
+    "body_visibility": <"high" | "medium" | "low">,
+    "head_visibility": <"high" | "medium" | "low">,
+    "lighting": <"good" | "mixed" | "poor" | "unknown">,
+    "occlusion": <"low" | "medium" | "high" | "unknown">,
+    "distance_estimate": <"close" | "medium" | "far" | "unknown">,
+    "blur": <"low" | "medium" | "high" | "unknown">
+  }},
+  "age_evidence": [
+    {{"feature": "<cue>", "observation": "<what you observed>", "impact": "<older|younger|neutral|unknown>"}}
+  ],
+  "confidence": <0-100>,
+  "recommendation": <"HARVEST" or "PASS" or null>,
+  "reasoning": "<brief explanation>"
+}}
+
+Critical rules:
+- Use user corrections as hard constraints.
+- Do not use the previous AI age estimate as evidence.
+- Use a two-stage method: (1) observation checklist, (2) age decision.
+- Fill `cue_checklist` for every major cue in this set: chest_depth, belly_sag, backline, leg_to_body_ratio, face_length, neck_brisket, body_mass, chest_vs_hindquarters, head_blockiness.
+- `cue_checklist` must include every key cue listed above with visibility `visible`, `not_visible`, or `unclear`.
+- If any required checklist key is missing, set `age_estimation_allowed` to false.
+- Do not set `age_estimation_allowed` true unless at least {MIN_VISIBLE_CRITICAL_AGE_CUES} critical cues are marked visible.
+- Body morphology is the primary basis for age. Antlers are only a weak secondary cue.
+- For bucks, first place the deer into the nearest buck age class, then make the numeric age align with that class.
+{BUCK_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+- Corrected antler points may inform the analysis slightly, but they must not dominate age.
+- If the corrected sex is Doe, all antler fields must be null.
+- For does, age from body profile only and do not require antlers or buck-specific cues before giving an age estimate.
+- `visible_age_cues` must only list cues that are clearly visible in the image.
+- If image_quality_bucket is `poor`, or body_visibility is `low`, or occlusion is `high`, or blur is `high`, or posture is `frontal` or `rear`, set `age_estimation_allowed` to false.
+- If key body cues remain unclear, set `age_estimation_allowed` to false instead of forcing a number.
+- When `age_estimation_allowed` is false:
+  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `recommendation` to null
+  - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
+  - provide `abstain_reason` from the enum
+  - provide a concise `retake_reason`
+- When `age_estimation_allowed` is true, set `retake_reason` to null.
+- When `age_estimation_allowed` is true, set `abstain_reason` to null.
+- Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
+- If `alternate_age` is provided, `why_not_primary` is required.
+- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
+- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- Keep deer_age to the half-year hunting convention when not null.
+- For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
+- For does, use visible body cues when they are available; only abstain when the photo truly lacks enough anatomy to age reliably.
+- Antler point count can never be a standalone basis for age.
+- Use `foreshortening_risk` and `distance_risk` to reflect perspective uncertainty.
+- Set confidence equal to recommendation_confidence for backward compatibility."""
 
 def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     """
@@ -677,12 +2138,43 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     region_key = scan.get("region_key") if config.CALIBRATION_SHOW_REGION else None
     calibration_strategy = scan.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None
     calibration_fallback_reason = scan.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None
-    
+    age_estimation_allowed = scan.get("age_estimation_allowed")
+    if age_estimation_allowed is None:
+        age_estimation_allowed = scan.get("retake_reason") is None
+    normalized_bc_score = normalize_saved_bc_score(scan.get("boone_crockett_score"))
+    raw_response = scan.get("raw_response") or {}
+    boone_crockett_status = scan.get("boone_crockett_status")
+    if boone_crockett_status is None and isinstance(normalized_bc_score, dict):
+        boone_crockett_status = normalized_bc_score.get("status")
+    boone_crockett_gross = scan.get("boone_crockett_gross")
+    boone_crockett_net = scan.get("boone_crockett_net")
+    boone_crockett_final_score = scan.get("boone_crockett_final_score")
+    if isinstance(normalized_bc_score, dict):
+        computed = normalized_bc_score.get("computed") or {}
+        boone_crockett_gross = boone_crockett_gross if boone_crockett_gross is not None else computed.get("grossScore")
+        boone_crockett_net = boone_crockett_net if boone_crockett_net is not None else computed.get("finalScore")
+        boone_crockett_final_score = (
+            boone_crockett_final_score
+            if boone_crockett_final_score is not None
+            else computed.get("finalScore")
+        )
+
     return DeerAnalysisResponse(
         id=scan["id"],
         user_id=scan["user_id"],
         local_image_id=scan["local_image_id"],
         deer_age=scan["deer_age"],
+        age_bucket=scan.get("age_bucket"),
+        age_range=scan.get("age_range"),
+        buck_age_class=scan.get("buck_age_class"),
+        age_evidence=scan.get("age_evidence") or [],
+        cue_checklist=raw_response.get("cue_checklist") if isinstance(raw_response.get("cue_checklist"), dict) else {},
+        alternate_age=raw_response.get("alternate_age"),
+        why_not_primary=raw_response.get("why_not_primary"),
+        abstain_reason=raw_response.get("abstain_reason"),
+        foreshortening_risk=raw_response.get("foreshortening_risk") or raw_response.get("camera_angle_risk"),
+        camera_angle_risk=raw_response.get("camera_angle_risk") or raw_response.get("foreshortening_risk"),
+        distance_risk=raw_response.get("distance_risk"),
         deer_type=scan["deer_type"],
         deer_sex=scan["deer_sex"],
         antler_points=scan["antler_points"],
@@ -702,11 +2194,29 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         region_key=region_key,
         calibration_strategy=calibration_strategy,
         calibration_fallback_reason=calibration_fallback_reason,
+        image_quality_bucket=scan.get("image_quality_bucket"),
+        quality_factors=scan.get("quality_factors") or {},
+        posture_bucket=scan.get("posture_bucket"),
+        analysis_prompt_version=scan.get("analysis_prompt_version"),
+        analysis_model=scan.get("analysis_model"),
+        age_estimation_allowed=age_estimation_allowed,
+        retake_reason=scan.get("retake_reason"),
+        visible_age_cues=scan.get("visible_age_cues") or [],
+        consensus=(scan.get("raw_response") or {}).get("consensus"),
         # Cloud image storage (R2) - for cross-device image access
         image_url=scan.get("image_url"),
         # Favorites and Tags
         is_favorite=scan.get("is_favorite") or False,
         tags=scan.get("tags") or [],
+        harvest_confirmed=bool(scan.get("harvest_confirmed")) if scan.get("harvest_confirmed") is not None else False,
+        harvested_at=scan.get("harvested_at"),
+        boone_crockett_score=normalized_bc_score,
+        boone_crockett_gross=boone_crockett_gross,
+        boone_crockett_net=boone_crockett_net,
+        boone_crockett_final_score=boone_crockett_final_score,
+        boone_crockett_status=boone_crockett_status,
+        boone_crockett_calculated_at=scan.get("boone_crockett_calculated_at"),
+        boone_crockett_updated_at=scan.get("boone_crockett_updated_at"),
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
@@ -1813,102 +3323,80 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         image_data = data.image_base64
         if not image_data.startswith("data:"):
             image_data = f"data:image/jpeg;base64,{image_data}"
-        
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are an expert wildlife biologist specializing in deer identification and aging.
-                    
-                    FIRST, determine what is in the image. Return ONLY valid JSON.
-                    
-                    If the image does NOT contain a deer (Whitetail or Mule Deer only), return:
-                    {
-                        "is_valid_deer": false,
-                        "detected_subject": <string describing what you see - e.g., "Elk", "Moose", "Wild Hog", "Turkey", "Coyote", "Wolf", "Bobcat", "Bear", "Person", "Landscape", "Unknown Object", etc.>,
-                        "message": <friendly message explaining this app is for Whitetail and Mule Deer only>
-                    }
-                    
-                    Note: Elk and Moose are NOT deer for this app's purposes. Only Whitetail Deer and Mule Deer are valid.
-                    
-                    If the image DOES contain a valid deer (Whitetail or Mule Deer), return:
-                    {
-                        "is_valid_deer": true,
-                        "deer_age": <number - estimate age in years>,
-                        "deer_type": <"Whitetail" or "Mule Deer">,
-                        "deer_sex": <"Buck" or "Doe" or "Unknown">,
-                        "antler_points": <total number or null for does>,
-                        "antler_points_left": <number of points on left antler or null for does>,
-                        "antler_points_right": <number of points on right antler or null for does>,
-                        "body_condition": <string>,
-                        "confidence": <number 1-100>,
-                        "recommendation": <"HARVEST" or "PASS">,
-                        "reasoning": <string>
-                    }
-                    
-                    AGING GUIDELINES:
-                    
-                    For BUCKS, use these indicators:
-                    - Body mass and muscle development
-                    - Neck thickness and shape (especially during rut)
-                    - Antler mass, beam length, and spread
-                    - Chest depth and belly sag
-                    - Legs appearing shorter relative to body
-                    - Face/muzzle length and Roman nose development
-                    
-                    For DOES, use these indicators (ALWAYS provide an age estimate for does):
-                    - Body size and overall mass
-                    - Face length and shape (longer, more rectangular face = older)
-                    - Neck length relative to body
-                    - Belly sag and chest depth
-                    - Overall body condition and fat deposits
-                    - Legs appearing shorter relative to body in mature does
-                    - Fawn vs yearling vs mature doe body proportions
-                    
-                    Age ranges:
-                    - Fawn: 0.5 years (small body, short face)
-                    - Yearling: 1.5 years (long legs, slender body)
-                    - Young adult: 2.5-3.5 years (filling out, athletic build)
-                    - Mature: 4.5-5.5 years (full body, sagging belly possible)
-                    - Older: 6.5+ years (prominent belly sag, worn appearance)
-                    
-                    For antler points (BUCKS ONLY), count tines on each side separately. Total should equal left + right.
-                    For DOES, set antler fields to null."""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Analyze this image:"},
-                        {"type": "image_url", "image_url": {"url": image_data}}
-                    ]
-                }
-            ],
-            max_tokens=1000
+        scan_created_at = datetime.utcnow()
+        selected_model, model_variant = select_analysis_model(
+            user_id=user["id"],
+            local_image_id=data.local_image_id,
         )
-        
-        response_text = response.choices[0].message.content
-        
-        try:
-            if "```json" in response_text:
-                json_str = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                json_str = response_text.split("```")[1].split("```")[0]
-            else:
-                json_str = response_text
-            analysis = json.loads(json_str.strip())
-        except json.JSONDecodeError:
+        user_profile_state = user.get("state")
+        scan_context = build_scan_context(
+            scan_state=data.state,
+            user_profile_state=user_profile_state,
+            scan_datetime=scan_created_at,
+            notes=data.notes,
+        )
+        context_text = format_scan_context_for_prompt(scan_context)
+        logger.info(
+            "Using analysis model %s for user %s local_image_id %s (variant=%s)",
+            selected_model,
+            user["id"],
+            data.local_image_id,
+            model_variant,
+        )
+
+        user_content = [
+            {
+                "type": "text",
+                "text": (
+                    "Analyze this image and return JSON only.\n\n"
+                    f"{context_text}\n\n"
+                    "Use region and season as supporting context only. "
+                    "Visible body anatomy must dominate the age estimate."
+                ),
+            },
+            {"type": "image_url", "image_url": {"url": image_data}},
+        ]
+
+        initial_analysis = run_model_analysis_pass(
+            model=selected_model,
+            system_prompt=build_analysis_system_prompt(),
+            user_content=user_content,
+            max_output_tokens=1400,
+            prompt_version=ANALYSIS_PROMPT_VERSION,
+            context=scan_context,
+        )
+
+        if initial_analysis is None:
             analysis = {
                 "is_valid_deer": False,
                 "detected_subject": "Unknown",
-                "message": "Could not analyze the image. Please try again with a clearer photo."
+                "message": "Could not analyze the image. Please try again with a clearer photo.",
             }
-        
+        else:
+            analysis = maybe_apply_selective_consensus(
+                initial_analysis=initial_analysis,
+                total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
+                pass_builder=lambda: run_model_analysis_pass(
+                    model=selected_model,
+                    system_prompt=build_analysis_system_prompt(),
+                    user_content=user_content,
+                    max_output_tokens=1400,
+                    prompt_version=ANALYSIS_PROMPT_VERSION,
+                    context=scan_context,
+                ),
+            )
+            if analysis.get("consensus"):
+                logger.info(
+                    "Selective consensus applied for scan local_image_id %s: %s",
+                    data.local_image_id,
+                    analysis.get("consensus"),
+                )
+
         # Check if this is a valid deer image
         if not analysis.get("is_valid_deer", False):
             detected = analysis.get("detected_subject", "Unknown")
             message = analysis.get("message", f"This image appears to contain {detected}, not a deer.")
-            
+
             # Return rejection without saving or using a scan
             raise HTTPException(
                 status_code=400,
@@ -1919,19 +3407,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     "save_scan": False
                 }
             )
-        
         # Apply region-aware confidence calibration
-        # Get user's profile state for fallback
-        user_profile_state = user.get("state")
-        
+        active_curves = await get_live_active_curves()
         calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
             analysis=analysis,
             state=data.state,  # From request
-            user_profile_state=user_profile_state  # Fallback from user profile
+            user_profile_state=user_profile_state,  # Fallback from user profile
+            active_curves=active_curves,
         )
-        
+
         scan_id = str(uuid.uuid4())
-        
+
         # Upload image to R2 cloud storage for cross-device access
         image_url = None
         if R2_ENABLED:
@@ -1948,6 +3434,10 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             user_id=user["id"],
             local_image_id=data.local_image_id,
             deer_age=calibrated_analysis.get("deer_age"),  # May be null if age_uncertain
+            age_bucket=calibrated_analysis.get("age_bucket"),
+            age_range=calibrated_analysis.get("age_range"),
+            buck_age_class=calibrated_analysis.get("buck_age_class"),
+            age_evidence=calibrated_analysis.get("age_evidence"),
             deer_type=calibrated_analysis.get("deer_type"),
             deer_sex=calibrated_analysis.get("deer_sex"),
             antler_points=calibrated_analysis.get("antler_points"),
@@ -1959,9 +3449,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
             raw_response=analysis,  # Preserve original for debugging
-            created_at=datetime.utcnow(),
+            created_at=scan_created_at,
             # Calibration fields
             raw_confidence=calibrated_analysis.get("raw_confidence"),
+            raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
+            raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
             age_confidence=calibrated_analysis.get("age_confidence"),
             recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
             age_uncertain=calibrated_analysis.get("age_uncertain", False),
@@ -1972,21 +3464,41 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             region_state=calibrated_analysis.get("region_state"),
             calibration_strategy=calibrated_analysis.get("calibration_strategy"),
             calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
+            season_bucket=scan_context.get("season_bucket"),
+            analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+            analysis_model=selected_model,
+            age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
+            retake_reason=calibrated_analysis.get("retake_reason"),
+            visible_age_cues=calibrated_analysis.get("visible_age_cues"),
+            image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
+            quality_factors=calibrated_analysis.get("quality_factors"),
+            posture_bucket=calibrated_analysis.get("posture_bucket"),
             # Cloud image storage (R2)
             image_url=image_url,
         )
         await database.execute(query)
-        
+
         await use_scan(user)
-        
+
         # Build response with feature-flagged fields
         config = RegionCalibrationConfig
-        
+
         return DeerAnalysisResponse(
             id=scan_id,
             user_id=user["id"],
             local_image_id=data.local_image_id,
             deer_age=calibrated_analysis.get("deer_age"),
+            age_bucket=calibrated_analysis.get("age_bucket"),
+            age_range=calibrated_analysis.get("age_range"),
+            buck_age_class=calibrated_analysis.get("buck_age_class"),
+            age_evidence=calibrated_analysis.get("age_evidence") or [],
+            cue_checklist=calibrated_analysis.get("cue_checklist") or {},
+            alternate_age=calibrated_analysis.get("alternate_age"),
+            why_not_primary=calibrated_analysis.get("why_not_primary"),
+            abstain_reason=calibrated_analysis.get("abstain_reason"),
+            foreshortening_risk=calibrated_analysis.get("foreshortening_risk") or calibrated_analysis.get("camera_angle_risk"),
+            camera_angle_risk=calibrated_analysis.get("camera_angle_risk") or calibrated_analysis.get("foreshortening_risk"),
+            distance_risk=calibrated_analysis.get("distance_risk"),
             deer_type=calibrated_analysis.get("deer_type"),
             deer_sex=calibrated_analysis.get("deer_sex"),
             antler_points=calibrated_analysis.get("antler_points"),
@@ -1997,7 +3509,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             recommendation=calibrated_analysis.get("recommendation"),
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
-            created_at=datetime.utcnow(),
+            created_at=scan_created_at,
             # Calibration fields
             age_uncertain=calibrated_analysis.get("age_uncertain"),
             confidence_breakdown={
@@ -2009,6 +3521,15 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
             calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
             calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None,
+            image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
+            quality_factors=calibrated_analysis.get("quality_factors") or {},
+            posture_bucket=calibrated_analysis.get("posture_bucket"),
+            analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+            analysis_model=selected_model,
+            age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
+            retake_reason=calibrated_analysis.get("retake_reason"),
+            visible_age_cues=calibrated_analysis.get("visible_age_cues") or [],
+            consensus=calibrated_analysis.get("consensus"),
             # Cloud image storage (R2)
             image_url=image_url,
         )
@@ -2067,16 +3588,103 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
     
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
-    
+    scan = dict(scan)
+
+    update_values: Dict[str, Any] = {}
+
     if data.notes is not None:
+        update_values["notes"] = data.notes
+
+    effective_harvest_confirmed = scan.get("harvest_confirmed")
+    if data.harvest_confirmed is not None:
+        effective_harvest_confirmed = data.harvest_confirmed
+        update_values["harvest_confirmed"] = data.harvest_confirmed
+        update_values["harvested_at"] = datetime.utcnow() if data.harvest_confirmed else None
+        if not data.harvest_confirmed:
+            update_values["boone_crockett_score"] = None
+            update_values["boone_crockett_gross"] = None
+            update_values["boone_crockett_net"] = None
+            update_values["boone_crockett_final_score"] = None
+            update_values["boone_crockett_status"] = None
+            update_values["boone_crockett_calculated_at"] = None
+            update_values["boone_crockett_updated_at"] = None
+
+    if data.boone_crockett_measurements is not None:
+        if not effective_harvest_confirmed:
+            raise HTTPException(
+                status_code=400,
+                detail="Unofficial Boone & Crockett scoring is only available for harvested bucks."
+            )
+        requested_score_type = None
+        if isinstance(data.boone_crockett_measurements, dict):
+            requested_score_type = data.boone_crockett_measurements.get("type")
+
+        if not is_bc_score_type_allowed_for_scan(
+            score_type=requested_score_type or "typical_whitetail_unofficial",
+            deer_type=scan.get("deer_type"),
+            deer_sex=scan.get("deer_sex"),
+            harvest_confirmed=bool(effective_harvest_confirmed),
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="This score type does not match the harvested buck record."
+            )
+
+        disclaimer_accepted = data.boone_crockett_disclaimer_accepted
+        if disclaimer_accepted is None:
+            disclaimer_accepted = bool(
+                (scan.get("boone_crockett_score") or {}).get("disclaimerAccepted")
+            )
+
+        normalized_entry = normalize_bc_score_entry(
+            data.boone_crockett_measurements,
+            bool(disclaimer_accepted),
+        )
+        if normalized_entry is None:
+            update_values["boone_crockett_score"] = None
+            update_values["boone_crockett_gross"] = None
+            update_values["boone_crockett_net"] = None
+            update_values["boone_crockett_final_score"] = None
+            update_values["boone_crockett_status"] = None
+            update_values["boone_crockett_calculated_at"] = None
+            update_values["boone_crockett_updated_at"] = None
+        else:
+            score_type = normalized_entry.get("type")
+            if not is_supported_bc_score_type(score_type):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{get_bc_score_type_label(score_type)} scoring is not implemented yet."
+                )
+            score = build_bc_score_record(normalized_entry, calculated_at=datetime.utcnow())
+            update_values["boone_crockett_score"] = score
+            update_values["boone_crockett_gross"] = score["computed"].get("grossScore")
+            update_values["boone_crockett_net"] = score["computed"].get("finalScore")
+            update_values["boone_crockett_final_score"] = score["computed"].get("finalScore")
+            update_values["boone_crockett_status"] = score.get("status")
+            score_timestamp = datetime.fromisoformat(score["updatedAt"])
+            if score_timestamp.tzinfo is not None:
+                score_timestamp = score_timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+            update_values["boone_crockett_calculated_at"] = score_timestamp
+            update_values["boone_crockett_updated_at"] = score_timestamp
+            update_values["antler_points_left"] = score["pointsSummary"].get("leftPointsCount")
+            update_values["antler_points_right"] = score["pointsSummary"].get("rightPointsCount")
+            left_points = score["pointsSummary"].get("leftPointsCount")
+            right_points = score["pointsSummary"].get("rightPointsCount")
+            update_values["antler_points"] = (
+                (left_points or 0) + (right_points or 0)
+                if left_points is not None or right_points is not None
+                else None
+            )
+
+    if update_values:
         query = scans_table.update().where(
             scans_table.c.id == scan_id
-        ).values(notes=data.notes)
+        ).values(**update_values)
         await database.execute(query)
-    
+
     query = scans_table.select().where(scans_table.c.id == scan_id)
     scan = await database.fetch_one(query)
-    
+
     return build_scan_response(dict(scan))
 
 
@@ -2105,6 +3713,7 @@ async def toggle_favorite(
     
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+    scan = dict(scan)
     
     # Update favorite status
     update_query = scans_table.update().where(
@@ -2277,6 +3886,12 @@ async def add_scan_label(
             status_code=400,
             detail="accuracy_category must be 'exact', 'close', or 'off'"
         )
+
+    if data.reported_age is not None and (data.reported_age < 0 or data.reported_age > 15.5):
+        raise HTTPException(
+            status_code=400,
+            detail="reported_age must be between 0 and 15.5 years"
+        )
     
     # Get the scan
     query = scans_table.select().where(
@@ -2287,19 +3902,13 @@ async def add_scan_label(
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    # Check if label already exists for this scan
-    existing_label = await database.fetch_one(
-        "SELECT id FROM scan_labels WHERE scan_id = :scan_id",
-        {"scan_id": scan_id}
-    )
-    if existing_label:
-        raise HTTPException(
-            status_code=400,
-            detail="Label already exists for this scan. Delete existing label first to re-label."
-        )
-    
     # Determine label type
     label_type = "exact_age" if data.reported_age is not None else "categorical"
+    age_source = normalize_age_source(data.age_source) if label_type == "exact_age" else None
+    labeler_role = normalize_labeler_role(data.labeler_role) or "self"
+
+    if label_type == "exact_age" and age_source is None:
+        age_source = "unknown"
     
     # Compute error metrics for exact age labels
     prediction_error = None
@@ -2318,7 +3927,15 @@ async def add_scan_label(
     # Compute weights
     base_weight = compute_label_weight(label_type, data.accuracy_category, data.harvest_confirmed)
     credibility = await compute_credibility_factor(user["id"], data.harvest_confirmed)
-    effective_weight = base_weight * credibility
+    source_multiplier = compute_age_source_multiplier(age_source) if label_type == "exact_age" else 1.0
+    role_multiplier = compute_labeler_role_multiplier(labeler_role)
+    effective_weight = base_weight * credibility * source_multiplier * role_multiplier
+    trust_source = derive_label_trust_source(
+        age_source=age_source,
+        labeler_role=labeler_role,
+        harvest_confirmed=data.harvest_confirmed,
+    )
+    label_source = derive_label_source(age_source, labeler_role, data.harvest_confirmed)
     
     # Compute age_correct and recommendation_correct for curve building
     # age_correct: True if exact match, None if can't determine
@@ -2336,7 +3953,7 @@ async def add_scan_label(
             # - HARVEST was given for mature deer (3.5+ years) AND deer was actually mature
             # - PASS was given for young deer AND deer was actually young
             recommendation = scan["recommendation"]
-            actual_mature = data.reported_age >= 3.5
+            actual_mature = is_mature_harvest_age(data.reported_age)
             if recommendation == "HARVEST":
                 recommendation_correct = actual_mature
             else:
@@ -2363,13 +3980,13 @@ async def add_scan_label(
             id, scan_id, user_id, label_type, label_weight, reported_age, 
             accuracy_category, prediction_error, error_bucket, harvest_confirmed,
             credibility_factor, effective_weight, notes, created_at, labeled_at,
-            label_source, trust_source, trust_weight, label_version,
+            age_source, labeler_role, label_source, trust_source, trust_weight, label_version,
             age_correct, recommendation_correct
         ) VALUES (
             :id, :scan_id, :user_id, :label_type, :label_weight, :reported_age,
             :accuracy_category, :prediction_error, :error_bucket, :harvest_confirmed,
             :credibility_factor, :effective_weight, :notes, :created_at, :labeled_at,
-            :label_source, :trust_source, :trust_weight, :label_version,
+            :age_source, :labeler_role, :label_source, :trust_source, :trust_weight, :label_version,
             :age_correct, :recommendation_correct
         )
         """,
@@ -2389,8 +4006,10 @@ async def add_scan_label(
             "notes": data.notes,
             "created_at": now,
             "labeled_at": now,
-            "label_source": "user_self_report",
-            "trust_source": "self_reported",
+            "age_source": age_source,
+            "labeler_role": labeler_role,
+            "label_source": label_source,
+            "trust_source": trust_source,
             "trust_weight": effective_weight,
             "label_version": 1,  # Current weighting schema version
             "age_correct": age_correct,
@@ -2401,7 +4020,8 @@ async def add_scan_label(
     logger.info(
         f"Scan label created: scan={scan_id}, type={label_type}, "
         f"weight={base_weight:.2f}, credibility={credibility:.2f}, "
-        f"effective={effective_weight:.2f}, error_bucket={error_bucket}"
+        f"effective={effective_weight:.2f}, age_source={age_source}, "
+        f"labeler_role={labeler_role}, error_bucket={error_bucket}"
     )
     
     return ScanLabelResponse(
@@ -2415,6 +4035,9 @@ async def add_scan_label(
         error_bucket=error_bucket,
         prediction_error=prediction_error,
         harvest_confirmed=data.harvest_confirmed,
+        age_source=age_source,
+        labeler_role=labeler_role,
+        trust_source=trust_source,
         created_at=now,
     )
 
@@ -2435,7 +4058,7 @@ async def get_scan_label(
     
     # Get label
     label = await database.fetch_one(
-        "SELECT * FROM scan_labels WHERE scan_id = :scan_id",
+        "SELECT * FROM scan_labels WHERE scan_id = :scan_id ORDER BY created_at DESC LIMIT 1",
         {"scan_id": scan_id}
     )
     
@@ -2453,6 +4076,9 @@ async def get_scan_label(
         error_bucket=label["error_bucket"],
         prediction_error=label["prediction_error"],
         harvest_confirmed=label["harvest_confirmed"] or False,
+        age_source=label["age_source"],
+        labeler_role=label["labeler_role"],
+        trust_source=label["trust_source"],
         created_at=label["created_at"],
     )
 
@@ -2481,6 +4107,81 @@ async def delete_scan_label(
 
 
 # ============ ADMIN LABEL ENDPOINTS (for CLI and future dashboard) ============
+
+async def fetch_label_breakdown(
+    *,
+    segment_sql: str,
+    alias: str,
+    params: Dict[str, Any],
+    base_filter: str,
+) -> Dict[str, int]:
+    query = f"""
+        SELECT COALESCE({segment_sql}, 'unknown') as {alias}, COUNT(*) as count
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE 1=1 {base_filter}
+        GROUP BY COALESCE({segment_sql}, 'unknown')
+    """
+    rows = await database.fetch_all(query, params)
+    return {str(r[alias]): r["count"] for r in rows}
+
+
+async def fetch_exact_age_metrics_by_segment(
+    *,
+    segment_sql: str,
+    alias: str,
+    params: Dict[str, Any],
+    base_filter: str,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    query = f"""
+        SELECT
+            COALESCE({segment_sql}, 'unknown') as {alias},
+            AVG(ABS(s.deer_age - sl.reported_age)) as mae,
+            AVG(CASE WHEN ABS(s.deer_age - sl.reported_age) <= 0.5 THEN 1.0 ELSE 0.0 END) as within_half_accuracy
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE sl.label_type = 'exact_age'
+          AND sl.reported_age IS NOT NULL
+          AND s.deer_age IS NOT NULL
+          {base_filter}
+        GROUP BY COALESCE({segment_sql}, 'unknown')
+    """
+    rows = await database.fetch_all(query, params)
+    mae_by_segment: Dict[str, float] = {}
+    within_half_by_segment: Dict[str, float] = {}
+    for row in rows:
+        segment = str(row[alias])
+        if row["mae"] is not None:
+            mae_by_segment[segment] = round(float(row["mae"]), 3)
+        if row["within_half_accuracy"] is not None:
+            within_half_by_segment[segment] = round(float(row["within_half_accuracy"]), 3)
+    return mae_by_segment, within_half_by_segment
+
+
+async def fetch_exact_age_coverage_by_segment(
+    *,
+    segment_sql: str,
+    alias: str,
+    params: Dict[str, Any],
+    base_filter: str,
+) -> Dict[str, float]:
+    query = f"""
+        SELECT
+            COALESCE({segment_sql}, 'unknown') as {alias},
+            AVG(CASE WHEN s.deer_age IS NOT NULL THEN 1.0 ELSE 0.0 END) as coverage
+        FROM scan_labels sl
+        JOIN scans s ON sl.scan_id = s.id
+        WHERE sl.label_type = 'exact_age'
+          AND sl.reported_age IS NOT NULL
+          {base_filter}
+        GROUP BY COALESCE({segment_sql}, 'unknown')
+    """
+    rows = await database.fetch_all(query, params)
+    coverage_by_segment: Dict[str, float] = {}
+    for row in rows:
+        if row["coverage"] is not None:
+            coverage_by_segment[str(row[alias])] = round(float(row["coverage"]), 3)
+    return coverage_by_segment
 
 @api_router.get("/admin/calibration/labels/stats", response_model=LabelStatsResponse)
 async def get_label_stats(
@@ -2517,37 +4218,172 @@ async def get_label_stats(
     
     categorical_count = total_labels - exact_age_count
     
-    # By region
-    region_query = """
-        SELECT s.region_key, COUNT(*) as count 
+    by_region = await fetch_label_breakdown(
+        segment_sql="s.region_key",
+        alias="region_key",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_error_bucket = await fetch_label_breakdown(
+        segment_sql="sl.error_bucket",
+        alias="error_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_image_quality = await fetch_label_breakdown(
+        segment_sql="s.image_quality_bucket",
+        alias="image_quality_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_season_bucket = await fetch_label_breakdown(
+        segment_sql="s.season_bucket",
+        alias="season_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_posture_bucket = await fetch_label_breakdown(
+        segment_sql="s.posture_bucket",
+        alias="posture_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_age_estimation_allowed = await fetch_label_breakdown(
+        segment_sql="CAST(s.age_estimation_allowed AS TEXT)",
+        alias="age_estimation_allowed",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_age_source = await fetch_label_breakdown(
+        segment_sql="sl.age_source",
+        alias="age_source",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_labeler_role = await fetch_label_breakdown(
+        segment_sql="sl.labeler_role",
+        alias="labeler_role",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_analysis_model = await fetch_label_breakdown(
+        segment_sql="s.analysis_model",
+        alias="analysis_model",
+        params=params,
+        base_filter=base_filter,
+    )
+    by_prompt_version = await fetch_label_breakdown(
+        segment_sql="s.analysis_prompt_version",
+        alias="prompt_version",
+        params=params,
+        base_filter=base_filter,
+    )
+
+    exact_eval_query = f"""
+        SELECT
+            AVG(ABS(s.deer_age - sl.reported_age)) as mae,
+            AVG(CASE WHEN ABS(s.deer_age - sl.reported_age) <= 0.5 THEN 1.0 ELSE 0.0 END) as within_half_accuracy
         FROM scan_labels sl
         JOIN scans s ON sl.scan_id = s.id
-        WHERE s.region_key IS NOT NULL
-        GROUP BY s.region_key
+        WHERE sl.label_type = 'exact_age'
+          AND sl.reported_age IS NOT NULL
+          AND s.deer_age IS NOT NULL
+          {base_filter}
     """
-    region_results = await database.fetch_all(region_query)
-    by_region = {r["region_key"]: r["count"] for r in region_results}
-    
-    # By error bucket
-    bucket_query = """
-        SELECT error_bucket, COUNT(*) as count 
-        FROM scan_labels 
-        WHERE error_bucket IS NOT NULL
-        GROUP BY error_bucket
-    """
-    bucket_results = await database.fetch_all(bucket_query)
-    by_error_bucket = {r["error_bucket"]: r["count"] for r in bucket_results}
-    
-    # By image quality
-    quality_query = """
-        SELECT s.image_quality_bucket, COUNT(*) as count 
+    exact_eval_result = await database.fetch_one(exact_eval_query, params)
+    exact_age_mae = None
+    exact_age_within_half_accuracy = None
+    if exact_eval_result:
+        if exact_eval_result["mae"] is not None:
+            exact_age_mae = round(float(exact_eval_result["mae"]), 3)
+        if exact_eval_result["within_half_accuracy"] is not None:
+            exact_age_within_half_accuracy = round(float(exact_eval_result["within_half_accuracy"]), 3)
+    exact_coverage_query = f"""
+        SELECT
+            AVG(CASE WHEN s.deer_age IS NOT NULL THEN 1.0 ELSE 0.0 END) as coverage
         FROM scan_labels sl
         JOIN scans s ON sl.scan_id = s.id
-        WHERE s.image_quality_bucket IS NOT NULL
-        GROUP BY s.image_quality_bucket
+        WHERE sl.label_type = 'exact_age'
+          AND sl.reported_age IS NOT NULL
+          {base_filter}
     """
-    quality_results = await database.fetch_all(quality_query)
-    by_image_quality = {r["image_quality_bucket"]: r["count"] for r in quality_results}
+    exact_coverage_result = await database.fetch_one(exact_coverage_query, params)
+    exact_age_coverage = None
+    if exact_coverage_result and exact_coverage_result["coverage"] is not None:
+        exact_age_coverage = round(float(exact_coverage_result["coverage"]), 3)
+
+    exact_age_mae_by_prompt_version, exact_age_within_half_by_prompt_version = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.analysis_prompt_version",
+        alias="prompt_version",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_prompt_version = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.analysis_prompt_version",
+        alias="prompt_version",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_mae_by_analysis_model, exact_age_within_half_by_analysis_model = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.analysis_model",
+        alias="analysis_model",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_analysis_model = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.analysis_model",
+        alias="analysis_model",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_mae_by_region, exact_age_within_half_by_region = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.region_key",
+        alias="region_key",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_region = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.region_key",
+        alias="region_key",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_mae_by_season_bucket, exact_age_within_half_by_season_bucket = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.season_bucket",
+        alias="season_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_season_bucket = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.season_bucket",
+        alias="season_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_mae_by_image_quality, exact_age_within_half_by_image_quality = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.image_quality_bucket",
+        alias="image_quality_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_image_quality = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.image_quality_bucket",
+        alias="image_quality_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_mae_by_posture_bucket, exact_age_within_half_by_posture_bucket = await fetch_exact_age_metrics_by_segment(
+        segment_sql="s.posture_bucket",
+        alias="posture_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
+    exact_age_coverage_by_posture_bucket = await fetch_exact_age_coverage_by_segment(
+        segment_sql="s.posture_bucket",
+        alias="posture_bucket",
+        params=params,
+        base_filter=base_filter,
+    )
     
     # Total weighted samples
     weight_query = f"""
@@ -2574,8 +4410,36 @@ async def get_label_stats(
         by_region=by_region,
         by_error_bucket=by_error_bucket,
         by_image_quality=by_image_quality,
+        by_season_bucket=by_season_bucket,
+        by_posture_bucket=by_posture_bucket,
+        by_age_estimation_allowed=by_age_estimation_allowed,
+        by_age_source=by_age_source,
+        by_labeler_role=by_labeler_role,
         total_weighted_samples=total_weighted,
         maturity_gates=maturity_gates,
+        exact_age_mae=exact_age_mae,
+        exact_age_within_half_accuracy=exact_age_within_half_accuracy,
+        exact_age_coverage=exact_age_coverage,
+        by_prompt_version=by_prompt_version,
+        exact_age_mae_by_prompt_version=exact_age_mae_by_prompt_version,
+        exact_age_within_half_by_prompt_version=exact_age_within_half_by_prompt_version,
+        exact_age_coverage_by_prompt_version=exact_age_coverage_by_prompt_version,
+        by_analysis_model=by_analysis_model,
+        exact_age_mae_by_analysis_model=exact_age_mae_by_analysis_model,
+        exact_age_within_half_by_analysis_model=exact_age_within_half_by_analysis_model,
+        exact_age_coverage_by_analysis_model=exact_age_coverage_by_analysis_model,
+        exact_age_mae_by_region=exact_age_mae_by_region,
+        exact_age_within_half_by_region=exact_age_within_half_by_region,
+        exact_age_coverage_by_region=exact_age_coverage_by_region,
+        exact_age_mae_by_season_bucket=exact_age_mae_by_season_bucket,
+        exact_age_within_half_by_season_bucket=exact_age_within_half_by_season_bucket,
+        exact_age_coverage_by_season_bucket=exact_age_coverage_by_season_bucket,
+        exact_age_mae_by_image_quality=exact_age_mae_by_image_quality,
+        exact_age_within_half_by_image_quality=exact_age_within_half_by_image_quality,
+        exact_age_coverage_by_image_quality=exact_age_coverage_by_image_quality,
+        exact_age_mae_by_posture_bucket=exact_age_mae_by_posture_bucket,
+        exact_age_within_half_by_posture_bucket=exact_age_within_half_by_posture_bucket,
+        exact_age_coverage_by_posture_bucket=exact_age_coverage_by_posture_bucket,
     )
 
 
@@ -2610,7 +4474,17 @@ async def get_labels(
     where_clause = " AND ".join(conditions)
     
     query = f"""
-        SELECT sl.*, s.region_key, s.image_quality_bucket, s.deer_age as predicted_age
+        SELECT
+            sl.*,
+            s.region_key,
+            s.season_bucket,
+            s.image_quality_bucket,
+            s.posture_bucket,
+            s.analysis_prompt_version,
+            s.analysis_model,
+            s.age_estimation_allowed,
+            s.retake_reason,
+            s.deer_age as predicted_age
         FROM scan_labels sl
         JOIN scans s ON sl.scan_id = s.id
         WHERE {where_clause}
@@ -2633,8 +4507,17 @@ async def get_labels(
             "error_bucket": r["error_bucket"],
             "prediction_error": r["prediction_error"],
             "harvest_confirmed": r["harvest_confirmed"],
+            "age_source": r["age_source"],
+            "labeler_role": r["labeler_role"],
+            "trust_source": r["trust_source"],
             "region_key": r["region_key"],
+            "season_bucket": r["season_bucket"],
             "image_quality_bucket": r["image_quality_bucket"],
+            "posture_bucket": r["posture_bucket"],
+            "analysis_prompt_version": r["analysis_prompt_version"],
+            "analysis_model": r["analysis_model"],
+            "age_estimation_allowed": r["age_estimation_allowed"],
+            "retake_reason": r["retake_reason"],
             "predicted_age": r["predicted_age"],
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         })
@@ -2673,158 +4556,156 @@ async def edit_scan_with_reanalysis(
     if data.image_base64:
         try:
             logger.info(f"Re-analyzing scan {scan_id} with user corrections")
+            selected_model, model_variant = resolve_reanalysis_model(dict(scan), user["id"])
             
             image_data = data.image_base64
             if not image_data.startswith("data:"):
                 image_data = f"data:image/jpeg;base64,{image_data}"
-            
+
+            existing_region_state = scan.get("region_state")
+            user_profile_state = user.get("state")
+            reanalysis_context = build_scan_context(
+                scan_state=existing_region_state,
+                user_profile_state=user_profile_state,
+                scan_datetime=scan.get("created_at") or datetime.utcnow(),
+                notes=scan.get("notes"),
+            )
+
             # Build hint text from user corrections with context about original analysis
             hints = []
-            
-            # Include original analysis for context
+
+            # Keep non-age context only to avoid anchoring on the previous estimate.
             original_context = []
+            if scan.get("deer_type"):
+                original_context.append(f"Previous deer type: {scan.get('deer_type')}")
             if scan.get("deer_sex"):
-                original_context.append(f"Originally identified as: {scan.get('deer_sex')}")
-            if scan.get("deer_age"):
-                original_context.append(f"Original age estimate: {scan.get('deer_age')} years")
+                original_context.append(f"Previous sex: {scan.get('deer_sex')}")
             if scan.get("antler_points"):
-                original_context.append(f"Original point count: {scan.get('antler_points')} points")
-            
+                original_context.append(f"Previous total point count: {scan.get('antler_points')} points")
+            if scan.get("body_condition"):
+                original_context.append(f"Previous body condition: {scan.get('body_condition')}")
+
             # Add user corrections
             if data.deer_sex:
-                hints.append(f"CORRECTION: The deer is actually a {data.deer_sex} (user confirmed in field)")
+                hints.append(f"The deer is actually a {data.deer_sex}.")
             if data.deer_type:
-                hints.append(f"CORRECTION: The deer type is {data.deer_type}")
+                hints.append(f"The deer type is {data.deer_type}.")
             if data.antler_points_left is not None:
-                hints.append(f"CORRECTION: Left antler has exactly {data.antler_points_left} points (user counted)")
+                hints.append(f"Left antler has exactly {data.antler_points_left} points.")
             if data.antler_points_right is not None:
-                hints.append(f"CORRECTION: Right antler has exactly {data.antler_points_right} points (user counted)")
+                hints.append(f"Right antler has exactly {data.antler_points_right} points.")
             if total_points is not None:
-                hints.append(f"CORRECTION: Total antler points is {total_points} (user verified)")
-            
+                hints.append(f"Total antler points is {total_points}.")
+
             # Combine original context and corrections
             context_text = "\n".join(original_context) if original_context else ""
             hint_text = "\n".join(hints) if hints else ""
-            
+
             logger.info(f"Re-analysis corrections: {hint_text}")
-            
-            # Build a detailed re-analysis prompt that uses user corrections as ground truth
-            reanalysis_system_prompt = """You are an expert wildlife biologist specializing in deer aging and analysis.
-
-The user has CORRECTED some details about this deer based on their field observation. Your task is to RE-ANALYZE the deer image using these corrections as GROUND TRUTH facts.
-
-CRITICAL INSTRUCTIONS:
-1. The user's corrections are AUTHORITATIVE - they were there and saw the deer in person
-2. Use the corrected information to inform your OTHER assessments (especially age estimation)
-3. If the user corrected the sex to "Doe", do NOT report antler points
-4. If the user corrected antler points, use those exact numbers and factor them into age estimation
-5. Adjust your age estimate based on the corrected details (e.g., point count correlates with age)
-6. Re-evaluate the harvest recommendation based on all corrected information
-
-AGE ESTIMATION GUIDELINES WITH CORRECTIONS:
-- For Bucks: More antler points generally indicate older deer
-  * 4-6 points total: Likely 1.5-2.5 years
-  * 8-10 points total: Likely 2.5-4.5 years  
-  * 10+ points total: Likely 4.5+ years
-- For Does: Focus on body characteristics, face length, belly sag
-- Body condition and physical maturity indicators still apply
-
-Return ONLY valid JSON with your REVISED analysis:
-{
-    "deer_age": <revised age estimate as number, or null if truly uncertain>,
-    "deer_type": <string: "Whitetail", "Mule Deer", "Elk", etc.>,
-    "deer_sex": <"Buck" or "Doe" or "Unknown">,
-    "antler_points": <total points if buck, null if doe>,
-    "antler_points_left": <left antler points if buck, null if doe>,
-    "antler_points_right": <right antler points if buck, null if doe>,
-    "body_condition": <"Poor", "Fair", "Good", "Excellent">,
-    "confidence": <1-100, your confidence in the REVISED analysis>,
-    "recommendation": <"HARVEST" or "PASS" based on revised age>,
-    "reasoning": <detailed explanation incorporating the user's corrections and how they affected your analysis>
-}"""
+            logger.info(
+                "Using reanalysis model %s for scan %s (variant=%s)",
+                selected_model,
+                scan_id,
+                model_variant,
+            )
 
             # Build user message with clear correction context
             if hint_text:
                 user_message = f"""RE-ANALYZE this deer image with USER CORRECTIONS.
 
-ORIGINAL AI ANALYSIS (for reference):
+{format_scan_context_for_prompt(reanalysis_context)}
+
+PREVIOUS AI OBSERVATIONS (context only, may be wrong):
 {context_text if context_text else "No original analysis data available"}
 
-USER CORRECTIONS (treat these as GROUND TRUTH - the user was in the field):
+AUTHORITATIVE USER CORRECTIONS:
 {hint_text}
 
 INSTRUCTIONS:
-1. Accept ALL user corrections as factual - they saw this deer in person
-2. Re-estimate the deer's AGE based on the corrected information
-3. Update the HARVEST/PASS recommendation based on revised age
-4. Explain how the corrections changed your analysis in the reasoning field
+1. Accept all user corrections as factual.
+2. Do NOT use the previous AI age estimate as evidence.
+3. Re-estimate age primarily from visible body morphology.
+4. Use corrected antler counts as a weak secondary cue only.
+5. Update HARVEST/PASS based on the revised assessment.
 
 Provide your complete REVISED analysis in JSON format."""
             else:
-                user_message = "Analyze this deer image and provide a complete assessment."
-            
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": reanalysis_system_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": user_message},
-                            {"type": "image_url", "image_url": {"url": image_data}}
-                        ]
-                    }
-                ],
-                max_tokens=1500
-            )
-            
-            logger.info(f"Re-analysis API call completed for scan {scan_id}")
-            
-            response_text = response.choices[0].message.content
-            
-            try:
-                if "```json" in response_text:
-                    json_str = response_text.split("```json")[1].split("```")[0]
-                elif "```" in response_text:
-                    json_str = response_text.split("```")[1].split("```")[0]
-                else:
-                    json_str = response_text
-                analysis = json.loads(json_str.strip())
-            except json.JSONDecodeError:
-                analysis = None
-            
-            if analysis:
-                # Override with user corrections where provided
+                user_message = (
+                    "Re-analyze this deer image and provide a complete assessment in JSON format.\n\n"
+                    f"{format_scan_context_for_prompt(reanalysis_context)}"
+                )
+
+            def apply_reanalysis_overrides(parsed_analysis: Dict[str, Any]) -> Dict[str, Any]:
                 if data.deer_sex:
-                    analysis["deer_sex"] = data.deer_sex
+                    parsed_analysis["deer_sex"] = data.deer_sex
                 if data.deer_type:
-                    analysis["deer_type"] = data.deer_type
+                    parsed_analysis["deer_type"] = data.deer_type
                 if data.antler_points_left is not None:
-                    analysis["antler_points_left"] = data.antler_points_left
+                    parsed_analysis["antler_points_left"] = data.antler_points_left
                 if data.antler_points_right is not None:
-                    analysis["antler_points_right"] = data.antler_points_right
+                    parsed_analysis["antler_points_right"] = data.antler_points_right
                 if total_points is not None:
-                    analysis["antler_points"] = total_points
-                
+                    parsed_analysis["antler_points"] = total_points
+                parsed_analysis["is_valid_deer"] = True
+                return parsed_analysis
+
+            user_content = [
+                {"type": "text", "text": user_message},
+                {"type": "image_url", "image_url": {"url": image_data}},
+            ]
+
+            initial_analysis = run_model_analysis_pass(
+                model=selected_model,
+                system_prompt=build_reanalysis_system_prompt(),
+                user_content=user_content,
+                max_output_tokens=1500,
+                prompt_version=REANALYSIS_PROMPT_VERSION,
+                context=reanalysis_context,
+                post_parse=apply_reanalysis_overrides,
+            )
+
+            if initial_analysis is None:
+                analysis = None
+            else:
+                analysis = maybe_apply_selective_consensus(
+                    initial_analysis=initial_analysis,
+                    total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
+                    pass_builder=lambda: run_model_analysis_pass(
+                        model=selected_model,
+                        system_prompt=build_reanalysis_system_prompt(),
+                        user_content=user_content,
+                        max_output_tokens=1500,
+                        prompt_version=REANALYSIS_PROMPT_VERSION,
+                        context=reanalysis_context,
+                        post_parse=apply_reanalysis_overrides,
+                    ),
+                )
+                if analysis.get("consensus"):
+                    logger.info(
+                        "Selective consensus applied for reanalysis scan %s: %s",
+                        scan_id,
+                        analysis.get("consensus"),
+                    )
+
+            if analysis:
                 # Apply region-aware confidence calibration to re-analysis
-                # Get existing scan's region state (preserve from original scan)
-                existing_region_state = scan.get("region_state")
-                user_profile_state = user.get("state")
-                
+                active_curves = await get_live_active_curves()
                 calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
                     analysis=analysis,
                     state=existing_region_state,  # Preserve original region
-                    user_profile_state=user_profile_state
+                    user_profile_state=user_profile_state,
+                    active_curves=active_curves,
                 )
-                
+
                 # Update the scan with new calibrated analysis
                 update_query = scans_table.update().where(
                     scans_table.c.id == scan_id
                 ).values(
                     deer_age=calibrated_analysis.get("deer_age"),
+                    age_bucket=calibrated_analysis.get("age_bucket"),
+                    age_range=calibrated_analysis.get("age_range"),
+                    buck_age_class=calibrated_analysis.get("buck_age_class"),
+                    age_evidence=calibrated_analysis.get("age_evidence"),
                     deer_type=calibrated_analysis.get("deer_type"),
                     deer_sex=calibrated_analysis.get("deer_sex"),
                     antler_points=calibrated_analysis.get("antler_points"),
@@ -2836,6 +4717,8 @@ Provide your complete REVISED analysis in JSON format."""
                     reasoning=calibrated_analysis.get("reasoning"),
                     raw_response=analysis,  # Store original for debugging
                     raw_confidence=calibrated_analysis.get("raw_confidence"),
+                    raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
+                    raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
                     age_confidence=calibrated_analysis.get("age_confidence"),
                     recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                     age_uncertain=calibrated_analysis.get("age_uncertain", False),
@@ -2844,7 +4727,16 @@ Provide your complete REVISED analysis in JSON format."""
                     region_source=calibrated_analysis.get("region_source"),
                     region_state=calibrated_analysis.get("region_state"),
                     calibration_strategy=calibrated_analysis.get("calibration_strategy"),
-                    calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason")
+                    calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
+                    season_bucket=reanalysis_context.get("season_bucket"),
+                    analysis_prompt_version=REANALYSIS_PROMPT_VERSION,
+                    analysis_model=selected_model,
+                    age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
+                    retake_reason=calibrated_analysis.get("retake_reason"),
+                    visible_age_cues=calibrated_analysis.get("visible_age_cues"),
+                    image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
+                    quality_factors=calibrated_analysis.get("quality_factors"),
+                    posture_bucket=calibrated_analysis.get("posture_bucket"),
                 )
                 await database.execute(update_query)
         except Exception as e:
@@ -2855,13 +4747,17 @@ Provide your complete REVISED analysis in JSON format."""
         update_values = {}
         if data.deer_sex is not None:
             update_values["deer_sex"] = data.deer_sex
+            if data.deer_sex == "Doe":
+                update_values["antler_points"] = None
+                update_values["antler_points_left"] = None
+                update_values["antler_points_right"] = None
         if data.deer_type is not None:
             update_values["deer_type"] = data.deer_type
-        if data.antler_points_left is not None:
+        if data.antler_points_left is not None and update_values.get("deer_sex") != "Doe":
             update_values["antler_points_left"] = data.antler_points_left
-        if data.antler_points_right is not None:
+        if data.antler_points_right is not None and update_values.get("deer_sex") != "Doe":
             update_values["antler_points_right"] = data.antler_points_right
-        if total_points is not None:
+        if total_points is not None and update_values.get("deer_sex") != "Doe":
             update_values["antler_points"] = total_points
         
         if update_values:
@@ -3134,7 +5030,13 @@ async def get_calibration_status_endpoint():
     - Curve availability and maturity status
     - Feature flag states
     """
-    return get_calibration_status()
+    status = get_calibration_status()
+    await get_live_active_curves()
+    status["curves"] = {
+        **status.get("curves", {}),
+        **get_live_curve_cache_metadata(),
+    }
+    return status
 
 @api_router.get("/admin/calibration/regions")
 async def get_calibration_regions():
@@ -3293,6 +5195,8 @@ async def activate_calibration_curve(data: ActivateCurveRequest):
         
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result.get("error", "Activation failed"))
+
+        await get_live_active_curves(force_refresh=True)
         
         return result
     except HTTPException:
@@ -3314,6 +5218,7 @@ async def deactivate_calibration_curve(curve_id: str):
             calibration_curves_table=calibration_curves_table,
             curve_id=curve_id
         )
+        await get_live_active_curves(force_refresh=True)
         return result
     except Exception as e:
         logger.error(f"Error deactivating curve: {e}")

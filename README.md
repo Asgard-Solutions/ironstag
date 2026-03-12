@@ -135,6 +135,8 @@ yarn android
 
 ### Backend (`backend/.env`)
 
+Local development only. The deployed Railway service ignores this file and uses Railway Variables instead. Start from `backend/env.example` when setting up a new local env file.
+
 ```bash
 # Database
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
@@ -167,8 +169,11 @@ CALIBRATION_ADAPTIVE_ENABLED=false
 
 ### Frontend (`frontend/.env`)
 
+For local development, point this to your local backend. If you test on a physical device, replace `localhost` with your machine's LAN IP. Start from `frontend/env.example` when setting up a new local env file.
+
 ```bash
-EXPO_PUBLIC_API_BASE_URL=/api
+EXPO_PUBLIC_API_BASE_URL=http://localhost:8001
+EXPO_PUBLIC_BACKEND_URL=http://localhost:8001
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=...
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=...
 ```

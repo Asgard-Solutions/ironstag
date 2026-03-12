@@ -4,7 +4,7 @@
 How Iron Stag collects, processes, and protects your data, based on current app documentation.
 
 ## Key Information
-- **Data collected:** Email, name, home state, scan results, device info (local only).
+- **Data collected:** Email, name, home state, scan results, optional harvested-buck B&C score data, device info (local only).
 - **Crash reports:** Only collected when debug mode is enabled server-side.
 - **Photos:** Uploaded for analysis and stored locally; optional cloud copy if enabled.
 - **Transmission security:** HTTPS/TLS encryption.
@@ -14,11 +14,15 @@ How Iron Stag collects, processes, and protects your data, based on current app 
 ## Step-by-Step
 1. Upload a deer photo for analysis.
 2. The image is processed securely and then stored locally on your device.
-3. Use Profile → Delete Account to permanently remove your account and data.
+3. If you save an unofficial B&C score, those measurements are stored as scan metadata.
+4. Use Profile → Delete Account to permanently remove your account and data.
 
 ## Common Questions
 **Q: Do you store my photos on your servers?**
 A: Photos are stored locally. If cloud image storage is enabled, a compressed copy may be stored for cross-device access.
+
+**Q: Are B&C measurements generated from my photo?**
+A: No. Unofficial B&C measurements are entered manually by the user and stored with the harvested buck record.
 
 **Q: How is my data protected in transit?**
 A: All data transmitted via HTTPS/TLS encryption.

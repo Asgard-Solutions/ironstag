@@ -22,6 +22,9 @@ A: Photos over ~10MB may fail. Try a smaller image or lower resolution.
 **Q: "Not a Deer"**
 A: Only Whitetail or Mule Deer photos are supported.
 
+**Q: "Age Withheld" or "Retake Recommended"**
+A: The image did not show enough clear age cues. Try a broadside, full-body photo with better light and less blur.
+
 **Q: Login Failed**
 A: Verify your email/username and password, or use "Forgot Password" to reset.
 
@@ -33,6 +36,12 @@ A: Verify camera permissions, restart the app, and restart your device.
 
 **Q: Images Not Loading in History**
 A: Local images may have been cleared; scan data remains but images won’t display. If cloud images are enabled, reopen the scan to load the cloud thumbnail.
+
+**Q: "Unofficial B&C Score Unavailable"**
+A: That workflow only appears for harvested buck records, and the selected score type must match the deer species.
+
+**Q: "Couldn't save B&C score"**
+A: Recheck that the deer is marked as harvested, the disclaimer is accepted, and the required measurements are filled in.
 
 **Q: "Queued for Upload" / Offline Banner**
 A: You’re offline. The scan is saved locally and will upload automatically once you’re back online.

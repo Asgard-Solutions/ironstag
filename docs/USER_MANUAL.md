@@ -2,8 +2,8 @@
 
 ![Iron Stag Logo](../frontend/assets/images/iron_stag_logo.png)
 
-**Version 1.1.0**  
-**Last Updated: January 2026**
+**Version 1.2.0**  
+**Last Updated: March 2026**
 
 ---
 
@@ -34,6 +34,7 @@
 Iron Stag is an AI-powered deer analysis application designed for hunters, wildlife enthusiasts, and deer management professionals. Using advanced artificial intelligence and machine learning, Iron Stag analyzes photos of deer to provide:
 
 - **Age Estimation** - Estimated age of the deer in years
+- **Age Quality Gating** - Retake guidance when the photo does not support a reliable age
 - **Sex Identification** - Buck or Doe classification
 - **Species Type** - Whitetail or Mule Deer identification
 - **Antler Analysis** - Point count (left and right antlers separately)
@@ -41,6 +42,7 @@ Iron Stag is an AI-powered deer analysis application designed for hunters, wildl
 - **Harvest Recommendation** - AI-powered HARVEST or PASS recommendation
 - **Confidence Score** - How certain the AI is about its analysis
 - **Regional Calibration** - Confidence adjusted for your hunting region
+- **Unofficial B&C Score** - User-entered scoring for harvested bucks only
 
 ### Supported Deer Species
 
@@ -292,6 +294,7 @@ For the most accurate analysis:
 - Capture the deer from the side (broadside view)
 - Include the full body if possible
 - Ensure the deer is in focus
+- Keep the deer centered and large enough to see the neck, chest, belly, backline, and legs
 - Take photos during daylight or with good artificial lighting
 - Set your home state for calibrated results
 
@@ -300,6 +303,7 @@ For the most accurate analysis:
 - Upload extremely dark photos
 - Use images where the deer is too far away
 - Submit photos with multiple deer (AI may get confused)
+- Use frontal or rear-only views if you want the best age estimate
 - Upload photos of mounted/taxidermy deer
 
 ### Scan Limits
@@ -317,10 +321,11 @@ For the most accurate analysis:
 
 1. Your image is securely uploaded
 2. AI processes the image (typically 5-15 seconds)
-3. Regional calibration is applied based on your location
-4. Results are displayed on the Scan Result screen
-5. Data is saved to your Scan History
-6. Image is stored locally on your device
+3. Regional calibration and image-quality gating are applied
+4. If the photo supports aging, results are displayed on the Scan Result screen
+5. If the photo does not support reliable aging, the app may withhold the age and show retake guidance instead of forcing a guess
+6. Data is saved to your Scan History
+7. Image is stored locally on your device
 
 ---
 
@@ -335,8 +340,8 @@ After a successful scan, you'll see:
 |-------|-------------|
 | **Deer Type** | Whitetail or Mule Deer |
 | **Sex** | Buck, Doe, or Unknown |
-| **Estimated Age** | Age in years (e.g., 3.5 years) |
-| **Recommendation** | HARVEST (green) or PASS (red) |
+| **Estimated Age** | Age in years when enough visible cues are present |
+| **Recommendation** | HARVEST or PASS when the scan supports a recommendation |
 | **Confidence** | AI certainty percentage (0-100%) |
 
 #### Understanding Confidence Scores
@@ -348,6 +353,19 @@ Iron Stag uses a sophisticated confidence calibration system:
 - **Low Confidence (<50%)** - The AI is uncertain; consider this a rough estimate
 
 **Age Uncertain Indicator:** When confidence is low, you may see "Age Uncertain" displayed. This means the AI acknowledges it's not sure about the age estimate.
+
+### When Age Is Withheld
+
+Iron Stag may intentionally withhold a numeric age when the image quality is not strong enough. This is expected behavior and is more accurate than forcing a guess.
+
+Common reasons include:
+- Frontal or rear-only body angle
+- Too much blur, darkness, or shadow
+- Deer is too far away
+- Important body cues are hidden
+- Multiple deer in the frame
+
+When this happens, the scan result can show a retake reason and visible age cues that were or were not present.
 
 #### Antler Details (Bucks Only)
 | Field | Description |
@@ -361,7 +379,35 @@ Iron Stag uses a sophisticated confidence calibration system:
 |-------|-------------|
 | **Body Condition** | Health assessment (Excellent, Good, Fair, Poor) |
 | **Reasoning** | AI's explanation for the recommendation |
+| **Visible Age Cues** | Body traits the AI could clearly see in the image |
 | **Region** | The calibration region used for this scan |
+
+### Unofficial B&C Score (Harvested Bucks Only)
+
+Harvested buck scans can also store a manual `Unofficial B&C Score`.
+
+Important notes:
+- This is only available for harvested buck records
+- You must choose the matching score type for the deer species
+- Measurements are entered manually by the user
+- The app does not calculate antler measurements from the photo
+- The score is unofficial and not certified by Boone & Crockett
+
+Supported score types:
+- Typical Whitetail Deer
+- Non-Typical Whitetail Deer
+- Typical Mule Deer
+- Non-Typical Mule Deer
+
+How it works:
+1. Open the harvested buck scan result
+2. Mark the deer as harvested if needed
+3. Open `Unofficial B&C Score`
+4. Choose the score type
+5. Enter measurements in whole inches plus eighths
+6. Save the score to the harvest record
+
+The score can be edited later, and it remains attached to that harvested scan.
 
 ### Editing Scan Results
 
@@ -431,7 +477,7 @@ Tap the filter dropdown buttons:
 
 1. Tap any scan in the history list
 2. View the full scan result page
-3. Edit, add notes, or delete as needed
+3. Edit, add notes, update harvest status, or manage unofficial B&C scoring as needed
 
 ### Deleting Individual Scans
 
@@ -621,6 +667,7 @@ Use this when:
 | Home State | Regional calibration | Server |
 | Deer Photos | AI analysis | Processed, not stored on server |
 | Scan Results | History feature | Server |
+| Harvest & B&C Score Data | Manual harvested-buck record keeping | Server |
 | Device Info | App functionality | Local only |
 
 ### Image Handling
@@ -629,6 +676,8 @@ Use this when:
 2. **Analysis:** AI processes the image with regional calibration
 3. **Storage:** Image is stored locally on YOUR device only
 4. **Server:** We do NOT store your original images on our servers
+
+Unofficial B&C measurements, if entered, are stored as scan metadata. They are user-entered only and are not measured automatically from the image.
 
 ### Data Security
 
@@ -700,6 +749,28 @@ View our full privacy policy at:
 
 **Note:** If you cleared local images, the scan data remains but images won't display. This is expected behavior.
 
+#### Age Withheld / Retake Recommended
+**Cause:** The photo did not provide enough clear body cues for a reliable numeric age.
+
+**Solutions:**
+1. Use a broadside, full-body photo
+2. Make sure the deer is large enough to see body proportions
+3. Avoid blur, shadows, and multiple deer
+4. Retake or choose a clearer image
+
+#### B&C Score Not Saving
+**Possible causes:**
+- The scan is not marked as harvested
+- The record is not a buck
+- The selected score type does not match the deer species
+- Required measurements or disclaimer acceptance are missing
+
+**Solutions:**
+1. Confirm the deer is marked as harvested
+2. Confirm the scan is a buck
+3. Choose the matching Whitetail or Mule Deer score type
+4. Recheck the measurements and save again
+
 ### Error Codes
 
 | Code | Meaning | Solution |
@@ -740,6 +811,12 @@ A: Yes, each scan uses one of your scan credits.
 
 **Q: What does "Age Uncertain" mean?**
 A: When the AI's confidence is low, it honestly tells you it's uncertain about the age estimate. Use such results as rough guidance.
+
+**Q: Why did my scan return no age at all?**
+A: If the image does not show enough visible body cues, Iron Stag may withhold the age and show retake guidance instead of forcing a guess.
+
+**Q: Is the B&C score official?**
+A: No. The B&C feature is an unofficial, user-entered estimate for harvested bucks. Official Boone & Crockett scores require a certified official measurer.
 
 ### Subscription
 
@@ -832,6 +909,11 @@ support@asgardsolution.io
 ## Appendix B: Age Estimation Guide
 
 The AI considers multiple factors:
+
+- Body traits are weighted more heavily than antlers
+- Bucks also use age-class body cues (`1.5`, `2.5`, `3.5`, `4.5`, `5.5`, `6.5+`)
+- Does are aged from visible body profile cues only
+- If the photo quality is poor, the app may withhold the age instead of guessing
 
 | Age | Typical Characteristics |
 |-----|------------------------|

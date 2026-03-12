@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
+import type { BcScoreEntryInput } from './bcScoring';
 
 // Use EXPO_PUBLIC_API_BASE_URL for native builds, fallback to EXPO_PUBLIC_BACKEND_URL for Expo Go
 const API_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -93,7 +94,12 @@ export const scanAPI = {
 
   getScan: (id: string) => api.get(`/scans/${id}`),
 
-  updateScan: (id: string, data: { notes?: string }) =>
+  updateScan: (id: string, data: {
+    notes?: string;
+    harvest_confirmed?: boolean;
+    boone_crockett_measurements?: BcScoreEntryInput;
+    boone_crockett_disclaimer_accepted?: boolean;
+  }) =>
     api.put(`/scans/${id}`, data),
 
   editScan: (id: string, data: {
@@ -130,6 +136,8 @@ export const scanAPI = {
     reported_age?: number;
     accuracy_category?: 'exact' | 'close' | 'off';
     harvest_confirmed?: boolean;
+    age_source?: 'jawbone' | 'tooth_wear' | 'taxidermist' | 'biologist_assessment' | 'hunter_best_estimate' | 'other' | 'unknown';
+    labeler_role?: 'self' | 'guide' | 'biologist' | 'admin' | 'taxidermist' | 'processor' | 'unknown';
     notes?: string;
   }) => api.post(`/scans/${scanId}/label`, data),
   
