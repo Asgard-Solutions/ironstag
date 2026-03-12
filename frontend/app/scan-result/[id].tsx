@@ -204,7 +204,8 @@ function getDisplayRecommendation(scan: ScanResult): 'HARVEST' | 'PASS' | null {
 }
 
 function getDefaultBcScoreType(scan?: Pick<ScanResult, 'deer_type'> | null): BcScoreType {
-  if (scan?.deer_type === 'Mule Deer') {
+  const deerType = scan?.deer_type?.trim().toLowerCase();
+  if (deerType === 'mule deer' || deerType === 'muledeer' || deerType === 'mule') {
     return 'typical_mule_deer_unofficial';
   }
   return 'typical_whitetail_unofficial';
@@ -1350,7 +1351,7 @@ export default function ScanResultScreen() {
               </Text>
             </ScrollView>
 
-            <View style={styles.modalFooter}>
+            <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setShowEditModal(false)}
@@ -1783,7 +1784,7 @@ export default function ScanResultScreen() {
               )}
             </ScrollView>
 
-            <View style={styles.modalFooter}>
+            <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setShowScoreModal(false)}

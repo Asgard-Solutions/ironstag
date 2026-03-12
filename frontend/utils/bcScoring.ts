@@ -428,6 +428,44 @@ export function isBcScoreTypeImplemented(type: BcScoreType | string | null | und
   return !!BC_SCORE_TYPE_OPTIONS.find((option) => option.type === type)?.implemented;
 }
 
+function normalizeBcDeerType(value: string | null | undefined): 'Whitetail' | 'Mule Deer' | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (
+    normalized === 'whitetail' ||
+    normalized === 'whitetail deer' ||
+    normalized === 'white-tailed deer' ||
+    normalized === 'white tail' ||
+    normalized === 'white-tailed'
+  ) {
+    return 'Whitetail';
+  }
+  if (
+    normalized === 'mule deer' ||
+    normalized === 'muledeer' ||
+    normalized === 'mule'
+  ) {
+    return 'Mule Deer';
+  }
+  return null;
+}
+
+function normalizeBcDeerSex(value: string | null | undefined): 'Buck' | 'Doe' | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === 'buck' || normalized === 'male') {
+    return 'Buck';
+  }
+  if (normalized === 'doe' || normalized === 'female') {
+    return 'Doe';
+  }
+  return null;
+}
+
 export function isBcScoreTypeCompatibleWithScan(
   type: BcScoreType | string | null | undefined,
   deerType: string | null | undefined,
@@ -435,7 +473,12 @@ export function isBcScoreTypeCompatibleWithScan(
   harvestConfirmed: boolean | null | undefined
 ): boolean {
   const option = BC_SCORE_TYPE_OPTIONS.find((candidate) => candidate.type === type);
-  return !!option && !!harvestConfirmed && deerSex === 'Buck' && deerType === option.deerType;
+  return (
+    !!option &&
+    !!harvestConfirmed &&
+    normalizeBcDeerSex(deerSex) === 'Buck' &&
+    normalizeBcDeerType(deerType) === option.deerType
+  );
 }
 
 export function calculateSpreadCredit(entry: BcScoreEntryInput): number | null {
