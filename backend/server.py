@@ -1639,17 +1639,24 @@ def derive_abstain_reason_from_blockers(blockers: List[str]) -> str:
 def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
     quality_factors = normalized.get("quality_factors") or {}
     blockers: List[str] = []
+    soft_flags: List[str] = []
 
-    if normalized.get("image_quality_bucket") == "poor":
-        blockers.append("poor_image_quality")
-    if quality_factors.get("body_visibility") == "low":
-        blockers.append("body_visibility_low")
-    if quality_factors.get("occlusion") == "high":
-        blockers.append("occlusion_high")
-    if quality_factors.get("blur") == "high":
-        blockers.append("blur_high")
-    if normalized.get("posture_bucket") in {"frontal", "rear"}:
-        blockers.append("profile_not_visible")
+    image_quality_poor = normalized.get("image_quality_bucket") == "poor"
+    body_visibility_low = quality_factors.get("body_visibility") == "low"
+    occlusion_high = quality_factors.get("occlusion") == "high"
+    blur_high = quality_factors.get("blur") == "high"
+    unsupported_profile = normalized.get("posture_bucket") in {"frontal", "rear"}
+
+    if image_quality_poor:
+        soft_flags.append("poor_image_quality")
+    if body_visibility_low:
+        soft_flags.append("body_visibility_low")
+    if occlusion_high:
+        soft_flags.append("occlusion_high")
+    if blur_high:
+        soft_flags.append("blur_high")
+    if unsupported_profile:
+        soft_flags.append("profile_not_visible")
 
     if normalized.get("age_estimation_allowed") is False:
         blockers.append("model_insufficient_evidence")
@@ -1662,8 +1669,6 @@ def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
     cue_checklist = normalize_cue_checklist(normalized.get("cue_checklist"))
     normalized["cue_checklist"] = cue_checklist
     missing_required_checklist_keys = sorted(REQUIRED_CUE_CHECKLIST_KEYS.difference(cue_checklist.keys()))
-    if missing_required_checklist_keys:
-        blockers.append("incomplete_cue_checklist")
 
     if cue_checklist:
         visible_from_checklist = [cue for cue, state in cue_checklist.items() if state == "visible"]
@@ -1673,15 +1678,40 @@ def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
         normalized["visible_age_cues"] = visible_age_cues
 
     critical_visible_count = len([cue for cue in visible_age_cues if cue in CRITICAL_AGE_CUE_VALUES])
-    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES:
+    deer_age_present = normalized.get("deer_age") is not None
+
+    severe_quality_issue_count = sum(
+        1 for flag in (image_quality_poor, body_visibility_low, occlusion_high, blur_high) if flag
+    )
+    if severe_quality_issue_count >= 2:
+        blockers.extend(soft_flags)
+    elif unsupported_profile and not deer_age_present and critical_visible_count == 0:
+        blockers.append("profile_not_visible")
+
+    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES and not deer_age_present:
         blockers.append("critical_cues_missing")
 
-    if normalized.get("deer_age") is None and len(visible_age_cues) < 2:
+    if not deer_age_present and len(visible_age_cues) < 1:
         blockers.append("insufficient_visible_age_cues")
+
+    if missing_required_checklist_keys and not deer_age_present and len(visible_age_cues) < 1:
+        blockers.append("incomplete_cue_checklist")
 
     blockers = list(dict.fromkeys(blockers))
 
     if blockers:
+        logger.info(
+            "Age gate blocked: blockers=%s soft_flags=%s deer_age_present=%s "
+            "critical_visible_count=%s visible_age_cues=%s posture=%s quality=%s quality_factors=%s",
+            blockers,
+            soft_flags,
+            deer_age_present,
+            critical_visible_count,
+            visible_age_cues,
+            normalized.get("posture_bucket"),
+            normalized.get("image_quality_bucket"),
+            quality_factors,
+        )
         normalized["age_estimation_allowed"] = False
         normalized["retake_reason"] = build_age_quality_gate_reason(blockers, normalized.get("retake_reason"))
         if normalized.get("abstain_reason") is None:
@@ -1991,8 +2021,8 @@ Critical rules:
 - For does, do not require antlers or buck-specific cues before giving an age estimate.
 - Rut-swollen necks, coat thickness, and perspective can mislead. Stay conservative.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- If image_quality_bucket is `poor`, or body_visibility is `low`, or occlusion is `high`, or blur is `high`, or posture is `frontal` or `rear`, set `age_estimation_allowed` to false.
-- If key body cues are not clearly visible, set `age_estimation_allowed` to false.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown is too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
   - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
   - set `recommendation` to null
@@ -2096,8 +2126,8 @@ Critical rules:
 - If the corrected sex is Doe, all antler fields must be null.
 - For does, age from body profile only and do not require antlers or buck-specific cues before giving an age estimate.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- If image_quality_bucket is `poor`, or body_visibility is `low`, or occlusion is `high`, or blur is `high`, or posture is `frontal` or `rear`, set `age_estimation_allowed` to false.
-- If key body cues remain unclear, set `age_estimation_allowed` to false instead of forcing a number.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown remains too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
   - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
   - set `recommendation` to null

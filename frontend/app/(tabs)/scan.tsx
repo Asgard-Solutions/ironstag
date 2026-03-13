@@ -239,7 +239,6 @@ export default function ScanScreen() {
         
         // Reset state
         setHuntingLocation(null);
-        setLocationExpanded(false);
         setScanStep('main');
         setCapturedImage(null);
         setAnalyzing(false);
@@ -267,7 +266,6 @@ export default function ScanScreen() {
       
       // Reset hunting location override after successful scan
       setHuntingLocation(null);
-      setLocationExpanded(false);
 
       // Use replace instead of push to prevent the Android back button
       // from returning to the "analyzing" state
@@ -298,7 +296,6 @@ export default function ScanScreen() {
         );
         
         setHuntingLocation(null);
-        setLocationExpanded(false);
         setScanStep('main');
         setCapturedImage(null);
         setAnalyzing(false);

@@ -76,6 +76,9 @@ class RegionCalibrationConfig:
     LOW_ANTLER_INFO_PENALTY: float = float(os.environ.get('LOW_ANTLER_INFO_PENALTY', '0.1'))
     UNKNOWN_SEX_PENALTY: float = float(os.environ.get('UNKNOWN_SEX_PENALTY', '0.05'))
     DOE_UNCERTAINTY_THRESHOLD_OFFSET: float = float(os.environ.get('DOE_UNCERTAINTY_THRESHOLD_OFFSET', '0.03'))
+    PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD: float = float(
+        os.environ.get('PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD', '0.18')
+    )
 
 
 # ============================================================================
@@ -209,6 +212,30 @@ REGION_UNCERTAINTY_THRESHOLDS: Dict[RegionKey, float] = {
     RegionKey.NORTHERN: 0.40,     # Less data, moderate threshold
     RegionKey.UNKNOWN: 0.42,      # Conservative default for unknown regions
 }
+
+
+def _apply_region_threshold_env_overrides(
+    defaults: Dict[RegionKey, float]
+) -> Dict[RegionKey, float]:
+    overridden = dict(defaults)
+    for region, default in defaults.items():
+        env_name = f"AGE_UNCERTAINTY_THRESHOLD_{region.value.upper()}"
+        raw_value = os.environ.get(env_name)
+        if raw_value is None:
+            continue
+        try:
+            overridden[region] = max(0.0, min(1.0, float(raw_value)))
+        except ValueError:
+            logger.warning(
+                "Invalid %s=%r; using default threshold %.2f",
+                env_name,
+                raw_value,
+                default,
+            )
+    return overridden
+
+
+REGION_UNCERTAINTY_THRESHOLDS = _apply_region_threshold_env_overrides(REGION_UNCERTAINTY_THRESHOLDS)
 
 
 # ============================================================================
@@ -396,37 +423,37 @@ def compute_age_confidence_with_region(
 
     # Penalty: Lower-quality images reduce age reliability quickly.
     if image_quality_bucket == "fair":
-        scaled_confidence *= 0.90
+        scaled_confidence *= 0.95
     elif image_quality_bucket == "poor":
-        scaled_confidence *= 0.72
+        scaled_confidence *= 0.80
 
     # Penalty: Non-profile postures hide core age cues.
     if posture_bucket == "head_down":
-        scaled_confidence *= 0.82
+        scaled_confidence *= 0.90
     elif posture_bucket in {"frontal", "rear", "unknown"}:
-        scaled_confidence *= 0.78
+        scaled_confidence *= 0.88
 
     # Penalty: Explicit visibility issues from the model's quality rubric.
     quality_factors = quality_factors or {}
     if quality_factors.get("body_visibility") == "low":
-        scaled_confidence *= 0.78
+        scaled_confidence *= 0.86
     elif quality_factors.get("body_visibility") == "medium":
-        scaled_confidence *= 0.92
+        scaled_confidence *= 0.96
 
     if quality_factors.get("head_visibility") == "low":
-        scaled_confidence *= 0.86
+        scaled_confidence *= 0.92
     elif quality_factors.get("head_visibility") == "medium":
-        scaled_confidence *= 0.95
+        scaled_confidence *= 0.98
 
     if quality_factors.get("occlusion") == "high":
-        scaled_confidence *= 0.75
+        scaled_confidence *= 0.82
     elif quality_factors.get("occlusion") == "medium":
-        scaled_confidence *= 0.90
+        scaled_confidence *= 0.94
 
     if quality_factors.get("blur") == "high":
-        scaled_confidence *= 0.78
+        scaled_confidence *= 0.86
     elif quality_factors.get("blur") == "medium":
-        scaled_confidence *= 0.92
+        scaled_confidence *= 0.95
     
     # Apply region difficulty multiplier
     region_multiplier = REGION_DIFFICULTY_MULTIPLIERS.get(region_key, 0.88)
@@ -497,10 +524,25 @@ def apply_uncertainty_gate(
     threshold = REGION_UNCERTAINTY_THRESHOLDS.get(region_key, 0.68)
     deer_sex_normalized = (deer_sex or "").strip().lower()
 
+    if predicted_age is not None:
+        threshold = min(threshold, RegionCalibrationConfig.PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD)
+
     if deer_sex_normalized == "doe" and predicted_age is not None:
-        threshold = max(0.25, threshold - RegionCalibrationConfig.DOE_UNCERTAINTY_THRESHOLD_OFFSET)
-    
-    if calibrated_age_confidence < threshold:
+        threshold = max(0.12, threshold - RegionCalibrationConfig.DOE_UNCERTAINTY_THRESHOLD_OFFSET)
+
+    age_uncertain = calibrated_age_confidence < threshold
+    logger.info(
+        "Age uncertainty gate: region=%s predicted_age=%s deer_sex=%s calibrated_age_confidence=%.3f "
+        "threshold=%.3f age_uncertain=%s",
+        region_key.value,
+        predicted_age,
+        deer_sex,
+        calibrated_age_confidence,
+        threshold,
+        age_uncertain,
+    )
+
+    if age_uncertain:
         return True, None
     
     return False, predicted_age
@@ -784,7 +826,12 @@ def calibrate_from_dict_with_region(
         updated_analysis["age_bucket"] = None
         updated_analysis["age_range"] = None
         updated_analysis["buck_age_class"] = None
-    
+        if not updated_analysis.get("retake_reason"):
+            updated_analysis["reasoning"] = (
+                "Visible body cues suggest a possible age class, but confidence calibration "
+                "was too low to keep a defensible numeric age estimate."
+            )
+
     # Update legacy confidence field to use recommendation confidence
     updated_analysis["confidence"] = calibration_result.calibrated_recommendation_confidence
     
