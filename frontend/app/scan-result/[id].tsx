@@ -905,9 +905,9 @@ export default function ScanResultScreen() {
     : 0;
   
   const analysisData = [
-    { label: 'Antler Points (Total)', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
     { label: 'Left Antler', value: scan.antler_points_left !== null ? `${scan.antler_points_left} pts` : 'N/A' },
     { label: 'Right Antler', value: scan.antler_points_right !== null ? `${scan.antler_points_right} pts` : 'N/A' },
+    { label: 'Total Points', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
     { label: 'Body Condition', value: scan.body_condition || 'Unknown' },
   ];
 
