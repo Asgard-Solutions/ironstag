@@ -1033,6 +1033,7 @@ export default function ScanResultScreen() {
             {ageIsUncertain && (
               <AlertCircle size={14} color={colors.textMuted} style={styles.uncertainIconSmall} />
             )}
+          </View>
           </Card>
 
           {/* Confidence */}
