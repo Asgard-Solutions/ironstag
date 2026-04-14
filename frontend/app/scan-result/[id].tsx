@@ -905,31 +905,10 @@ export default function ScanResultScreen() {
     : 0;
   
   const analysisData = [
-    {
-      label: 'Deer Type',
-      value: scan.deer_type || 'Unknown',
-    },
-    {
-      label: 'Sex',
-      value: scan.deer_sex || 'Unknown',
-    },
-    { label: 'Deer Type', value: scan.deer_type || 'Unknown' },
-    { label: 'Sex', value: scan.deer_sex || 'Unknown' },
     { label: 'Antler Points (Total)', value: scan.antler_points ? `${scan.antler_points} pts` : 'N/A' },
     { label: 'Left Antler', value: scan.antler_points_left !== null ? `${scan.antler_points_left} pts` : 'N/A' },
     { label: 'Right Antler', value: scan.antler_points_right !== null ? `${scan.antler_points_right} pts` : 'N/A' },
     { label: 'Body Condition', value: scan.body_condition || 'Unknown' },
-    ...(visibleAgeCueText ? [{ label: 'Visible Age Cues', value: visibleAgeCueText }] : []),
-    { 
-      label: 'Model Confidence', 
-      value: `${displayConfidence}%`,
-      isUncertain: ageIsUncertain,
-      helpText: ageEstimateBlocked
-        ? 'No age confidence because the image failed the quality gate'
-        : ageIsUncertain
-          ? 'Capped due to age uncertainty'
-          : undefined,
-    },
   ];
 
   return (
@@ -1126,6 +1105,12 @@ export default function ScanResultScreen() {
               <Text style={styles.dataValue}>{item.value}</Text>
             </View>
           ))}
+          {visibleAgeCueText ? (
+            <View style={styles.dataItemFull}>
+              <Text style={styles.dataLabel}>Visible Age Cues</Text>
+              <Text style={styles.dataValueWrap}>{visibleAgeCueText}</Text>
+            </View>
+          ) : null}
         </View>
 
         {showHarvestRecordCard && (
@@ -1358,10 +1343,14 @@ export default function ScanResultScreen() {
                 style={styles.feedbackButton}
                 onPress={() => setShowFeedbackModal(true)}
               >
-                <MessageSquare size={18} color={colors.primary} />
-                <Text style={styles.feedbackButtonText}>
-                  {isQuickFeedbackEligible() ? 'How did this estimate hold up?' : 'Add harvested age or feedback'}
-                </Text>
+                <View style={styles.feedbackButtonLeft}>
+                  <MessageSquare size={18} color={colors.primary} />
+                  <View style={styles.feedbackButtonTextWrap}>
+                    <Text style={styles.feedbackButtonTitle}>Did we get it right?</Text>
+                    <Text style={styles.feedbackButtonSub}>Help improve future estimates</Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={colors.textMuted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -2388,6 +2377,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textPrimary,
     fontWeight: '500',
+  },
+  dataItemFull: {
+    width: '100%',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  dataValueWrap: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontWeight: '400',
+    lineHeight: 20,
+    flexWrap: 'wrap',
   },
   scoreCard: {
     marginBottom: spacing.md,
