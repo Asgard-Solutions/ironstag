@@ -1208,7 +1208,7 @@ export default function ScanResultScreen() {
           <Card style={styles.scoreCard}>
             <View style={styles.scoreCardHeader}>
               <View>
-                <Text style={styles.scoreCardTitle}>Unofficial B&amp;C Score</Text>
+                <Text style={styles.scoreCardTitle}>Score This Harvest</Text>
                 <Text style={styles.scoreCardSubtitle}>User-entered estimate for harvested bucks</Text>
               </View>
               <View
