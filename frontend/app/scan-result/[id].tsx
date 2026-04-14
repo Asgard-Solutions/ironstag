@@ -813,7 +813,7 @@ export default function ScanResultScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace('/(tabs)/scan')}
+            onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <ArrowLeft size={24} color={colors.textPrimary} />
@@ -830,7 +830,7 @@ export default function ScanResultScreen() {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>Scan not found</Text>
-        <Button title="Go Back" onPress={() => router.replace('/(tabs)/scan')} />
+        <Button title="Go Back" onPress={() => router.back()} />
       </View>
     );
   }
