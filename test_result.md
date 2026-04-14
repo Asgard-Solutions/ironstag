@@ -431,6 +431,34 @@ frontend:
     stuck_count: 0
     priority: "high"
     needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Major UX overhaul: 1) Hero recommendation banner (HARVEST/PASS) with subtext 2) Age + Confidence side-by-side cards with human-readable confidence bands 3) 'Why we think this' section with bullet cue chips 4) Share Scan feature via expo-sharing + react-native-view-shot 5) Improved feedback copy 6) Ethical messaging refinement"
+
+  - task: "Share Scan Feature"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/scan-result/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented share via ViewShot capture of branded share card (ScanSummaryCard shareMode) with fallback to text-based Share API. Uses expo-sharing for native share sheet."
+
+  - task: "ScanSummaryCard Reusable Component"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/components/ScanSummaryCard.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New reusable component with: hero mode for scan result screen, share mode for branded share card, confidence label helpers, reasoning parser to extract summary + cue bullets."
 
 metadata:
   created_by: "main_agent"
@@ -456,7 +484,7 @@ agent_communication:
   - agent: "testing"
     message: "✅ FRONTEND SCAN FLOW TESTING COMPLETE: Successfully tested the 'Analyze Deer' scan flow as requested. Key findings: 1) User registration/login working perfectly ✅ 2) Dashboard shows '3 FREE SCANS LEFT' confirming backend integration ✅ 3) Scan interface accessible with 'Scan Deer' and 'Choose from Library' buttons ✅ 4) Scan eligibility tracking functional ✅ 5) Authentication and session management working ✅. Minor limitation: Full image picker testing limited in web environment (requires mobile device for complete flow). Core scan functionality and backend integration confirmed working. Ready for mobile testing or production deployment."
   - agent: "testing"
-    message: "✅ PRODUCTION URL TESTING COMPLETE: Comprehensive testing of Iron Stag backend API endpoints using production URL (https://buck-tracker.preview.emergentagent.com/api) completed successfully. All requested test scenarios passed with 100% success rate: 1) User Registration ✅ (historytest@test.com created successfully) 2) User Login ✅ (JWT token authentication working) 3) Subscription Status ✅ (tier: tracker, 3 scans remaining) 4) Scan Eligibility ✅ (allowed: true, proper scan tracking) 5) Scan History ✅ (empty array for new user, proper structure) 6) Scan Stats ✅ (total_scans: 0, harvest_count: 0, pass_count: 0) 7) Deer Analysis ✅ (scan created successfully, appears in history). GPT-4 Vision integration working correctly, scan counting accurate, authentication secure. Backend production deployment fully functional and ready for users."
+    message: "✅ PRODUCTION URL TESTING COMPLETE: Comprehensive testing of Iron Stag backend API endpoints using production URL (https://stag-analysis-dev.preview.emergentagent.com/api) completed successfully. All requested test scenarios passed with 100% success rate: 1) User Registration ✅ (historytest@test.com created successfully) 2) User Login ✅ (JWT token authentication working) 3) Subscription Status ✅ (tier: tracker, 3 scans remaining) 4) Scan Eligibility ✅ (allowed: true, proper scan tracking) 5) Scan History ✅ (empty array for new user, proper structure) 6) Scan Stats ✅ (total_scans: 0, harvest_count: 0, pass_count: 0) 7) Deer Analysis ✅ (scan created successfully, appears in history). GPT-4 Vision integration working correctly, scan counting accurate, authentication secure. Backend production deployment fully functional and ready for users."
   - agent: "main"
     message: "Phase 2 Empirical Calibration implementation complete. Added new admin endpoints for curve management. Feature flag CALIBRATION_CURVES_ENABLED must be true to use. Tested locally with curl and all endpoints respond correctly: 1) GET /api/admin/calibration/jobs/status - returns job status and config 2) GET /api/admin/calibration/curves - lists all curves (currently empty) 3) POST /api/admin/calibration/build-curves with dry_run:true - returns success with 0 curves built (no labeled data) 4) POST /api/admin/calibration/recalibrate-scans with dry_run:true - returns success with 'No active curves found' error (expected). Need testing agent to verify all endpoints thoroughly."
   - agent: "testing"
@@ -467,3 +495,5 @@ agent_communication:
     message: "✅ PHASE 1 EMPIRICAL CALIBRATION TESTING COMPLETE: Comprehensive testing of all Phase 1 Empirical Calibration label endpoints completed successfully with 10/10 tests passed (100% success rate). All endpoints working perfectly: 1) POST /api/scans/{scan_id}/label ✅ (exact age labels: label_type='exact_age', label_weight=1.0, effective_weight=1.0 for harvested deer; categorical labels: label_type='categorical', label_weight=0.2, effective_weight=0.1 for 'close' accuracy with default credibility) 2) GET /api/scans/{scan_id}/label ✅ (retrieves labels correctly, returns null for scans without labels) 3) DELETE /api/scans/{scan_id}/label ✅ (removes existing labels successfully) 4) GET /api/admin/calibration/labels/stats ✅ (returns comprehensive statistics including total_labels, exact_age_count, categorical_count, by_region breakdown, maturity_gates status) 5) GET /api/admin/calibration/labels ✅ (lists recent labels with proper structure). Label weighting system confirmed working: exact_age_harvested=1.0, categorical_close=0.2, credibility factors applied correctly (harvested=1.0, default=0.5). Database schema fully functional with all Phase 3 trust weighting columns. Admin endpoints accessible without authentication as designed. System ready for empirical calibration data collection and curve building."
   - agent: "main"
     message: "✅ OFFLINE QUEUE & TAGS UI IMPLEMENTATION COMPLETE: Implemented Option A (Offline Queue) and Option C (Tags UI). 1) Offline Queue: Full integration into scan.tsx - scans taken while offline are automatically queued and synced when back online. Added OfflineBanner to scan tab, Pending Scans section in History tab with sync/remove functionality. Network detection via @react-native-community/netinfo. 2) Tags UI: Created TagsEditor component for scan result page, displays tags on history cards, backend already has POST /scans/{id}/tags and GET /scans/tags/all endpoints. User can add custom tags or choose from suggestions."
+  - agent: "main"
+    message: "✅ SCAN RESULT UX OVERHAUL COMPLETE: Implemented comprehensive improvements to the Scan Result screen: 1) Hero Recommendation Banner - HARVEST/PASS is now the dominant visual element with centered banner, large text, and explanatory subtext 2) Age + Confidence Side-by-Side Cards - Estimated age and confidence displayed in twin cards with human-readable confidence bands (High/Moderate/Low) and guidance text 3) 'Why We Think This' Section - AI analysis converted from raw paragraph into structured summary + scannable bullet cue chips extracted from reasoning text 4) Share Scan Feature - branded share card rendered via ViewShot with native share sheet via expo-sharing, text fallback included 5) Improved Feedback Copy - 'Did we get it right?' with 'Help improve future estimates' subtext 6) Ethical Messaging Refined - shield icon, supportive tone, positioned as 'supports your judgment' 7) New ScanSummaryCard reusable component created for hero and share card rendering"
