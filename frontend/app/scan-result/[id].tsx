@@ -976,31 +976,8 @@ export default function ScanResultScreen() {
           </View>
         )}
 
-        {/* Recommendation Badge */}
-        <View style={styles.recommendationContainer}>
-          <View
-            style={[
-              styles.recommendationBadge,
-              recommendationVariant === 'harvest'
-                ? styles.harvestBadge
-                : recommendationVariant === 'pass'
-                  ? styles.passBadge
-                  : styles.unknownBadge,
-            ]}
-          >
-            <Text
-              style={[
-                styles.recommendationText,
-                recommendationVariant === 'harvest'
-                  ? styles.harvestText
-                  : recommendationVariant === 'pass'
-                    ? styles.passText
-                    : styles.unknownText,
-              ]}
-            >
-              {displayRecommendation || 'UNKNOWN'}
-            </Text>
-          </View>
+        {/* Date + Share row */}
+        <View style={styles.metaRow}>
           <View style={styles.dateContainer}>
             <Calendar size={14} color={colors.textMuted} />
             <Text style={styles.dateText}>
@@ -1021,6 +998,39 @@ export default function ScanResultScreen() {
               </>
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* ────── HERO RECOMMENDATION BANNER ────── */}
+        <View
+          style={[
+            styles.heroBanner,
+            recommendationVariant === 'harvest'
+              ? styles.heroBannerHarvest
+              : recommendationVariant === 'pass'
+                ? styles.heroBannerPass
+                : styles.heroBannerUnknown,
+          ]}
+        >
+          <Text style={styles.heroLabel}>RECOMMENDATION</Text>
+          <Text
+            style={[
+              styles.heroValue,
+              recommendationVariant === 'harvest'
+                ? styles.harvestText
+                : recommendationVariant === 'pass'
+                  ? styles.passText
+                  : styles.unknownText,
+            ]}
+          >
+            {displayRecommendation || 'UNKNOWN'}
+          </Text>
+          <Text style={styles.heroSubtext}>
+            {recommendationVariant === 'harvest'
+              ? 'Based on maturity and visible body indicators'
+              : recommendationVariant === 'pass'
+                ? 'Based on age estimate and development indicators'
+                : 'Unable to determine a clear recommendation'}
+          </Text>
         </View>
 
         {/* Quick Summary */}
@@ -1069,8 +1079,8 @@ export default function ScanResultScreen() {
         {scan.reasoning && scan.reasoning !== scan.retake_reason && (
           <Card style={styles.insightCard}>
             <View style={styles.insightHeader}>
-              <Target size={20} color={colors.primary} />
-              <Text style={styles.insightTitle}>AI Analysis</Text>
+              <Eye size={18} color={colors.precision} />
+              <Text style={styles.insightTitle}>Why we think this</Text>
             </View>
 
             {/* Summary */}
@@ -2030,6 +2040,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.md,
   },
+
+  // ── HERO RECOMMENDATION BANNER ──
+  heroBanner: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    ...shadows.card,
+  },
+  heroBannerHarvest: {
+    backgroundColor: colors.harvestBg,
+    borderColor: colors.harvestBorder,
+  },
+  heroBannerPass: {
+    backgroundColor: colors.surface,
+    borderColor: colors.passBorder,
+  },
+  heroBannerUnknown: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  heroLabel: {
+    ...typography.sectionHeader,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+  },
+  heroValue: {
+    fontSize: 36,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: spacing.xs,
+  },
+  heroSubtext: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+
+  // (legacy – kept for other uses)
   recommendationBadge: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
@@ -2051,7 +2102,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   recommendationText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   harvestText: {
