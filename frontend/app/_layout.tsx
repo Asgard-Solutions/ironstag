@@ -124,9 +124,9 @@ export default function RootLayout() {
       const rootRoutes = ['/', '/index', '/splash', '/(tabs)', '/(tabs)/scan', '/(tabs)/history', '/(tabs)/learn', '/(tabs)/profile'];
       const authRoutes = ['/(auth)/login', '/(auth)/signup'];
       
-      // If on scan-result page, navigate to scan tab
+      // If on scan-result page, go back to previous screen
       if (pathname.startsWith('/scan-result')) {
-        router.replace('/(tabs)/scan');
+        router.back();
         return true; // Prevent default
       }
       

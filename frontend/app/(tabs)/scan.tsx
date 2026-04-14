@@ -269,7 +269,7 @@ export default function ScanScreen() {
 
       // Use replace instead of push to prevent the Android back button
       // from returning to the "analyzing" state
-      router.replace(`/scan-result/${response.data.id}`);
+      router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
       console.error('Analyze deer error:', error);
       console.error('Error response:', error.response?.data);
