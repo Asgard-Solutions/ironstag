@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,14 @@ import {
   Platform,
   KeyboardAvoidingView,
   RefreshControl,
+  Share,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
 import {
   ArrowLeft,
   Share2,
@@ -31,6 +34,9 @@ import {
   Pencil,
   AlertCircle,
   MessageSquare,
+  ChevronRight,
+  Shield,
+  Eye,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -38,6 +44,11 @@ import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
 import { TagsEditor } from '../../components/TagsEditor';
+import {
+  ScanSummaryCard,
+  getConfidenceLabel,
+  parseReasoning,
+} from '../../components/ScanSummaryCard';
 import { useImageStore } from '../../stores/imageStore';
 import { scanAPI } from '../../utils/api';
 import {
@@ -68,7 +79,6 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-// Cap confidence at this value when age is uncertain/unknown
 const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
 const BC_DISCLAIMER =
@@ -144,9 +154,7 @@ interface ScanResult {
   visible_age_cues?: string[];
   notes: string | null;
   created_at: string;
-  // Cloud image storage (R2) - for cross-device access
   image_url?: string | null;
-  // Tags for organization
   tags?: string[];
   harvest_confirmed?: boolean | null;
   harvested_at?: string | null;
@@ -161,29 +169,18 @@ interface ScanResult {
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
 
-/**
- * Check if the age is uncertain/unknown
- */
 function isAgeUncertain(age: number | null | undefined): boolean {
   return age === null || age === undefined || age === 0;
 }
 
-/**
- * Get display-calibrated confidence value
- */
 function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
   const confidence = rawConfidence || 0;
-  
   if (isAgeUncertain(age)) {
     return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
   }
-  
   return confidence;
 }
 
-/**
- * Get age display text with uncertainty handling
- */
 function getAgeDisplayText(age: number | null): string {
   if (isAgeUncertain(age)) {
     return 'Uncertain';
@@ -400,7 +397,8 @@ export default function ScanResultScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notes, setNotes] = useState('');
-  
+  const [isSharing, setIsSharing] = useState(false);
+
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editDeerSex, setEditDeerSex] = useState<string>('');
@@ -417,6 +415,9 @@ export default function ScanResultScreen() {
   const [hasLabel, setHasLabel] = useState(false);
   const [labelCheckDone, setLabelCheckDone] = useState(false);
 
+  // Share card ref
+  const shareCardRef = useRef<ViewShot>(null);
+
   useEffect(() => {
     loadScan();
   }, [id]);
@@ -430,21 +431,17 @@ export default function ScanResultScreen() {
       setNotes(response.data.notes || '');
       setScoreForm(buildInitialBcScoreForm(response.data, response.data.boone_crockett_score));
 
-      // Try to get local image first, fall back to cloud URL (R2)
       if (response.data.local_image_id) {
         const uri = await getImage(response.data.local_image_id);
         if (uri) {
           setImageUri(uri);
         } else if (response.data.image_url) {
-          // Local image not found, use cloud URL (cross-device access)
           setImageUri(response.data.image_url);
         }
       } else if (response.data.image_url) {
-        // No local image ID, use cloud URL directly
         setImageUri(response.data.image_url);
       }
-      
-      // Check if scan already has a label (for feedback feature)
+
       try {
         const labelResponse = await scanAPI.getLabel(id);
         setHasLabel(!!labelResponse.data);
@@ -460,8 +457,7 @@ export default function ScanResultScreen() {
       setRefreshing(false);
     }
   };
-  
-  // Pull-to-refresh handler
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     loadScan();
@@ -680,12 +676,11 @@ export default function ScanResultScreen() {
 
   const handleSubmitEdit = async () => {
     if (!scan) return;
-    
+
     setIsSubmittingEdit(true);
     try {
-      // Prepare edit data
       const editData: any = {};
-      
+
       if (editDeerSex && editDeerSex !== scan.deer_sex) {
         editData.deer_sex = editDeerSex;
       }
@@ -698,35 +693,30 @@ export default function ScanResultScreen() {
       if (editPointsRight !== '') {
         editData.antler_points_right = parseInt(editPointsRight, 10);
       }
-      
-      // Include image for re-analysis if available
+
       if (imageUri) {
         try {
           let base64Image: string;
-          
-          // Check if it's a cloud URL (R2) or local file
+
           if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
-            // Cloud URL - fetch and convert to base64
             const response = await fetch(imageUri);
             const blob = await response.blob();
             const reader = new FileReader();
             base64Image = await new Promise<string>((resolve, reject) => {
               reader.onloadend = () => {
                 const result = reader.result as string;
-                // Extract just the base64 part if it includes the data URI prefix
                 resolve(result);
               };
               reader.onerror = reject;
               reader.readAsDataURL(blob);
             });
           } else {
-            // Local file URI - use FileSystem to read
             const base64Data = await FileSystem.readAsStringAsync(imageUri, {
               encoding: 'base64' as any,
             });
             base64Image = `data:image/jpeg;base64,${base64Data}`;
           }
-          
+
           editData.image_base64 = base64Image;
           console.log('Image included for re-analysis, length:', base64Image.length);
         } catch (imgError) {
@@ -737,19 +727,16 @@ export default function ScanResultScreen() {
             [{ text: 'OK' }]
           );
         }
-      } else {
-        console.log('No image URI available for re-analysis');
       }
-      
-      // Show loading indicator for re-analysis
+
       if (editData.image_base64) {
         Alert.alert('Re-analyzing', 'Sending image to AI for new analysis...');
       }
-      
+
       const response = await scanAPI.editScan(scan.id, editData);
       setScan(response.data);
       setShowEditModal(false);
-      
+
       if (editData.image_base64) {
         Alert.alert('Success', 'Scan re-analyzed with your corrections!');
       } else {
@@ -764,12 +751,68 @@ export default function ScanResultScreen() {
     }
   };
 
+  // ────────── SHARE FEATURE ──────────
+  const handleShare = async () => {
+    if (!scan) return;
+    setIsSharing(true);
+
+    try {
+      // Try to capture the share card as an image
+      if (shareCardRef.current && typeof shareCardRef.current.capture === 'function') {
+        const uri = await shareCardRef.current.capture();
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable && uri) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Share Iron Stag Result',
+            UTI: 'public.png',
+          });
+          setIsSharing(false);
+          return;
+        }
+      }
+    } catch (captureError) {
+      console.log('ViewShot capture failed, falling back to text share:', captureError);
+    }
+
+    // Fallback: text-based share
+    try {
+      const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+      const ageText = getAgeDisplayText(scan.deer_age);
+
+      const shareText = [
+        `Iron Stag Result`,
+        ``,
+        `RECOMMENDATION: ${scan.recommendation || 'UNKNOWN'}`,
+        `Estimated Age: ${ageText}`,
+        `Confidence: ${displayConfidence}%`,
+        scan.deer_type ? `Type: ${scan.deer_type}` : null,
+        scan.antler_points ? `Points: ${scan.antler_points}` : null,
+        ``,
+        `Analyzed with Iron Stag`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      await Share.share({
+        message: shareText,
+        title: 'Iron Stag Scan Result',
+      });
+    } catch (shareError) {
+      if ((shareError as any)?.message !== 'User did not share') {
+        Alert.alert('Share Failed', 'Unable to share this scan result.');
+      }
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  // ────────── LOADING STATE ──────────
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => router.replace('/(tabs)/scan')}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
@@ -778,8 +821,6 @@ export default function ScanResultScreen() {
           <Text style={styles.headerTitle}>Scan Results</Text>
           <View style={{ width: 24 }} />
         </View>
-        
-        {/* Skeleton loading state */}
         <ScanResultSkeleton />
       </View>
     );
@@ -794,8 +835,7 @@ export default function ScanResultScreen() {
     );
   }
 
-  // Build analysis data with left/right antler points
-  // Apply confidence calibration for uncertain ages
+  // ────────── DERIVED DATA ──────────
   const ageIsUncertain = isAgeUncertain(scan.deer_age);
   const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
   const ageDisplayText = getAgeDisplayText(scan.deer_age);
@@ -863,10 +903,13 @@ export default function ScanResultScreen() {
     : 0;
   
   const analysisData = [
-    { 
-      label: 'Age Estimate', 
-      value: ageDisplayText,
-      isUncertain: ageIsUncertain,
+    {
+      label: 'Deer Type',
+      value: scan.deer_type || 'Unknown',
+    },
+    {
+      label: 'Sex',
+      value: scan.deer_sex || 'Unknown',
     },
     { label: 'Deer Type', value: scan.deer_type || 'Unknown' },
     { label: 'Sex', value: scan.deer_sex || 'Unknown' },
@@ -889,10 +932,10 @@ export default function ScanResultScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
+      {/* ────── HEADER ────── */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => router.replace('/(tabs)/scan')}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -921,7 +964,7 @@ export default function ScanResultScreen() {
           />
         }
       >
-        {/* Image */}
+        {/* ────── 1. DEER IMAGE ────── */}
         {imageUri ? (
           <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
         ) : (
@@ -962,6 +1005,20 @@ export default function ScanResultScreen() {
               {format(new Date(scan.created_at), 'MMM d, yyyy h:mm a')}
             </Text>
           </View>
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={handleShare}
+            disabled={isSharing}
+          >
+            {isSharing ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Share2 size={16} color={colors.primary} />
+                <Text style={styles.shareButtonText}>Share</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Quick Summary */}
@@ -976,15 +1033,22 @@ export default function ScanResultScreen() {
             {ageIsUncertain && (
               <AlertCircle size={14} color={colors.textMuted} style={styles.uncertainIconSmall} />
             )}
-          </View>
-          {scan.antler_points !== null && (
-            <Text style={styles.summarySubtitle}>
-              {scan.antler_points} points
-              {(scan.antler_points_left !== null || scan.antler_points_right !== null) && 
-                ` (${scan.antler_points_left || 0}L / ${scan.antler_points_right || 0}R)`}
+          </Card>
+
+          {/* Confidence */}
+          <Card style={styles.confCard}>
+            <Text style={styles.confCardLabel}>CONFIDENCE</Text>
+            <Text style={[styles.confCardValue, { color: confLabel.color }]}>
+              {displayConfidence}%
             </Text>
-          )}
-        </Card>
+            <Text style={[styles.confCardBand, { color: confLabel.color }]}>
+              {confLabel.label}
+            </Text>
+            <Text style={styles.confCardGuidance} numberOfLines={2}>
+              {confLabel.guidance}
+            </Text>
+          </Card>
+        </View>
 
         {scan.retake_reason && (
           <Card style={styles.retakeCard}>
@@ -1006,11 +1070,42 @@ export default function ScanResultScreen() {
               <Target size={20} color={colors.primary} />
               <Text style={styles.insightTitle}>AI Analysis</Text>
             </View>
-            <Text style={styles.insightText}>{scan.reasoning}</Text>
+
+            {/* Summary */}
+            {reasoningSummary ? (
+              <Text style={styles.whySummary}>{reasoningSummary}</Text>
+            ) : null}
+
+            {/* Top Cues */}
+            {reasoningCues.length > 0 ? (
+              <View style={styles.cuesContainer}>
+                <Text style={styles.cuesLabel}>TOP CUES</Text>
+                <View style={styles.cuesChipRow}>
+                  {reasoningCues.map((cue, idx) => (
+                    <View key={idx} style={styles.cueChip}>
+                      <Text style={styles.cueChipText}>{cue}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {/* Full Analysis (collapsed by default if cues are shown) */}
+            {reasoningCues.length > 0 && scan.reasoning && reasoningSummary !== scan.reasoning && (
+              <ExpandableText
+                label="Full analysis"
+                text={scan.reasoning}
+              />
+            )}
+
+            {/* If no cues were extracted, show full reasoning */}
+            {reasoningCues.length === 0 && scan.reasoning && (
+              <Text style={styles.whyFullText}>{scan.reasoning}</Text>
+            )}
           </Card>
         )}
 
-        {/* Analysis Data Grid */}
+        {/* ────── 5. ANALYSIS DETAILS GRID ────── */}
         <Text style={styles.sectionTitle}>Analysis Details</Text>
         <View style={styles.dataGrid}>
           {analysisData.map((item, index) => (
@@ -1227,22 +1322,24 @@ export default function ScanResultScreen() {
           )}
         </View>
 
-        {/* Tags Section */}
-        <TagsEditor 
+        {/* ────── 7. TAGS ────── */}
+        <TagsEditor
           scanId={scan.id}
           initialTags={scan.tags || []}
           onTagsUpdated={(newTags) => {
-            setScan(prev => prev ? { ...prev, tags: newTags } : null);
+            setScan((prev) => (prev ? { ...prev, tags: newTags } : null));
           }}
         />
 
-        {/* Feedback Section (Phase 2 Empirical Calibration) */}
+        {/* ────── 8. FEEDBACK (Improved Copy) ────── */}
         {labelCheckDone && (
           <View style={styles.feedbackSection}>
             {hasLabel ? (
               <View style={styles.feedbackSubmitted}>
                 <Check size={16} color={colors.harvest} />
-                <Text style={styles.feedbackSubmittedText}>Feedback submitted — thanks!</Text>
+                <Text style={styles.feedbackSubmittedText}>
+                  Feedback submitted — thanks for helping improve accuracy!
+                </Text>
               </View>
             ) : canOpenFeedbackModal() ? (
               <TouchableOpacity 
@@ -1258,28 +1355,47 @@ export default function ScanResultScreen() {
           </View>
         )}
 
-        {/* Disclaimer */}
+        {/* ────── 9. ETHICAL REMINDER ────── */}
         <Card style={styles.disclaimerCard}>
           <View style={styles.disclaimerHeader}>
-            <AlertTriangle size={18} color={colors.warning} />
-            <Text style={styles.disclaimerTitle}>Remember</Text>
+            <Shield size={16} color={colors.precision} />
+            <Text style={styles.disclaimerTitle}>Iron Stag supports your judgment</Text>
           </View>
           <Text style={styles.disclaimerText}>
-            AI analysis is a tool to assist your judgment, not replace it. Always follow
-            local regulations, practice ethical hunting, and make decisions based on
-            multiple factors.
+            AI analysis is a decision-support tool, not a substitute for field experience.
+            Always follow local regulations and practice ethical hunting.
           </Text>
         </Card>
       </ScrollView>
 
-      {/* Edit Modal */}
+      {/* ────── OFFSCREEN: SHARE CARD ────── */}
+      <View style={styles.offscreen}>
+        <ViewShot
+          ref={shareCardRef}
+          options={{ format: 'png', quality: 0.9 }}
+        >
+          <ScanSummaryCard
+            imageUri={imageUri}
+            recommendation={scan.recommendation}
+            deerAge={scan.deer_age}
+            confidence={scan.confidence}
+            deerType={scan.deer_type}
+            deerSex={scan.deer_sex}
+            antlerPoints={scan.antler_points}
+            reasoning={scan.reasoning}
+            shareMode={true}
+          />
+        </ViewShot>
+      </View>
+
+      {/* ────── EDIT MODAL ────── */}
       <Modal
         visible={showEditModal}
         animationType="slide"
         transparent={true}
         onRequestClose={() => setShowEditModal(false)}
       >
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
@@ -1292,7 +1408,6 @@ export default function ScanResultScreen() {
             </View>
 
             <ScrollView style={styles.modalBody}>
-              {/* Deer Sex */}
               <Text style={styles.inputLabel}>Deer Sex</Text>
               <View style={styles.pickerContainer}>
                 <Picker
@@ -1308,7 +1423,6 @@ export default function ScanResultScreen() {
                 </Picker>
               </View>
 
-              {/* Deer Type */}
               <Text style={styles.inputLabel}>Deer Type</Text>
               <View style={styles.pickerContainer}>
                 <Picker
@@ -1324,7 +1438,6 @@ export default function ScanResultScreen() {
                 </Picker>
               </View>
 
-              {/* Antler Points Left */}
               <Text style={styles.inputLabel}>Left Antler Points</Text>
               <TextInput
                 style={styles.textInput}
@@ -1335,7 +1448,6 @@ export default function ScanResultScreen() {
                 keyboardType="numeric"
               />
 
-              {/* Antler Points Right */}
               <Text style={styles.inputLabel}>Right Antler Points</Text>
               <TextInput
                 style={styles.textInput}
@@ -1822,6 +1934,33 @@ export default function ScanResultScreen() {
   );
 }
 
+// ════════════════════════════════════
+// Expandable text sub-component
+// ════════════════════════════════════
+function ExpandableText({ label, text }: { label: string; text: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View style={styles.expandableContainer}>
+      <TouchableOpacity
+        style={styles.expandableToggle}
+        onPress={() => setExpanded(!expanded)}
+      >
+        <Text style={styles.expandableLabel}>{label}</Text>
+        <ChevronRight
+          size={14}
+          color={colors.textMuted}
+          style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}
+        />
+      </TouchableOpacity>
+      {expanded && <Text style={styles.expandableText}>{text}</Text>}
+    </View>
+  );
+}
+
+// ════════════════════════════════════
+// STYLES
+// ════════════════════════════════════
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1831,6 +1970,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1858,11 +1999,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.md,
   },
+
+  // ── Image ──
   image: {
     width: '100%',
-    height: 250,
+    height: 260,
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   imagePlaceholder: {
     width: '100%',
@@ -1871,13 +2014,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   placeholderText: {
     color: colors.textMuted,
     marginTop: spacing.sm,
   },
-  recommendationContainer: {
+
+  // ── Meta row (date + share) ──
+  metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1925,35 +2070,90 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
-  summaryCard: {
-    marginBottom: spacing.md,
-    padding: spacing.md,
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.primaryMuted,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.borderBrass,
   },
-  summaryTitle: {
-    fontSize: 18,
+  shareButtonText: {
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    color: colors.primary,
   },
-  summaryRow: {
+
+  // ── Age + Confidence Row ──
+  ageConfRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  ageCard: {
+    flex: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  ageCardLabel: {
+    ...typography.sectionHeader,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+    fontSize: 11,
+  },
+  ageValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  summarySubtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  ageCardValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
-  summarySubtitleUncertain: {
+  uncertainAge: {
     color: colors.textMuted,
     fontStyle: 'italic',
   },
-  uncertainIconSmall: {
-    marginLeft: 4,
+  ageCardSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
-  insightCard: {
+  confCard: {
+    flex: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+  },
+  confCardLabel: {
+    ...typography.sectionHeader,
+    color: colors.textMuted,
+    marginBottom: spacing.xs,
+    fontSize: 11,
+  },
+  confCardValue: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  confCardBand: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  confCardGuidance: {
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 4,
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+
+  // ── Why We Think This ──
+  whyCard: {
     marginBottom: spacing.md,
     padding: spacing.md,
-    backgroundColor: colors.primary + '10',
   },
   retakeCard: {
     marginBottom: spacing.md,
@@ -1988,39 +2188,107 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
-  insightTitle: {
-    fontSize: 16,
+  whyTitle: {
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.primary,
+    color: colors.precision,
+    letterSpacing: 0.3,
   },
-  insightText: {
+  whySummary: {
     fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 20,
+    lineHeight: 21,
+    marginBottom: spacing.sm,
   },
+  cuesContainer: {
+    marginTop: spacing.xs,
+  },
+  cuesLabel: {
+    ...typography.sectionHeader,
+    color: colors.textMuted,
+    fontSize: 10,
+    marginBottom: spacing.xs,
+  },
+  cuesChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  cueChip: {
+    backgroundColor: colors.precisionMuted,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.precision + '30',
+  },
+  cueChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.precision,
+  },
+  whyFullText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 21,
+  },
+
+  // ── Expandable ──
+  expandableContainer: {
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    paddingTop: spacing.sm,
+  },
+  expandableToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  expandableLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.textMuted,
+  },
+  expandableText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 19,
+    marginTop: spacing.sm,
+  },
+
+  // ── Section title ──
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
+
+  // ── Data Grid ──
   dataGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginBottom: spacing.md,
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.sm,
+    ...shadows.card,
   },
   dataItem: {
     width: '50%',
     paddingVertical: spacing.sm,
-    paddingRight: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
   dataLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textMuted,
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   dataValue: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.textPrimary,
     fontWeight: '500',
   },
@@ -2585,26 +2853,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  // Feedback section (Phase 2 Empirical Calibration)
+
+  // ── Feedback ──
   feedbackSection: {
     marginBottom: spacing.md,
   },
   feedbackButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primary + '10',
+    justifyContent: 'space-between',
+    backgroundColor: colors.backgroundCard,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.primary + '30',
+    borderColor: colors.primary + '25',
+    ...shadows.card,
   },
-  feedbackButtonText: {
+  feedbackButtonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  feedbackButtonTextWrap: {
+    flex: 1,
+  },
+  feedbackButtonTitle: {
     fontSize: 14,
-    fontWeight: '500',
-    color: colors.primary,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  feedbackButtonSub: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   feedbackSubmitted: {
     flexDirection: 'row',
@@ -2620,32 +2903,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.harvest,
   },
+
+  // ── Disclaimer ──
   disclaimerCard: {
-    backgroundColor: colors.warning + '10',
+    backgroundColor: colors.precisionMuted,
     padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.precision + '20',
   },
   disclaimerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   disclaimerTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.warning,
+    color: colors.precision,
   },
   disclaimerText: {
     fontSize: 12,
     color: colors.textSecondary,
     lineHeight: 18,
   },
+
+  // ── Error ──
   errorText: {
     color: colors.error,
     fontSize: 16,
     marginBottom: spacing.md,
   },
-  // Modal styles
+
+  // ── Offscreen share card ──
+  offscreen: {
+    position: 'absolute',
+    left: -9999,
+    top: -9999,
+  },
+
+  // ── Modal ──
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -2741,5 +3038,11 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

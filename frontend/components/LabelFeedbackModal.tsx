@@ -97,7 +97,7 @@ export function LabelFeedbackModal({
         age_source: ageSource as any,
         labeler_role: labelerRole as any,
       });
-      Alert.alert('Thanks!', 'Your feedback helps improve accuracy for everyone.');
+      Alert.alert('Thanks!', 'Your feedback directly improves future confidence calibration.');
       onLabelSubmitted?.();
       resetAndClose();
     } catch (error: any) {
@@ -118,7 +118,7 @@ export function LabelFeedbackModal({
         accuracy_category: category,
         harvest_confirmed: false,
       });
-      Alert.alert('Thanks!', 'Your feedback helps improve accuracy for everyone.');
+      Alert.alert('Thanks!', 'Your feedback directly improves future confidence calibration.');
       onLabelSubmitted?.();
       resetAndClose();
     } catch (error: any) {
@@ -134,8 +134,10 @@ export function LabelFeedbackModal({
 
   const renderSelectMode = () => (
     <View style={styles.selectContainer}>
-      <Text style={styles.modalTitle}>How did this estimate hold up?</Text>
-      <Text style={styles.modalSubtitle}>Only if you know — totally optional.</Text>
+      <Text style={styles.modalTitle}>Did we get it right?</Text>
+      <Text style={styles.modalSubtitle}>
+        Your feedback improves future estimates for everyone. Totally optional.
+      </Text>
       
       {predictedAge !== null && predictedAge > 0 && (
         <View style={styles.predictionCard}>
@@ -343,7 +345,7 @@ export function LabelFeedbackModal({
           
           {/* Privacy footer */}
           <Text style={styles.privacyText}>
-            Your feedback is stored anonymously and only used to improve confidence accuracy.
+            Your feedback is anonymous and used solely to improve confidence calibration for all users.
           </Text>
         </View>
       </KeyboardAvoidingView>
