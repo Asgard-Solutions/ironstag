@@ -75,7 +75,7 @@ import {
   type BcScoreRecord,
   type BcScoreType,
 } from '../../utils/bcScoring';
-import { colors, spacing, borderRadius } from '../../constants/theme';
+import { colors, spacing, borderRadius, typography, shadows } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
@@ -841,6 +841,8 @@ export default function ScanResultScreen() {
   const ageDisplayText = getAgeDisplayText(scan.deer_age);
   const ageEstimateBlocked = scan.age_estimation_allowed === false;
   const displayRecommendation = getDisplayRecommendation(scan);
+  const confLabel = getConfidenceLabel(displayConfidence);
+  const { summary: reasoningSummary, cues: reasoningCues } = parseReasoning(scan.reasoning);
   const visibleAgeCueText = scan.visible_age_cues && scan.visible_age_cues.length > 0
     ? scan.visible_age_cues.map((cue) => cue.replace(/_/g, ' ')).join(', ')
     : null;
@@ -1049,7 +1051,6 @@ export default function ScanResultScreen() {
               {confLabel.guidance}
             </Text>
           </Card>
-        </View>
 
         {scan.retake_reason && (
           <Card style={styles.retakeCard}>
@@ -2071,6 +2072,14 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
+  recommendationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    flexWrap: 'wrap',
+  },
   shareButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2086,6 +2095,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.primary,
+  },
+  summaryCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  summarySubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  summarySubtitleUncertain: {
+    color: colors.textMuted,
+  },
+  uncertainIconSmall: {
+    marginTop: 1,
   },
 
   // ── Age + Confidence Row ──
@@ -2156,6 +2191,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     padding: spacing.md,
   },
+  insightCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
   retakeCard: {
     marginBottom: spacing.md,
     padding: spacing.md,
@@ -2190,6 +2229,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   whyTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.precision,
+    letterSpacing: 0.3,
+  },
+  insightTitle: {
     fontSize: 15,
     fontWeight: '600',
     color: colors.precision,
@@ -2884,6 +2929,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  feedbackButtonText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginLeft: spacing.sm,
   },
   feedbackButtonSub: {
     fontSize: 12,
