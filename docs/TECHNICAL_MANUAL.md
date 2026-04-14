@@ -1,7 +1,7 @@
 # Iron Stag - Technical Manual
 
-**Version 1.0.0**  
-**Last Updated: January 2026**
+**Version 1.1.0**  
+**Last Updated: March 2026**
 
 ---
 
@@ -62,7 +62,7 @@
               ▼               ▼               ▼
 ┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐
 │    PostgreSQL    │ │   OpenAI     │ │   RevenueCat     │
-│    (Neon DB)     │ │   GPT-4o     │ │   (Payments)     │
+│    (Neon DB)     │ │ multimodal AI│ │   (Payments)     │
 │                  │ │   Vision     │ │                  │
 └──────────────────┘ └──────────────┘ └──────────────────┘
 ```
@@ -125,7 +125,7 @@ User Action → Expo App → API Gateway → FastAPI → Service Layer → Datab
 
 | Service | Purpose |
 |---------|---------|
-| OpenAI GPT-4o Vision | AI deer analysis |
+| OpenAI multimodal models | Deer analysis and structured age estimation |
 | RevenueCat | In-app purchase management |
 | Microsoft Graph | Email delivery (password reset) |
 | Expo EAS | Build and deployment |
@@ -385,7 +385,8 @@ Authorization: Bearer <access_token>
 ```json
 {
   "image_base64": "data:image/jpeg;base64,/9j/4AAQ...",
-  "local_image_id": "uuid-for-local-storage"
+  "local_image_id": "uuid-for-local-storage",
+  "state": "TX"
 }
 ```
 
@@ -396,6 +397,9 @@ Authorization: Bearer <access_token>
   "user_id": "user-uuid",
   "local_image_id": "local-uuid",
   "deer_age": 3.5,
+  "age_bucket": "mature",
+  "age_range": "3.5-4.5",
+  "buck_age_class": "3.5",
   "deer_type": "Whitetail",
   "deer_sex": "Buck",
   "antler_points": 8,
@@ -403,11 +407,23 @@ Authorization: Bearer <access_token>
   "antler_points_right": 4,
   "body_condition": "Good",
   "confidence": 87,
+  "age_estimation_allowed": true,
+  "retake_reason": null,
+  "visible_age_cues": ["chest_vs_hindquarters", "neck_to_face_ratio", "belly_sag"],
   "recommendation": "HARVEST",
+  "analysis_prompt_version": "age-v4-buck-rubric",
+  "analysis_model": "gpt-4.1",
+  "harvest_confirmed": false,
+  "boone_crockett_score": null,
   "reasoning": "This buck appears to be 3.5 years old based on...",
   "created_at": "2026-01-16T12:00:00Z"
 }
 ```
+
+Notes:
+- `deer_age` may be `null` when the photo does not provide enough visible age cues.
+- `age_estimation_allowed=false` means the backend withheld the numeric age and returned a retake reason instead of forcing a guess.
+- `analysis_model` stores the exact OpenAI model used for that scan so A/B tests can be measured later.
 
 **Error Responses:**
 - `400` (NOT_A_DEER): Image doesn't contain a Whitetail or Mule Deer
@@ -480,14 +496,38 @@ Get a specific scan by ID.
 
 #### PUT /scans/{scan_id}
 
-Update scan notes.
+Update scan notes, harvest status, and optional unofficial Boone & Crockett score data.
 
 **Request Body:**
 ```json
 {
-  "notes": "Spotted near the creek on trail cam #3"
+  "notes": "Recovered near the creek crossing",
+  "harvest_confirmed": true,
+  "boone_crockett_disclaimer_accepted": true,
+  "boone_crockett_measurements": {
+    "type": "typical_whitetail_unofficial",
+    "disclaimerAccepted": true,
+    "pointsSummary": {
+      "rightPointsCount": 5,
+      "leftPointsCount": 5,
+      "tipToTipSpread": 16.0,
+      "greatestSpread": 18.0
+    },
+    "spread": {
+      "insideSpreadOfMainBeams": 17.5
+    },
+    "abnormalPoints": {
+      "right": [],
+      "left": []
+    }
+  }
 }
 ```
+
+Notes:
+- `harvest_confirmed` unlocks the manual B&C workflow for bucks.
+- B&C measurements are user-entered only. The backend does not estimate rack score from the image.
+- Supported score types are `typical_whitetail_unofficial`, `non_typical_whitetail_unofficial`, `typical_mule_deer_unofficial`, and `non_typical_mule_deer_unofficial`.
 
 **Response (200):** Updated scan object
 
@@ -708,6 +748,14 @@ Health check endpoint.
 │ recommendation       │ VARCHAR(50)  │ HARVEST/PASS          │
 │ reasoning            │ TEXT         │ AI explanation        │
 │ notes                │ TEXT         │ User notes            │
+│ buck_age_class       │ VARCHAR(10)  │ Buck age class        │
+│ analysis_prompt_version │ VARCHAR(50)│ Prompt version used   │
+│ analysis_model       │ VARCHAR(100) │ OpenAI model used     │
+│ age_estimation_allowed │ BOOLEAN    │ Age returned or gated │
+│ retake_reason        │ TEXT         │ Why age was withheld  │
+│ visible_age_cues     │ JSON         │ Visible body cues     │
+│ harvest_confirmed    │ BOOLEAN      │ Harvested record flag │
+│ boone_crockett_score │ JSON         │ Manual B&C scorecard  │
 │ raw_response         │ JSON         │ Full AI response      │
 │ created_at           │ DATETIME     │ DEFAULT NOW()         │
 └─────────────────────────────────────────────────────────────┘
@@ -871,23 +919,31 @@ interface AuthState {
 
 ## 6. AI Integration
 
-### OpenAI GPT-4o Vision
+### OpenAI Multimodal Deer Aging
 
 #### Configuration
 
 ```python
-MODEL = "gpt-4o"
-MAX_TOKENS = 1000
+ANALYSIS_MODEL = env("OPENAI_ANALYSIS_MODEL", "gpt-4o")
+REANALYSIS_MODEL = env("OPENAI_REANALYSIS_MODEL", ANALYSIS_MODEL)
+AB_TEST_ENABLED = env_bool("OPENAI_MODEL_AB_TEST_ENABLED", False)
+AB_TEST_CANDIDATE = env("OPENAI_MODEL_AB_TEST_CANDIDATE", "gpt-4.1")
+CALIBRATION_CURVES_ENABLED = env_bool("CALIBRATION_CURVES_ENABLED", False)
 ```
 
 #### System Prompt
 
-The AI receives a detailed system prompt that instructs it to:
+The backend sends a structured multimodal prompt that instructs the model to:
 
 1. **First identify** what's in the image
 2. **Reject non-deer** images (Elk, Moose, other animals, objects)
 3. **Only accept** Whitetail and Mule Deer
-4. **Analyze valid deer** for age, sex, points, condition, recommendation
+4. **Use region context** from the request state/home state when available
+5. **Gate poor images** by checking quality, blur, occlusion, posture, and visible body cues
+6. **Age valid deer** using body evidence, with buck class support (`1.5` through `6.5+`) and doe-specific body-profile cues
+7. **Return structured fields** such as `age_estimation_allowed`, `retake_reason`, `visible_age_cues`, `buck_age_class`, separate confidence signals, and recommendation
+
+The model is allowed to withhold a numeric age when the image quality is too poor or the visible age cues are insufficient. Live scans can also apply active empirical calibration curves from the database to improve confidence calibration and abstention behavior.
 
 #### Response Format
 
@@ -905,6 +961,12 @@ The AI receives a detailed system prompt that instructs it to:
 {
   "is_valid_deer": true,
   "deer_age": 3.5,
+  "age_bucket": "mature",
+  "age_range": "3.5-4.5",
+  "buck_age_class": "3.5",
+  "age_estimation_allowed": true,
+  "retake_reason": null,
+  "visible_age_cues": ["chest_vs_hindquarters", "backline", "leg_apparent_length"],
   "deer_type": "Whitetail",
   "deer_sex": "Buck",
   "antler_points": 8,
@@ -912,6 +974,7 @@ The AI receives a detailed system prompt that instructs it to:
   "antler_points_right": 4,
   "body_condition": "Good",
   "confidence": 87,
+  "analysis_model": "gpt-4.1",
   "recommendation": "HARVEST",
   "reasoning": "This buck appears to be..."
 }
@@ -921,8 +984,19 @@ The AI receives a detailed system prompt that instructs it to:
 
 1. Frontend converts image to base64
 2. Prepends `data:image/jpeg;base64,` if missing
-3. Sends to OpenAI via API
-4. Response parsed and stored
+3. Sends the image plus regional context to OpenAI
+4. Backend validates the structured response, applies age-quality gating, and calibrates confidence
+5. Selected prompt version and analysis model are stored on the scan record
+
+#### Boone & Crockett Scoring
+
+The unofficial B&C workflow is intentionally separate from AI analysis:
+
+- Only available on harvested buck records
+- Score type must match the deer species
+- Measurements are entered manually in 1/8-inch precision
+- Rack score is never inferred from the image
+- Saved scores are marked unofficial and user-entered
 
 ---
 
@@ -1239,6 +1313,14 @@ SECRET_KEY=your-jwt-secret-key
 
 # AI
 EMERGENT_LLM_KEY=your-openai-compatible-key
+OPENAI_ANALYSIS_MODEL=gpt-4o
+OPENAI_REANALYSIS_MODEL=gpt-4o
+OPENAI_MODEL_AB_TEST_ENABLED=false
+OPENAI_MODEL_AB_TEST_CANDIDATE=gpt-4.1
+OPENAI_MODEL_AB_TEST_PERCENT=50
+OPENAI_MODEL_AB_TEST_SALT=ironstag-model-ab-v1
+CALIBRATION_CURVES_ENABLED=false
+DOE_UNCERTAINTY_THRESHOLD_OFFSET=0.03
 
 # Email (Microsoft Graph)
 MS_GRAPH_CLIENT_ID=azure-app-client-id

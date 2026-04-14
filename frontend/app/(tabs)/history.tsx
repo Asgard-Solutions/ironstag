@@ -30,6 +30,7 @@ import { format, differenceInDays } from 'date-fns';
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
 // Cap confidence at this value when age is uncertain/unknown
 const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
+const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
 
 interface Scan {
   id: string;
@@ -89,6 +90,18 @@ function getAgeDisplayText(age: number | null): string {
     return 'Uncertain';
   }
   return `${age} yrs`;
+}
+
+function getDisplayRecommendation(scan: Scan): 'HARVEST' | 'PASS' | null {
+  const recommendation = scan.recommendation?.toUpperCase();
+  const deerAge = scan.deer_age;
+  if (recommendation === 'HARVEST' || recommendation === 'PASS') {
+    return recommendation;
+  }
+  if (deerAge === null || deerAge === undefined || deerAge === 0) {
+    return null;
+  }
+  return deerAge >= HARVEST_RECOMMENDATION_MIN_AGE ? 'HARVEST' : 'PASS';
 }
 
 // Component to handle async image loading
@@ -252,6 +265,8 @@ export default function HistoryScreen() {
   };
 
   const filteredScans = scans.filter((scan) => {
+    const displayRecommendation = getDisplayRecommendation(scan);
+
     // Apply favorites filter
     if (showFavoritesOnly && !scan.is_favorite) {
       return false;
@@ -263,7 +278,7 @@ export default function HistoryScreen() {
     }
     
     // Apply recommendation filter
-    if (filters.recommendation && scan.recommendation !== filters.recommendation) {
+    if (filters.recommendation && displayRecommendation !== filters.recommendation) {
       return false;
     }
     
@@ -277,7 +292,7 @@ export default function HistoryScreen() {
         scan.deer_sex,
         scan.notes,
         scan.body_condition,
-        scan.recommendation,
+        displayRecommendation,
         // Match display format: "Age: 4 yrs" or "4 yrs"
         scan.deer_age ? `${scan.deer_age} yrs` : null,
         scan.deer_age ? `age ${scan.deer_age}` : null,
@@ -319,6 +334,7 @@ export default function HistoryScreen() {
     const ageIsUncertain = isAgeUncertain(item.deer_age);
     const displayConfidence = getCalibratedConfidence(item.confidence, item.deer_age);
     const ageDisplayText = getAgeDisplayText(item.deer_age);
+    const displayRecommendation = getDisplayRecommendation(item);
     
     // Check if scan is eligible for feedback (>7 days old and not labeled)
     const daysSinceScan = differenceInDays(new Date(), new Date(item.created_at));
@@ -355,9 +371,9 @@ export default function HistoryScreen() {
               <View style={styles.statusBadge}>
                 <Text style={[
                   styles.statusText,
-                  item.recommendation === 'HARVEST' ? styles.harvestStatus : styles.passStatus
+                  displayRecommendation === 'HARVEST' ? styles.harvestStatus : styles.passStatus
                 ]}>
-                  {item.recommendation || 'PASS'}
+                  {displayRecommendation || 'UNKNOWN'}
                 </Text>
               </View>
               <View style={styles.ageRow}>

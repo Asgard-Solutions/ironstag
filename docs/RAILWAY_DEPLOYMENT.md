@@ -31,7 +31,7 @@ This guide will help you deploy the Iron Stag FastAPI backend to Railway. Your f
          ▼             ▼             ▼
 ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
 │   Neon      │ │   OpenAI    │ │ RevenueCat  │
-│ PostgreSQL  │ │  GPT-4o     │ │  Payments   │
+│ PostgreSQL  │ │ multimodal  │ │  Payments   │
 └─────────────┘ └─────────────┘ └─────────────┘
 ```
 
@@ -115,7 +115,7 @@ In Railway Dashboard → Your Project → Variables tab, add these:
 |----------|-------------|----------|
 | `DATABASE_URL` | Your Neon PostgreSQL URL | `postgresql://user:pass@host/db?sslmode=require` |
 | `SECRET_KEY` | JWT signing secret (generate a strong random string) | `your-super-secret-jwt-key-min-32-chars` |
-| `EMERGENT_LLM_KEY` | OpenAI API key for GPT-4o | `sk-...` |
+| `EMERGENT_LLM_KEY` | OpenAI API key for multimodal deer analysis | `sk-...` |
 | `MS_GRAPH_CLIENT_ID` | Azure app client ID for email | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
 | `MS_GRAPH_CLIENT_SECRET` | Azure app secret | `your-client-secret` |
 | `MS_GRAPH_TENANT_ID` | Azure tenant ID | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
@@ -127,6 +127,14 @@ In Railway Dashboard → Your Project → Variables tab, add these:
 |----------|-------------|----------|
 | `PORT` | Server port | `8001` (Railway sets this automatically) |
 | `LOG_LEVEL` | Logging level | `INFO` |
+| `OPENAI_ANALYSIS_MODEL` | Primary scan model | `gpt-4o` |
+| `OPENAI_REANALYSIS_MODEL` | Reanalysis/edit model | `gpt-4o` |
+| `OPENAI_MODEL_AB_TEST_ENABLED` | Enable deterministic model A/B testing | `false` |
+| `OPENAI_MODEL_AB_TEST_CANDIDATE` | Candidate model for A/B tests | `gpt-4.1` |
+| `OPENAI_MODEL_AB_TEST_PERCENT` | Percent of scans routed to candidate model | `50` |
+| `OPENAI_MODEL_AB_TEST_SALT` | Stable hash salt for A/B assignment | `ironstag-model-ab-v1` |
+| `CALIBRATION_CURVES_ENABLED` | Enable live empirical confidence curves | `false` |
+| `DOE_UNCERTAINTY_THRESHOLD_OFFSET` | Doe confidence threshold offset | `0.03` |
 
 ### How to Add Variables
 
@@ -142,6 +150,14 @@ Or use **Raw Editor** to paste all at once:
 DATABASE_URL=postgresql://neondb_owner:YOUR_PASSWORD@ep-square-silence-ahbepao1-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
 SECRET_KEY=your-super-secret-jwt-signing-key-at-least-32-characters
 EMERGENT_LLM_KEY=your-openai-api-key
+OPENAI_ANALYSIS_MODEL=gpt-4o
+OPENAI_REANALYSIS_MODEL=gpt-4o
+OPENAI_MODEL_AB_TEST_ENABLED=false
+OPENAI_MODEL_AB_TEST_CANDIDATE=gpt-4.1
+OPENAI_MODEL_AB_TEST_PERCENT=50
+OPENAI_MODEL_AB_TEST_SALT=ironstag-model-ab-v1
+CALIBRATION_CURVES_ENABLED=false
+DOE_UNCERTAINTY_THRESHOLD_OFFSET=0.03
 MS_GRAPH_CLIENT_ID=your-azure-client-id
 MS_GRAPH_CLIENT_SECRET=your-azure-client-secret
 MS_GRAPH_TENANT_ID=your-azure-tenant-id

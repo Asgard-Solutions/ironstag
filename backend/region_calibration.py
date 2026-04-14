@@ -75,6 +75,10 @@ class RegionCalibrationConfig:
     NULL_AGE_PENALTY: float = float(os.environ.get('NULL_AGE_PENALTY', '0.4'))
     LOW_ANTLER_INFO_PENALTY: float = float(os.environ.get('LOW_ANTLER_INFO_PENALTY', '0.1'))
     UNKNOWN_SEX_PENALTY: float = float(os.environ.get('UNKNOWN_SEX_PENALTY', '0.05'))
+    DOE_UNCERTAINTY_THRESHOLD_OFFSET: float = float(os.environ.get('DOE_UNCERTAINTY_THRESHOLD_OFFSET', '0.03'))
+    PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD: float = float(
+        os.environ.get('PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD', '0.18')
+    )
 
 
 # ============================================================================
@@ -210,6 +214,30 @@ REGION_UNCERTAINTY_THRESHOLDS: Dict[RegionKey, float] = {
 }
 
 
+def _apply_region_threshold_env_overrides(
+    defaults: Dict[RegionKey, float]
+) -> Dict[RegionKey, float]:
+    overridden = dict(defaults)
+    for region, default in defaults.items():
+        env_name = f"AGE_UNCERTAINTY_THRESHOLD_{region.value.upper()}"
+        raw_value = os.environ.get(env_name)
+        if raw_value is None:
+            continue
+        try:
+            overridden[region] = max(0.0, min(1.0, float(raw_value)))
+        except ValueError:
+            logger.warning(
+                "Invalid %s=%r; using default threshold %.2f",
+                env_name,
+                raw_value,
+                default,
+            )
+    return overridden
+
+
+REGION_UNCERTAINTY_THRESHOLDS = _apply_region_threshold_env_overrides(REGION_UNCERTAINTY_THRESHOLDS)
+
+
 # ============================================================================
 # DATA STRUCTURES
 # ============================================================================
@@ -233,6 +261,9 @@ class RegionCalibrationInput:
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
     body_condition: Optional[str] = None
+    image_quality_bucket: Optional[str] = None
+    posture_bucket: Optional[str] = None
+    quality_factors: Optional[Dict[str, Any]] = None
     # Region info
     state: Optional[str] = None  # Two-letter state from request
     user_profile_state: Optional[str] = None  # Fallback from user profile
@@ -352,7 +383,10 @@ def compute_age_confidence_with_region(
     antler_points: Optional[int],
     antler_points_left: Optional[int],
     antler_points_right: Optional[int],
-    region_key: RegionKey
+    region_key: RegionKey,
+    image_quality_bucket: Optional[str] = None,
+    posture_bucket: Optional[str] = None,
+    quality_factors: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
     Compute calibrated age confidence with region-specific adjustments.
@@ -360,6 +394,9 @@ def compute_age_confidence_with_region(
     Returns confidence as 0-1 float.
     """
     config = RegionCalibrationConfig
+    deer_sex_normalized = (deer_sex or "").strip().lower()
+    is_buck = deer_sex_normalized == "buck"
+    is_doe = deer_sex_normalized == "doe"
     
     # Start with raw confidence (convert from 0-100 to 0-1)
     base_confidence = (raw_confidence or 0) / 100.0
@@ -377,16 +414,54 @@ def compute_age_confidence_with_region(
         antler_points_left is not None and 
         antler_points_right is not None
     )
-    if not has_antler_detail:
+    if is_buck and not has_antler_detail:
         scaled_confidence *= (1 - config.LOW_ANTLER_INFO_PENALTY)
     
     # Penalty: Unknown sex
-    if deer_sex is None or deer_sex.lower() == 'unknown':
+    if deer_sex is None or deer_sex_normalized == 'unknown':
         scaled_confidence *= (1 - config.UNKNOWN_SEX_PENALTY)
+
+    # Penalty: Lower-quality images reduce age reliability quickly.
+    if image_quality_bucket == "fair":
+        scaled_confidence *= 0.95
+    elif image_quality_bucket == "poor":
+        scaled_confidence *= 0.80
+
+    # Penalty: Non-profile postures hide core age cues.
+    if posture_bucket == "head_down":
+        scaled_confidence *= 0.90
+    elif posture_bucket in {"frontal", "rear", "unknown"}:
+        scaled_confidence *= 0.88
+
+    # Penalty: Explicit visibility issues from the model's quality rubric.
+    quality_factors = quality_factors or {}
+    if quality_factors.get("body_visibility") == "low":
+        scaled_confidence *= 0.86
+    elif quality_factors.get("body_visibility") == "medium":
+        scaled_confidence *= 0.96
+
+    if quality_factors.get("head_visibility") == "low":
+        scaled_confidence *= 0.92
+    elif quality_factors.get("head_visibility") == "medium":
+        scaled_confidence *= 0.98
+
+    if quality_factors.get("occlusion") == "high":
+        scaled_confidence *= 0.82
+    elif quality_factors.get("occlusion") == "medium":
+        scaled_confidence *= 0.94
+
+    if quality_factors.get("blur") == "high":
+        scaled_confidence *= 0.86
+    elif quality_factors.get("blur") == "medium":
+        scaled_confidence *= 0.95
     
     # Apply region difficulty multiplier
     region_multiplier = REGION_DIFFICULTY_MULTIPLIERS.get(region_key, 0.88)
     scaled_confidence *= region_multiplier
+
+    # Does are aged from body profile only, so avoid over-suppressing valid doe estimates.
+    if is_doe and predicted_age is not None:
+        scaled_confidence = min(config.MAX_AGE_CONFIDENCE, scaled_confidence * 1.05)
     
     # Apply global cap
     scaled_confidence = min(scaled_confidence, config.MAX_AGE_CONFIDENCE)
@@ -435,7 +510,8 @@ def compute_recommendation_confidence_with_region(
 def apply_uncertainty_gate(
     calibrated_age_confidence: float,
     region_key: RegionKey,
-    predicted_age: Optional[float]
+    predicted_age: Optional[float],
+    deer_sex: Optional[str] = None,
 ) -> Tuple[bool, Optional[float]]:
     """
     Apply region-specific uncertainty threshold.
@@ -446,8 +522,27 @@ def apply_uncertainty_gate(
         Tuple of (age_uncertain, adjusted_age)
     """
     threshold = REGION_UNCERTAINTY_THRESHOLDS.get(region_key, 0.68)
-    
-    if calibrated_age_confidence < threshold:
+    deer_sex_normalized = (deer_sex or "").strip().lower()
+
+    if predicted_age is not None:
+        threshold = min(threshold, RegionCalibrationConfig.PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD)
+
+    if deer_sex_normalized == "doe" and predicted_age is not None:
+        threshold = max(0.12, threshold - RegionCalibrationConfig.DOE_UNCERTAINTY_THRESHOLD_OFFSET)
+
+    age_uncertain = calibrated_age_confidence < threshold
+    logger.info(
+        "Age uncertainty gate: region=%s predicted_age=%s deer_sex=%s calibrated_age_confidence=%.3f "
+        "threshold=%.3f age_uncertain=%s",
+        region_key.value,
+        predicted_age,
+        deer_sex,
+        calibrated_age_confidence,
+        threshold,
+        age_uncertain,
+    )
+
+    if age_uncertain:
         return True, None
     
     return False, predicted_age
@@ -508,6 +603,12 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
     age_confidence = None
     recommendation_confidence = None
     calibration_version = config.CALIBRATION_VERSION
+    age_raw_confidence = input_data.raw_age_confidence if input_data.raw_age_confidence is not None else input_data.raw_confidence
+    recommendation_raw_confidence = (
+        input_data.raw_recommendation_confidence
+        if input_data.raw_recommendation_confidence is not None
+        else input_data.raw_confidence
+    )
     
     # Phase 2: Check for curve-based calibration
     if config.CALIBRATION_CURVES_ENABLED and active_curves:
@@ -521,13 +622,13 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
         # Age calibration via curves
         if region_age_key in active_curves:
             curve = active_curves[region_age_key]
-            age_confidence = _apply_curve(input_data.raw_confidence, curve)
+            age_confidence = _apply_curve(age_raw_confidence, curve)
             calibration_strategy = CalibrationStrategy.CURVE_REGION
             calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
             logger.info(f"Using region age curve for {region_key.value}")
         elif global_age_key in active_curves:
             curve = active_curves[global_age_key]
-            age_confidence = _apply_curve(input_data.raw_confidence, curve)
+            age_confidence = _apply_curve(age_raw_confidence, curve)
             calibration_strategy = CalibrationStrategy.CURVE_GLOBAL
             calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
             fallback_reason = "region_curve_missing"
@@ -536,10 +637,10 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
         # Recommendation calibration via curves
         if region_rec_key in active_curves:
             curve = active_curves[region_rec_key]
-            recommendation_confidence = _apply_curve(input_data.raw_confidence, curve)
+            recommendation_confidence = _apply_curve(recommendation_raw_confidence, curve)
         elif global_rec_key in active_curves:
             curve = active_curves[global_rec_key]
-            recommendation_confidence = _apply_curve(input_data.raw_confidence, curve)
+            recommendation_confidence = _apply_curve(recommendation_raw_confidence, curve)
     
     # Fall back to heuristic if no curve calibration was applied
     if age_confidence is None:
@@ -549,33 +650,39 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
         # Compute calibrated age confidence with heuristics
         if config.CALIBRATION_REGION_ENABLED:
             age_confidence = compute_age_confidence_with_region(
-                raw_confidence=input_data.raw_confidence,
+                raw_confidence=age_raw_confidence,
                 predicted_age=input_data.predicted_age,
                 deer_sex=input_data.deer_sex,
                 antler_points=input_data.antler_points,
                 antler_points_left=input_data.antler_points_left,
                 antler_points_right=input_data.antler_points_right,
-                region_key=region_key
+                region_key=region_key,
+                image_quality_bucket=input_data.image_quality_bucket,
+                posture_bucket=input_data.posture_bucket,
+                quality_factors=input_data.quality_factors,
             )
             calibration_strategy = CalibrationStrategy.HEURISTIC_REGION
         else:
             # Fall back to global heuristic (no region multiplier)
             calibration_strategy = CalibrationStrategy.HEURISTIC_GLOBAL
             age_confidence = compute_age_confidence_with_region(
-                raw_confidence=input_data.raw_confidence,
+                raw_confidence=age_raw_confidence,
                 predicted_age=input_data.predicted_age,
                 deer_sex=input_data.deer_sex,
                 antler_points=input_data.antler_points,
                 antler_points_left=input_data.antler_points_left,
                 antler_points_right=input_data.antler_points_right,
-                region_key=RegionKey.MIDWEST  # Use midwest (1.0 multiplier) for global
+                region_key=RegionKey.MIDWEST,  # Use midwest (1.0 multiplier) for global
+                image_quality_bucket=input_data.image_quality_bucket,
+                posture_bucket=input_data.posture_bucket,
+                quality_factors=input_data.quality_factors,
             )
             fallback_reason = fallback_reason or "region_calibration_disabled"
     
     if recommendation_confidence is None:
         # Compute calibrated recommendation confidence with heuristics
         recommendation_confidence = compute_recommendation_confidence_with_region(
-            raw_confidence=input_data.raw_confidence,
+            raw_confidence=recommendation_raw_confidence,
             recommendation=input_data.recommendation,
             predicted_age=input_data.predicted_age,
             deer_sex=input_data.deer_sex,
@@ -586,7 +693,8 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
     age_uncertain, adjusted_age = apply_uncertainty_gate(
         calibrated_age_confidence=age_confidence,
         region_key=region_key,
-        predicted_age=input_data.predicted_age
+        predicted_age=input_data.predicted_age,
+        deer_sex=input_data.deer_sex,
     )
     
     # Convert to 0-100 scale for storage
@@ -613,8 +721,12 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
         calibration_version=calibration_version,
         calibration_strategy=calibration_strategy.value,
         calibration_fallback_reason=fallback_reason,
-        raw_age_confidence=int(input_data.raw_age_confidence) if input_data.raw_age_confidence else None,
-        raw_recommendation_confidence=int(input_data.raw_recommendation_confidence) if input_data.raw_recommendation_confidence else None
+        raw_age_confidence=int(input_data.raw_age_confidence) if input_data.raw_age_confidence is not None else None,
+        raw_recommendation_confidence=(
+            int(input_data.raw_recommendation_confidence)
+            if input_data.raw_recommendation_confidence is not None
+            else None
+        )
     )
 
 
@@ -654,7 +766,8 @@ def _apply_curve(raw_confidence: float, curve: Dict[str, Any]) -> float:
 def calibrate_from_dict_with_region(
     analysis: Dict[str, Any],
     state: Optional[str] = None,
-    user_profile_state: Optional[str] = None
+    user_profile_state: Optional[str] = None,
+    active_curves: Optional[Dict[Tuple[str, Optional[str]], Dict[str, Any]]] = None,
 ) -> Tuple[RegionCalibrationOutput, Dict[str, Any]]:
     """
     Convenience function to calibrate from a raw analysis dictionary.
@@ -663,6 +776,7 @@ def calibrate_from_dict_with_region(
         analysis: Raw analysis dictionary from model
         state: Two-letter state from request
         user_profile_state: Two-letter state from user profile
+        active_curves: Optional dict of active empirical calibration curves
         
     Returns:
         Tuple of (RegionCalibrationOutput, updated analysis dict)
@@ -676,17 +790,24 @@ def calibrate_from_dict_with_region(
         antler_points_left=analysis.get("antler_points_left"),
         antler_points_right=analysis.get("antler_points_right"),
         body_condition=analysis.get("body_condition"),
+        image_quality_bucket=analysis.get("image_quality_bucket"),
+        posture_bucket=analysis.get("posture_bucket"),
+        quality_factors=analysis.get("quality_factors"),
         state=state,
-        user_profile_state=user_profile_state
+        user_profile_state=user_profile_state,
+        raw_age_confidence=analysis.get("raw_age_confidence"),
+        raw_recommendation_confidence=analysis.get("raw_recommendation_confidence"),
     )
     
-    calibration_result = calibrate_with_region(input_data)
+    calibration_result = calibrate_with_region(input_data, active_curves=active_curves)
     
     # Create updated analysis dict with calibrated values
     updated_analysis = analysis.copy()
     
     # Core calibration fields (always set)
     updated_analysis["raw_confidence"] = int(calibration_result.raw_confidence)
+    updated_analysis["raw_age_confidence"] = calibration_result.raw_age_confidence
+    updated_analysis["raw_recommendation_confidence"] = calibration_result.raw_recommendation_confidence
     updated_analysis["age_confidence"] = calibration_result.calibrated_age_confidence
     updated_analysis["recommendation_confidence"] = calibration_result.calibrated_recommendation_confidence
     updated_analysis["age_uncertain"] = calibration_result.age_uncertain
@@ -702,7 +823,15 @@ def calibrate_from_dict_with_region(
     # Apply uncertainty gate to age
     if calibration_result.age_uncertain:
         updated_analysis["deer_age"] = None
-    
+        updated_analysis["age_bucket"] = None
+        updated_analysis["age_range"] = None
+        updated_analysis["buck_age_class"] = None
+        if not updated_analysis.get("retake_reason"):
+            updated_analysis["reasoning"] = (
+                "Visible body cues suggest a possible age class, but confidence calibration "
+                "was too low to keep a defensible numeric age estimate."
+            )
+
     # Update legacy confidence field to use recommendation confidence
     updated_analysis["confidence"] = calibration_result.calibrated_recommendation_confidence
     
@@ -745,6 +874,9 @@ def get_region_calibration_metadata() -> Dict[str, Any]:
             "null_age": config.NULL_AGE_PENALTY,
             "low_antler_info": config.LOW_ANTLER_INFO_PENALTY,
             "unknown_sex": config.UNKNOWN_SEX_PENALTY
+        },
+        "sex_specific": {
+            "doe_uncertainty_threshold_offset": config.DOE_UNCERTAINTY_THRESHOLD_OFFSET
         },
         "regions": {
             region.value: {

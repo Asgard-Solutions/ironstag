@@ -1,7 +1,6 @@
 import React, { useEffect, useState, Component, ErrorInfo, ReactNode } from 'react';
 import { Platform, BackHandler, Alert, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../stores/authStore';
@@ -240,7 +239,6 @@ export default function RootLayout() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
           <Stack
             screenOptions={{
               headerShown: false,

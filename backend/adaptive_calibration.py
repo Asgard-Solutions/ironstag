@@ -452,6 +452,7 @@ async def detect_calibration_drift(
             scans_table.c.id,
             scans_table.c.region_key,
             scans_table.c.calibration_version,
+            scans_table.c.analysis_model,
             scans_table.c.raw_confidence,
             scans_table.c.age_confidence,
             scans_table.c.recommendation_confidence,
@@ -475,19 +476,20 @@ async def detect_calibration_drift(
             logger.info(f"No labeled data found in {time_window_days}-day window")
             return result
         
-        # Group by region, calibration_version, and optionally season
-        # Structure: {(region, cal_version, season): [labels]}
-        grouped_data: Dict[Tuple[str, str, Optional[str]], List[Dict]] = {}
+        # Group by region, calibration_version, model, and optionally season
+        # Structure: {(region, cal_version, model_version, season): [labels]}
+        grouped_data: Dict[Tuple[str, str, str, Optional[str]], List[Dict]] = {}
         
         for row in rows:
             region = row['region_key'] or 'unknown'
             cal_version = row['calibration_version'] or 'unknown'
+            model_version = row['analysis_model'] or 'unknown'
             
             season = None
             if include_seasons and row['created_at']:
                 season = get_season_bucket(row['created_at'], region)
             
-            key = (region, cal_version, season)
+            key = (region, cal_version, model_version, season)
             if key not in grouped_data:
                 grouped_data[key] = []
             
@@ -513,7 +515,7 @@ async def detect_calibration_drift(
         # Process each group
         events_to_insert = []
         
-        for (region, cal_version, season), labels in grouped_data.items():
+        for (region, cal_version, model_version, season), labels in grouped_data.items():
             if len(labels) < config.DRIFT_MIN_SAMPLES:
                 continue
             
@@ -543,7 +545,7 @@ async def detect_calibration_drift(
                     event = DriftEvent(
                         id=str(uuid.uuid4()),
                         region_key=region,
-                        model_version='gpt-4o',  # Current model
+                        model_version=model_version,
                         calibration_version=cal_version,
                         confidence_type=ConfidenceType.AGE.value,
                         expected_accuracy=round(expected_age_accuracy, 4),
@@ -564,7 +566,7 @@ async def detect_calibration_drift(
                         result.criticals += 1
                     
                     logger.info(
-                        f"Drift detected: region={region}, type=age, "
+                        f"Drift detected: region={region}, model={model_version}, type=age, "
                         f"expected={expected_age_accuracy:.2%}, observed={observed_age_accuracy:.2%}, "
                         f"drift={drift:.2%}, severity={severity}"
                     )
@@ -582,7 +584,7 @@ async def detect_calibration_drift(
                     event = DriftEvent(
                         id=str(uuid.uuid4()),
                         region_key=region,
-                        model_version='gpt-4o',
+                        model_version=model_version,
                         calibration_version=cal_version,
                         confidence_type=ConfidenceType.RECOMMENDATION.value,
                         expected_accuracy=round(expected_rec_accuracy, 4),
@@ -932,6 +934,8 @@ async def generate_model_recommendations(
         # Analyze global patterns first
         critical_count = sum(1 for e in global_drift if e.get('severity') == 'critical')
         warning_count = sum(1 for e in global_drift if e.get('severity') == 'warning')
+        global_models = {e.get('model_version', 'unknown') for e in global_drift}
+        global_model_version = next(iter(global_models)) if len(global_models) == 1 else 'mixed'
         
         # Global recommendation logic
         if critical_count >= 3:
@@ -939,7 +943,7 @@ async def generate_model_recommendations(
             rec = ModelRecommendation(
                 id=str(uuid.uuid4()),
                 region_key=None,  # Global
-                model_version='gpt-4o',
+                model_version=global_model_version,
                 confidence_type='both',
                 recommendation_type=RecommendationType.INVESTIGATE_DATA.value,
                 supporting_metrics={
@@ -959,7 +963,7 @@ async def generate_model_recommendations(
             rec = ModelRecommendation(
                 id=str(uuid.uuid4()),
                 region_key=None,
-                model_version='gpt-4o',
+                model_version=global_model_version,
                 confidence_type='both',
                 recommendation_type=RecommendationType.REBUILD_CALIBRATION.value,
                 supporting_metrics={
@@ -984,11 +988,13 @@ async def generate_model_recommendations(
             if region_critical >= 1 or region_warning >= 3:
                 # Region-specific drift -> recommend region curve update
                 avg_drift = sum(e.get('drift_percentage', 0) for e in events) / len(events)
+                region_models = {e.get('model_version', 'unknown') for e in events}
+                region_model_version = next(iter(region_models)) if len(region_models) == 1 else 'mixed'
                 
                 rec = ModelRecommendation(
                     id=str(uuid.uuid4()),
                     region_key=region,
-                    model_version='gpt-4o',
+                    model_version=region_model_version,
                     confidence_type='age',  # Most common issue
                     recommendation_type=RecommendationType.REGION_CURVE_UPDATE.value,
                     supporting_metrics={
