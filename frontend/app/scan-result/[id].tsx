@@ -1113,6 +1113,80 @@ export default function ScanResultScreen() {
           ) : null}
         </View>
 
+        {/* ────── 6. NOTES (user-owned data) ────── */}
+        <View style={styles.notesSection}>
+          <View style={styles.notesHeader}>
+            <Text style={styles.sectionTitle}>Notes</Text>
+            {!editingNotes ? (
+              <TouchableOpacity onPress={() => setEditingNotes(true)}>
+                <Edit3 size={18} color={colors.primary} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.notesActions}>
+                <TouchableOpacity onPress={() => setEditingNotes(false)}>
+                  <X size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleSaveNotes}>
+                  <Check size={20} color={colors.harvest} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+          {editingNotes ? (
+            <TextInput
+              style={styles.notesInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Add notes about this scan..."
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={4}
+            />
+          ) : (
+            <Text style={styles.notesText}>
+              {scan.notes || 'No notes added. Tap the edit icon to add notes.'}
+            </Text>
+          )}
+        </View>
+
+        {/* ────── 7. TAGS ────── */}
+        <TagsEditor
+          scanId={scan.id}
+          initialTags={scan.tags || []}
+          onTagsUpdated={(newTags) => {
+            setScan((prev) => (prev ? { ...prev, tags: newTags } : null));
+          }}
+        />
+
+        {/* ────── 8. FEEDBACK ────── */}
+        {labelCheckDone && (
+          <View style={styles.feedbackSection}>
+            {hasLabel ? (
+              <View style={styles.feedbackSubmitted}>
+                <Check size={16} color={colors.harvest} />
+                <Text style={styles.feedbackSubmittedText}>
+                  Feedback submitted — thanks for helping improve accuracy!
+                </Text>
+              </View>
+            ) : canOpenFeedbackModal() ? (
+              <TouchableOpacity 
+                style={styles.feedbackButton}
+                onPress={() => setShowFeedbackModal(true)}
+              >
+                <View style={styles.feedbackButtonLeft}>
+                  <MessageSquare size={18} color={colors.primary} />
+                  <View style={styles.feedbackButtonTextWrap}>
+                    <Text style={styles.feedbackButtonTitle}>Did we get it right?</Text>
+                    <Text style={styles.feedbackButtonSub}>Help improve future estimates</Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
+
+        {/* ────── 9. B&C SCORE (advanced / optional) ────── */}
         {showHarvestRecordCard && (
           <Card style={styles.scoreCard}>
             <View style={styles.scoreCardHeader}>
@@ -1283,80 +1357,7 @@ export default function ScanResultScreen() {
           </Card>
         )}
 
-        {/* Notes Section */}
-        <View style={styles.notesSection}>
-          <View style={styles.notesHeader}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-            {!editingNotes ? (
-              <TouchableOpacity onPress={() => setEditingNotes(true)}>
-                <Edit3 size={18} color={colors.primary} />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.notesActions}>
-                <TouchableOpacity onPress={() => setEditingNotes(false)}>
-                  <X size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleSaveNotes}>
-                  <Check size={20} color={colors.harvest} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-          {editingNotes ? (
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add notes about this scan..."
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={4}
-            />
-          ) : (
-            <Text style={styles.notesText}>
-              {scan.notes || 'No notes added. Tap the edit icon to add notes.'}
-            </Text>
-          )}
-        </View>
-
-        {/* ────── 7. TAGS ────── */}
-        <TagsEditor
-          scanId={scan.id}
-          initialTags={scan.tags || []}
-          onTagsUpdated={(newTags) => {
-            setScan((prev) => (prev ? { ...prev, tags: newTags } : null));
-          }}
-        />
-
-        {/* ────── 8. FEEDBACK (Improved Copy) ────── */}
-        {labelCheckDone && (
-          <View style={styles.feedbackSection}>
-            {hasLabel ? (
-              <View style={styles.feedbackSubmitted}>
-                <Check size={16} color={colors.harvest} />
-                <Text style={styles.feedbackSubmittedText}>
-                  Feedback submitted — thanks for helping improve accuracy!
-                </Text>
-              </View>
-            ) : canOpenFeedbackModal() ? (
-              <TouchableOpacity 
-                style={styles.feedbackButton}
-                onPress={() => setShowFeedbackModal(true)}
-              >
-                <View style={styles.feedbackButtonLeft}>
-                  <MessageSquare size={18} color={colors.primary} />
-                  <View style={styles.feedbackButtonTextWrap}>
-                    <Text style={styles.feedbackButtonTitle}>Did we get it right?</Text>
-                    <Text style={styles.feedbackButtonSub}>Help improve future estimates</Text>
-                  </View>
-                </View>
-                <ChevronRight size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        )}
-
-        {/* ────── 9. ETHICAL REMINDER ────── */}
+        {/* ────── 10. ETHICAL REMINDER ────── */}
         <Card style={styles.disclaimerCard}>
           <View style={styles.disclaimerHeader}>
             <Shield size={16} color={colors.precision} />
