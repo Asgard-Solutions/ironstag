@@ -309,6 +309,14 @@ if not JWT_SECRET:
     )
 JWT_ALGORITHM = 'HS256'
 
+# Admin secret — required for /admin/* endpoints. Fail fast if missing in production.
+ADMIN_SECRET = os.environ.get('ADMIN_SECRET', '')
+if os.getenv("RAILWAY_ENVIRONMENT") and not ADMIN_SECRET:
+    raise RuntimeError(
+        "ADMIN_SECRET environment variable must be set in production. "
+        "Refusing to start without admin endpoint protection."
+    )
+
 # Apple IAP Configuration
 APPLE_IAP_SHARED_SECRET = os.environ.get('APPLE_IAP_SHARED_SECRET', '')
 APPLE_BUNDLE_ID = 'io.asgardsolution.ironstag'
@@ -1080,6 +1088,64 @@ def verify_token(token: str) -> str:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# ============ ADMIN AUTH ============
+
+async def verify_admin_secret(x_admin_secret: str = Header(None)):
+    """Dependency that validates the X-Admin-Secret header against ADMIN_SECRET env var."""
+    if not ADMIN_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin endpoints are disabled (ADMIN_SECRET not configured)"
+        )
+    if not x_admin_secret or x_admin_secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid or missing admin secret")
+    return True
+
+
+# ============ RATE LIMITER ============
+
+class InMemoryRateLimiter:
+    """Simple in-memory rate limiter for brute-force protection."""
+
+    def __init__(self):
+        self._attempts: Dict[str, list] = {}
+
+    def _cleanup(self, key: str, window: int):
+        now = datetime.utcnow().timestamp()
+        if key in self._attempts:
+            self._attempts[key] = [t for t in self._attempts[key] if now - t < window]
+            if not self._attempts[key]:
+                del self._attempts[key]
+
+    def is_rate_limited(self, key: str, max_attempts: int, window_seconds: int) -> bool:
+        self._cleanup(key, window_seconds)
+        attempts = self._attempts.get(key, [])
+        return len(attempts) >= max_attempts
+
+    def record_attempt(self, key: str):
+        now = datetime.utcnow().timestamp()
+        if key not in self._attempts:
+            self._attempts[key] = []
+        self._attempts[key].append(now)
+
+rate_limiter = InMemoryRateLimiter()
+
+# Auth rate limit: 10 attempts per 15-minute window per IP
+AUTH_RATE_LIMIT_MAX = 10
+AUTH_RATE_LIMIT_WINDOW = 900  # 15 minutes
+
+def check_auth_rate_limit(request: Request):
+    """Check rate limit for auth endpoints. Raises 429 if exceeded."""
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"auth:{client_ip}"
+    if rate_limiter.is_rate_limited(key, AUTH_RATE_LIMIT_MAX, AUTH_RATE_LIMIT_WINDOW):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many attempts. Please try again later."
+        )
+    rate_limiter.record_attempt(key)
 
 
 ANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist"
@@ -2404,7 +2470,8 @@ async def get_optional_user(authorization: str = Header(None)) -> Optional[dict]
 # ============ AUTH ROUTES ============
 
 @api_router.post("/auth/register", response_model=TokenResponse)
-async def register(data: UserRegister):
+async def register(data: UserRegister, request: Request):
+    check_auth_rate_limit(request)
     # Check if email exists
     query = users_table.select().where(users_table.c.email == data.email.lower())
     existing = await database.fetch_one(query)
@@ -2464,7 +2531,8 @@ async def register(data: UserRegister):
     )
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(data: UserLogin):
+async def login(data: UserLogin, request: Request):
+    check_auth_rate_limit(request)
     identifier = data.email.lower().strip()
     
     # Try email first
@@ -2777,7 +2845,8 @@ async def send_email_via_graph(to_email: str, subject: str, body: str):
         raise
 
 @api_router.post("/auth/request-password-reset")
-async def request_password_reset(data: PasswordResetRequest):
+async def request_password_reset(data: PasswordResetRequest, request: Request):
+    check_auth_rate_limit(request)
     query = users_table.select().where(users_table.c.email == data.email.lower())
     user = await database.fetch_one(query)
     
@@ -2812,7 +2881,8 @@ async def request_password_reset(data: PasswordResetRequest):
     return {"message": "If email exists, reset code sent"}
 
 @api_router.post("/auth/verify-password-reset")
-async def verify_password_reset(data: PasswordResetVerify):
+async def verify_password_reset(data: PasswordResetVerify, request: Request):
+    check_auth_rate_limit(request)
     cutoff = datetime.utcnow() - timedelta(minutes=15)
     
     query = password_reset_codes_table.select().where(
@@ -3296,11 +3366,15 @@ async def revenuecat_webhook(request: Request):
     - EXPIRATION: Subscription expired
     - BILLING_ISSUE: Payment failed
     """
-    # Verify webhook authenticity using shared secret
+    # Verify webhook authenticity using shared secret — FAIL CLOSED
     webhook_secret = os.getenv("REVENUECAT_WEBHOOK_SECRET", "")
     auth_header = request.headers.get("Authorization", "")
     
-    if webhook_secret and auth_header != f"Bearer {webhook_secret}":
+    if not webhook_secret:
+        logger.error("RevenueCat webhook: REVENUECAT_WEBHOOK_SECRET not configured — rejecting all webhooks")
+        raise HTTPException(status_code=503, detail="Webhook validation not configured")
+    
+    if auth_header != f"Bearer {webhook_secret}":
         logger.warning("RevenueCat webhook: Invalid authorization")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
@@ -4435,7 +4509,8 @@ async def fetch_exact_age_coverage_by_segment(
 
 @api_router.get("/admin/calibration/labels/stats", response_model=LabelStatsResponse)
 async def get_label_stats(
-    region: Optional[str] = None
+    region: Optional[str] = None,
+    _admin_ok: bool = Depends(verify_admin_secret),
 ):
     """
     Get statistics about labels in the system.
@@ -4698,7 +4773,8 @@ async def get_labels(
     region: Optional[str] = None,
     since: Optional[str] = None,
     label_type: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    _admin_ok: bool = Depends(verify_admin_secret),
 ):
     """
     Get labels for inspection. Used by CLI.
@@ -5286,7 +5362,7 @@ async def get_version_config():
 # ============ CALIBRATION ADMIN ENDPOINTS ============
 
 @api_router.get("/admin/calibration-config")
-async def get_calibration_config():
+async def get_calibration_config(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get comprehensive region calibration configuration.
     Includes all feature flags, thresholds, and region settings.
@@ -5294,7 +5370,7 @@ async def get_calibration_config():
     return get_region_calibration_metadata()
 
 @api_router.get("/admin/calibration/status")
-async def get_calibration_status_endpoint():
+async def get_calibration_status_endpoint(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get calibration system status for diagnostics.
     Returns:
@@ -5312,7 +5388,7 @@ async def get_calibration_status_endpoint():
     return status
 
 @api_router.get("/admin/calibration/regions")
-async def get_calibration_regions():
+async def get_calibration_regions(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get all configured regions with their settings.
     Includes:
@@ -5339,7 +5415,7 @@ class RecalibrateScansRequest(BaseModel):
     region: Optional[str] = None  # Only scans in this region
 
 @api_router.get("/admin/calibration/curves")
-async def get_calibration_curves():
+async def get_calibration_curves(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get summary of all calibration curves.
     Returns:
@@ -5355,7 +5431,7 @@ async def get_calibration_curves():
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/admin/calibration/curves/{curve_id}")
-async def get_calibration_curve_details(curve_id: str):
+async def get_calibration_curve_details(curve_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get detailed information about a specific curve.
     Includes:
@@ -5375,7 +5451,7 @@ async def get_calibration_curve_details(curve_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/admin/calibration/jobs/status")
-async def get_calibration_jobs_status():
+async def get_calibration_jobs_status(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get status of calibration jobs.
     Returns:
@@ -5386,7 +5462,7 @@ async def get_calibration_jobs_status():
     return get_job_status()
 
 @api_router.post("/admin/calibration/build-curves")
-async def build_calibration_curves(data: BuildCurvesRequest):
+async def build_calibration_curves(data: BuildCurvesRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Build calibration curves from labeled scan data.
     
@@ -5441,7 +5517,7 @@ async def build_calibration_curves(data: BuildCurvesRequest):
         release_job_lock("build_curves")
 
 @api_router.post("/admin/calibration/activate-curve")
-async def activate_calibration_curve(data: ActivateCurveRequest):
+async def activate_calibration_curve(data: ActivateCurveRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Activate a calibration curve.
     
@@ -5479,7 +5555,7 @@ async def activate_calibration_curve(data: ActivateCurveRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/admin/calibration/deactivate-curve/{curve_id}")
-async def deactivate_calibration_curve(curve_id: str):
+async def deactivate_calibration_curve(curve_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Deactivate a calibration curve.
     
@@ -5498,7 +5574,7 @@ async def deactivate_calibration_curve(curve_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/admin/calibration/recalibrate-scans")
-async def recalibrate_scans_endpoint(data: RecalibrateScansRequest):
+async def recalibrate_scans_endpoint(data: RecalibrateScansRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Recalibrate existing scans using active curves.
     
@@ -5571,7 +5647,7 @@ class RunRecommendationsRequest(BaseModel):
 
 
 @api_router.get("/admin/calibration/phase3/status")
-async def get_phase3_calibration_status():
+async def get_phase3_calibration_status(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get Phase 3 (Adaptive Calibration) system status.
     Returns:
@@ -5583,7 +5659,7 @@ async def get_phase3_calibration_status():
 
 
 @api_router.get("/admin/calibration/drift")
-async def get_calibration_drift(days: int = 30):
+async def get_calibration_drift(days: int = 30, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get summary of drift events.
     
@@ -5605,7 +5681,7 @@ async def get_calibration_drift(days: int = 30):
 
 
 @api_router.get("/admin/calibration/maturity")
-async def get_calibration_maturity():
+async def get_calibration_maturity(_admin_ok: bool = Depends(verify_admin_secret)):
     """
     Get region maturity summary.
     
@@ -5649,7 +5725,7 @@ async def get_calibration_recommendations(days: int = 30):
 
 
 @api_router.post("/admin/calibration/phase3/run-drift")
-async def run_drift_detection(data: RunDriftRequest):
+async def run_drift_detection(data: RunDriftRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Manually trigger drift detection job.
     
@@ -5703,7 +5779,7 @@ async def run_drift_detection(data: RunDriftRequest):
 
 
 @api_router.post("/admin/calibration/phase3/run-maturity")
-async def run_maturity_computation(data: RunMaturityRequest):
+async def run_maturity_computation(data: RunMaturityRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Manually trigger region maturity computation job.
     
@@ -5757,7 +5833,7 @@ async def run_maturity_computation(data: RunMaturityRequest):
 
 
 @api_router.post("/admin/calibration/phase3/run-recommendations")
-async def run_recommendations_generation(data: RunRecommendationsRequest):
+async def run_recommendations_generation(data: RunRecommendationsRequest, _admin_ok: bool = Depends(verify_admin_secret)):
     """
     Manually trigger model recommendations generation job.
     
@@ -5820,7 +5896,7 @@ async def root_health():
 # ============ TEST/ADMIN ENDPOINTS ============
 
 @api_router.post("/admin/upgrade-user")
-async def admin_upgrade_user(user: dict = Depends(get_current_user)):
+async def admin_upgrade_user(user: dict = Depends(get_current_user), _admin_ok: bool = Depends(verify_admin_secret)):
     """Temporary endpoint to upgrade current user to premium for testing"""
     query = users_table.update().where(
         users_table.c.id == user["id"]
@@ -6016,17 +6092,10 @@ async def get_crash_reports(
         return {"reports": [], "error": str(e)}
 
 @api_router.post("/debug/enable")
-async def enable_debug_mode(secret: str):
+async def enable_debug_mode(secret: str, _admin_ok: bool = Depends(verify_admin_secret)):
     """
-    Enable debug mode (requires admin secret).
-    In production, this would update a config in the database.
+    Enable debug mode (requires admin secret via X-Admin-Secret header).
     """
-    admin_secret = os.getenv("ADMIN_SECRET", "iron_stag_debug_2024")
-    if secret != admin_secret:
-        raise HTTPException(status_code=403, detail="Invalid secret")
-    
-    # In a real implementation, this would update a database flag
-    # For now, we just return the current status
     return {
         "status": "Debug mode controlled via DEBUG_MODE_ENABLED env var",
         "current_status": DEBUG_MODE_ENABLED,
