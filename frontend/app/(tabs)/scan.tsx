@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  TextInput,
   ActivityIndicator,
   Image,
   ScrollView,
@@ -33,6 +34,7 @@ import {
   MapPin,
   WifiOff,
   RotateCcw,
+  Calendar,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -45,6 +47,7 @@ import { useRevenueCat } from '../../hooks/useRevenueCat';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { StatePicker, getStateName } from '../../components/StatePicker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
+import { format } from 'date-fns';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 
@@ -81,6 +84,10 @@ export default function ScanScreen() {
   // Hunting location state (per-scan override)
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [huntingLocation, setHuntingLocation] = useState<string | null>(null);
+
+  // Date taken state (per-scan)
+  const [dateTaken, setDateTaken] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
@@ -251,6 +258,7 @@ export default function ScanScreen() {
         image_base64: capturedImage,
         local_image_id: localImageId,
         state: stateToSend,
+        date_taken: dateTaken ? format(dateTaken, 'yyyy-MM-dd') : undefined,
       });
       console.log('API response:', response.data);
 
@@ -264,8 +272,9 @@ export default function ScanScreen() {
         });
       }
       
-      // Reset hunting location override after successful scan
+      // Reset per-scan overrides after successful scan
       setHuntingLocation(null);
+      setDateTaken(null);
 
       // Use replace instead of push to prevent the Android back button
       // from returning to the "analyzing" state
@@ -491,6 +500,41 @@ export default function ScanScreen() {
               <Text style={styles.locationInlineChangeText}>Change</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Date Taken Row */}
+          <View style={styles.locationInlineRow}>
+            <View style={styles.locationInlineLeft}>
+              <View style={styles.locationInlineIconWrap}>
+                <Calendar size={16} color={colors.primary} />
+              </View>
+              <View style={styles.locationInlineCopy}>
+                <Text style={styles.locationInlineLabel}>Date Taken</Text>
+                <Text style={styles.locationInlineText}>
+                  {dateTaken
+                    ? format(dateTaken, 'MMM d, yyyy')
+                    : 'Not set (optional)'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.dateActionRow}>
+              {dateTaken && (
+                <TouchableOpacity
+                  style={styles.dateClearButton}
+                  onPress={() => setDateTaken(null)}
+                >
+                  <Text style={styles.dateClearText}>Clear</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.locationInlineChange}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.locationInlineChangeText}>
+                  {dateTaken ? 'Change' : 'Set Date'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* State Picker Modal */}
@@ -505,6 +549,62 @@ export default function ScanScreen() {
           title="Select Hunting Location"
           allowClear={true}
         />
+
+        {/* Date Picker Modal */}
+        {showDatePicker && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={showDatePicker}
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <TouchableOpacity
+              style={styles.datePickerOverlay}
+              activeOpacity={1}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <View style={styles.datePickerContainer}>
+                <View style={styles.datePickerHeader}>
+                  <Text style={styles.datePickerTitle}>When was this photo taken?</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <X size={20} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.datePickerInput}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={10}
+                  defaultValue={dateTaken ? format(dateTaken, 'yyyy-MM-dd') : ''}
+                  onSubmitEditing={(e) => {
+                    const val = e.nativeEvent.text.trim();
+                    try {
+                      const parts = val.split('-');
+                      if (parts.length === 3) {
+                        const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                        if (!isNaN(d.getTime()) && d <= new Date()) {
+                          setDateTaken(d);
+                          setShowDatePicker(false);
+                        } else {
+                          Alert.alert('Invalid Date', 'Please enter a valid past date.');
+                        }
+                      } else {
+                        Alert.alert('Invalid Format', 'Use YYYY-MM-DD format.');
+                      }
+                    } catch {
+                      Alert.alert('Invalid Date', 'Please enter a valid date in YYYY-MM-DD format.');
+                    }
+                  }}
+                  returnKeyType="done"
+                />
+                <Text style={styles.datePickerHint}>
+                  Helps determine seasonal context for more accurate aging
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
       </View>
     );
   }
@@ -1302,6 +1402,70 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.textOnPrimary,
+  },
+  dateActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateClearButton: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateClearText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  // ── Date Picker Modal ──
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  datePickerContainer: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 340,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  datePickerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  datePickerInput: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '500',
+    borderWidth: 1,
+    borderColor: colors.border,
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  datePickerHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
   analyzingContainer: {
     justifyContent: 'center',
