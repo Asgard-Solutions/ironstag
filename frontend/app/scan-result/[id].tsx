@@ -732,11 +732,9 @@ export default function ScanResultScreen() {
         editData.antler_points_right = parseInt(editPointsRight, 10);
       }
 
-      // Include date_taken from wheel picker
+      // Include date_taken from wheel picker — always send it
       const pickerDateStr = `${editPickerYear}-${String(editPickerMonth).padStart(2, '0')}-${String(editPickerDay).padStart(2, '0')}`;
-      if (pickerDateStr !== (scan.date_taken || '')) {
-        editData.date_taken = pickerDateStr;
-      }
+      editData.date_taken = pickerDateStr;
 
       if (imageUri) {
         try {
@@ -778,7 +776,14 @@ export default function ScanResultScreen() {
       }
 
       const response = await scanAPI.editScan(scan.id, editData);
-      setScan(response.data);
+      // Merge the response with the date we sent, in case the backend
+      // doesn't yet support date_taken in the edit response
+      const updatedScan = {
+        ...response.data,
+        date_taken: response.data.date_taken || editData.date_taken || scan.date_taken,
+        season_phase: response.data.season_phase || scan.season_phase,
+      };
+      setScan(updatedScan);
       setShowEditModal(false);
 
       if (editData.image_base64) {
