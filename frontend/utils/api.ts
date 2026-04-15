@@ -86,7 +86,7 @@ export const authAPI = {
 
 // Scan API
 export const scanAPI = {
-  analyzeDeer: (data: { image_base64: string; local_image_id: string; notes?: string; state?: string }) =>
+  analyzeDeer: (data: { image_base64: string; local_image_id: string; notes?: string; state?: string; date_taken?: string }) =>
     api.post('/analyze-deer', data),
 
   getScans: (params?: { deer_type?: string; deer_sex?: string; recommendation?: string; limit?: number; skip?: number }) =>
