@@ -16,6 +16,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npx expo start
    ```
 
+## Production-backed dev builds
+
+The EAS `development` profiles in [eas.json](/mnt/d/AsgardSolutions/ironstag/frontend/eas.json) already inherit the production `EXPO_PUBLIC_*` values from `build.base.env`.
+
+Use these commands when you want a dev client build that talks to production services:
+
+```bash
+yarn build:dev:ios:prod
+yarn build:dev:simulator:prod
+yarn build:dev:android:prod
+```
+
 In the output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
