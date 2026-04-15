@@ -401,7 +401,7 @@ function ScorePairedMeasurementRow({
   );
 }
 
-const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Elk', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
+const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
 const DEER_SEX_OPTIONS = ['Buck', 'Doe', 'Unknown'];
 
 export default function ScanResultScreen() {
@@ -429,6 +429,7 @@ export default function ScanResultScreen() {
   const [editPickerMonth, setEditPickerMonth] = useState(new Date().getMonth() + 1);
   const [editPickerDay, setEditPickerDay] = useState(new Date().getDate());
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [reanalysisStatus, setReanalysisStatus] = useState<string | null>(null);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [scoreForm, setScoreForm] = useState<BcScoreFormState>(createEmptyBcScoreFormState());
   const [isSavingScore, setIsSavingScore] = useState(false);
@@ -716,6 +717,7 @@ export default function ScanResultScreen() {
     if (!scan) return;
 
     setIsSubmittingEdit(true);
+    setReanalysisStatus('Preparing corrections...');
     try {
       const editData: any = {};
 
@@ -737,6 +739,7 @@ export default function ScanResultScreen() {
       editData.date_taken = pickerDateStr;
 
       if (imageUri) {
+        setReanalysisStatus('Loading image for re-analysis...');
         try {
           let base64Image: string;
 
@@ -763,6 +766,7 @@ export default function ScanResultScreen() {
           console.log('Image included for re-analysis, length:', base64Image.length);
         } catch (imgError) {
           console.log('Could not include image for re-analysis:', imgError);
+          setReanalysisStatus(null);
           Alert.alert(
             'Image Not Available',
             'Unable to access the original image. The scan will be updated without re-analysis.',
@@ -772,7 +776,9 @@ export default function ScanResultScreen() {
       }
 
       if (editData.image_base64) {
-        Alert.alert('Re-analyzing', 'Sending image to AI for new analysis...');
+        setReanalysisStatus('Sending to AI for re-analysis...\nThis may take 10-20 seconds');
+      } else {
+        setReanalysisStatus('Saving updates...');
       }
 
       const response = await scanAPI.editScan(scan.id, editData);
@@ -784,19 +790,22 @@ export default function ScanResultScreen() {
         season_phase: response.data.season_phase || scan.season_phase,
       };
       setScan(updatedScan);
+      setReanalysisStatus(null);
       setShowEditModal(false);
 
       if (editData.image_base64) {
-        Alert.alert('Success', 'Scan re-analyzed with your corrections!');
+        Alert.alert('Re-analysis Complete', 'Your deer has been re-analyzed with the updated information.');
       } else {
-        Alert.alert('Success', 'Scan details updated');
+        Alert.alert('Updated', 'Scan details saved successfully.');
       }
     } catch (error: any) {
       console.error('Failed to update scan:', error);
+      setReanalysisStatus(null);
       const message = error.response?.data?.detail || 'Failed to update scan';
       Alert.alert('Error', message);
     } finally {
       setIsSubmittingEdit(false);
+      setReanalysisStatus(null);
     }
   };
 
@@ -1595,10 +1604,19 @@ export default function ScanResultScreen() {
               </Text>
             </ScrollView>
 
+            {/* Re-analysis progress overlay */}
+            {isSubmittingEdit && reanalysisStatus && (
+              <View style={styles.reanalysisOverlay}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.reanalysisStatusText}>{reanalysisStatus}</Text>
+              </View>
+            )}
+
             <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, isSubmittingEdit && styles.disabledButton]}
                 onPress={() => setShowEditModal(false)}
+                disabled={isSubmittingEdit}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -1608,7 +1626,10 @@ export default function ScanResultScreen() {
                 disabled={isSubmittingEdit}
               >
                 {isSubmittingEdit ? (
-                  <ActivityIndicator size="small" color={colors.white} />
+                  <View style={styles.submitLoadingRow}>
+                    <ActivityIndicator size="small" color={colors.white} />
+                    <Text style={styles.submitButtonText}>Re-analyzing...</Text>
+                  </View>
                 ) : (
                   <Text style={styles.submitButtonText}>Update & Re-analyze</Text>
                 )}
@@ -3340,6 +3361,33 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  reanalysisOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10, 15, 12, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+  },
+  reanalysisStatusText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    lineHeight: 24,
+  },
+  submitLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
 
   title: {
