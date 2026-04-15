@@ -108,6 +108,7 @@ export const scanAPI = {
     antler_points_left?: number;
     antler_points_right?: number;
     image_base64?: string;
+    date_taken?: string;
   }) => api.post(`/scans/${id}/edit`, data),
 
   deleteScan: (id: string) => api.delete(`/scans/${id}`),

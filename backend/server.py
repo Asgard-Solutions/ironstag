@@ -708,6 +708,7 @@ class ScanEditRequest(BaseModel):
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
     image_base64: Optional[str] = None  # Required if re-analyzing with LLM
+    date_taken: Optional[str] = None    # ISO date YYYY-MM-DD
 
 
 # ============ SCAN LABEL MODELS (Phase 2 Empirical Calibration) ============
@@ -4721,6 +4722,7 @@ async def edit_scan_with_reanalysis(
                 user_profile_state=user_profile_state,
                 scan_datetime=scan.get("created_at") or datetime.utcnow(),
                 notes=scan.get("notes"),
+                date_taken=data.date_taken or (str(scan.get("date_taken")) if scan.get("date_taken") else None),
             )
 
             # Build hint text from user corrections with context about original analysis
@@ -4881,6 +4883,9 @@ Provide your complete REVISED analysis in JSON format."""
                     calibration_strategy=calibrated_analysis.get("calibration_strategy"),
                     calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
                     season_bucket=reanalysis_context.get("season_bucket"),
+                    date_taken=reanalysis_context.get("date_taken"),
+                    season_phase=reanalysis_context.get("season_phase"),
+                    date_source=reanalysis_context.get("date_source"),
                     analysis_prompt_version=REANALYSIS_PROMPT_VERSION,
                     analysis_model=selected_model,
                     age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
@@ -4911,6 +4916,25 @@ Provide your complete REVISED analysis in JSON format."""
             update_values["antler_points_right"] = data.antler_points_right
         if total_points is not None and update_values.get("deer_sex") != "Doe":
             update_values["antler_points"] = total_points
+
+        # Update date_taken and re-derive season even without LLM re-analysis
+        if data.date_taken is not None:
+            from datetime import date as date_cls
+            try:
+                parsed_date = date_cls.fromisoformat(data.date_taken)
+                update_values["date_taken"] = parsed_date
+                update_values["date_source"] = "client"
+                # Derive season from the new date
+                state_for_season = scan.get("region_state") or user.get("state")
+                region_for_season = scan.get("region_key") or "southeast"
+                season_result = derive_season_phase(
+                    state=state_for_season,
+                    date_taken=parsed_date,
+                    region=region_for_season,
+                )
+                update_values["season_phase"] = season_result.season_phase
+            except (ValueError, TypeError):
+                pass
         
         if update_values:
             update_query = scans_table.update().where(

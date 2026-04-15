@@ -423,6 +423,7 @@ export default function ScanResultScreen() {
   const [editDeerType, setEditDeerType] = useState<string>('');
   const [editPointsLeft, setEditPointsLeft] = useState<string>('');
   const [editPointsRight, setEditPointsRight] = useState<string>('');
+  const [editDateTaken, setEditDateTaken] = useState<string>('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [scoreForm, setScoreForm] = useState<BcScoreFormState>(createEmptyBcScoreFormState());
@@ -689,6 +690,7 @@ export default function ScanResultScreen() {
     setEditDeerType(scan.deer_type || '');
     setEditPointsLeft(scan.antler_points_left?.toString() || '');
     setEditPointsRight(scan.antler_points_right?.toString() || '');
+    setEditDateTaken(scan.date_taken || '');
     setShowEditModal(true);
   };
 
@@ -710,6 +712,13 @@ export default function ScanResultScreen() {
       }
       if (editPointsRight !== '') {
         editData.antler_points_right = parseInt(editPointsRight, 10);
+      }
+
+      // Include date_taken if set or changed
+      if (editDateTaken && editDateTaken !== (scan.date_taken || '')) {
+        editData.date_taken = editDateTaken;
+      } else if (editDateTaken) {
+        editData.date_taken = editDateTaken;
       }
 
       if (imageUri) {
@@ -1493,6 +1502,20 @@ export default function ScanResultScreen() {
                 placeholderTextColor={colors.textMuted}
                 keyboardType="numeric"
               />
+
+              <Text style={styles.inputLabel}>Date Taken</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editDateTaken}
+                onChangeText={setEditDateTaken}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+              />
+              <Text style={styles.dateHintText}>
+                Setting the date helps determine seasonal context (rut phase) for more accurate aging
+              </Text>
 
               <Text style={styles.editNote}>
                 Your corrections will be used to re-analyze this deer with updated information.
@@ -3165,6 +3188,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     fontStyle: 'italic',
     textAlign: 'center',
+  },
+  dateHintText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginBottom: spacing.sm,
+    lineHeight: 16,
   },
   modalFooter: {
     flexDirection: 'row',
