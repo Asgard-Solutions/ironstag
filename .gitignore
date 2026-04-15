@@ -2,6 +2,7 @@
 # Emergent (DO NOT TRACK)
 # ======================================================
 .emergent/
+.emergent/emergent.yml
 
 # ======================================================
 # Global / IDE
@@ -122,6 +123,15 @@ chainlit.md
 .ipynb_checkpoints/
 .vercel/
 android-sdk/-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
+-e 
 # Environment and credential files
 .env
 .env.*
