@@ -70,6 +70,13 @@ from adaptive_calibration import (
     RecommendationType,
     get_season_bucket,
 )
+from season_derivation import (
+    derive_season_phase,
+    resolve_date_taken,
+    extract_exif_date,
+    normalize_state,
+    SeasonPhaseResult,
+)
 from bc_typical_whitetail import (
     build_bc_score_record,
     get_bc_score_type_label,
@@ -619,11 +626,13 @@ class DeerAnalysisRequest(BaseModel):
     notes: Optional[str] = None
     # Optional state for region-specific calibration (two-letter code)
     state: Optional[str] = None  # e.g., "TX", "IA", "GA"
+    # Optional image capture date for seasonal context (ISO format: YYYY-MM-DD)
+    date_taken: Optional[str] = None
 
 class DeerAnalysisResponse(BaseModel):
     id: str
     user_id: str
-    local_image_id: str
+    local_image_id: Optional[str] = None
     deer_age: Optional[float] = None
     age_bucket: Optional[str] = None
     age_range: Optional[str] = None
@@ -664,6 +673,12 @@ class DeerAnalysisResponse(BaseModel):
     retake_reason: Optional[str] = None
     visible_age_cues: Optional[List[str]] = None
     consensus: Optional[Dict[str, Any]] = None
+    # Seasonal context
+    date_taken: Optional[str] = None       # ISO date YYYY-MM-DD
+    season_phase: Optional[str] = None     # pre_rut, rut, post_rut, unknown
+    date_source: Optional[str] = None      # client, image_metadata, unknown
+    season_phase_confidence: Optional[str] = None  # high, medium, low
+    season_phase_reason: Optional[str] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
     # Favorites and Tags
@@ -693,6 +708,7 @@ class ScanEditRequest(BaseModel):
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
     image_base64: Optional[str] = None  # Required if re-analyzing with LLM
+    date_taken: Optional[str] = None    # ISO date YYYY-MM-DD
 
 
 # ============ SCAN LABEL MODELS (Phase 2 Empirical Calibration) ============
@@ -922,6 +938,11 @@ async def startup():
         
         # Label versioning for safe weight recomputation in future
         await database.execute("ALTER TABLE scan_labels ADD COLUMN IF NOT EXISTS label_version INTEGER DEFAULT 1")
+        
+        # Season / date context columns
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS date_taken DATE")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS date_source VARCHAR(20)")
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS season_phase VARCHAR(20)")
         
         # Create indexes for label queries
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scan_labels_user_id ON scan_labels(user_id)")
@@ -1738,16 +1759,57 @@ def build_scan_context(
     user_profile_state: Optional[str],
     scan_datetime: datetime,
     notes: Optional[str] = None,
+    date_taken: Optional[str] = None,
+    image_bytes: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     region_info = determine_region(scan_state=scan_state, user_profile_state=user_profile_state)
-    season_bucket = get_season_bucket(scan_datetime, region_info.region_key.value)
+
+    # Resolve date_taken: client > EXIF > fallback to scan_datetime
+    exif_date = extract_exif_date(image_bytes) if image_bytes else None
+    resolved_date, date_source = resolve_date_taken(date_taken, exif_date)
+
+    # Use resolved date for season derivation; fall back to scan_datetime
+    effective_date = resolved_date or scan_datetime.date() if hasattr(scan_datetime, 'date') else scan_datetime
+    if resolved_date:
+        from datetime import datetime as dt_cls
+        effective_dt = dt_cls.combine(resolved_date, dt_cls.min.time())
+    else:
+        effective_dt = scan_datetime
+
+    season_bucket = get_season_bucket(effective_dt, region_info.region_key.value)
+    season_result: SeasonPhaseResult = derive_season_phase(
+        state=scan_state or user_profile_state,
+        date_taken=resolved_date,
+        region=region_info.region_key.value,
+    )
     clean_notes = notes.strip() if isinstance(notes, str) and notes.strip() else None
+
+    # Logging for observability
+    logger.info(
+        "Scan context resolved | state=%s region=%s date_taken=%s season_phase=%s "
+        "confidence=%s season_bucket=%s date_source=%s near_boundary=%s reason=%s",
+        region_info.region_state,
+        region_info.region_key.value,
+        str(resolved_date) if resolved_date else "none",
+        season_result.season_phase,
+        season_result.confidence,
+        season_bucket,
+        date_source,
+        season_result.near_boundary,
+        season_result.reason,
+    )
 
     return {
         "state": region_info.region_state,
         "region_key": region_info.region_key.value,
         "region_source": region_info.region_source.value,
         "season_bucket": season_bucket,
+        "season_phase": season_result.season_phase,
+        "season_confidence": season_result.confidence,
+        "season_reason": season_result.reason,
+        "season_near_boundary": season_result.near_boundary,
+        "date_taken": str(resolved_date) if resolved_date else None,
+        "date_source": date_source,
         "notes": clean_notes,
     }
 
@@ -1755,14 +1817,44 @@ def build_scan_context(
 def format_scan_context_for_prompt(context: Dict[str, Any]) -> str:
     region_key = context.get("region_key") or "unknown"
     season_bucket = context.get("season_bucket") or "unknown"
+    season_phase = context.get("season_phase") or "unknown"
+    season_confidence = context.get("season_confidence") or "low"
+    date_taken = context.get("date_taken") or "unknown"
+    date_source = context.get("date_source") or "unknown"
+
+    # ── Image context block (matches spec example format) ──
     lines = [
-        "Field context:",
-        f"- User-reported state: {context.get('state') or 'unknown'}",
-        f"- Region profile: {region_key}",
-        f"- Seasonal phase: {season_bucket}",
-        f"- Regional caution: {REGION_PROMPT_HINTS.get(region_key, REGION_PROMPT_HINTS['unknown'])}",
-        f"- Seasonal caution: {SEASON_PROMPT_HINTS.get(season_bucket, 'Use season only as supporting context, never as proof of age.')}",
+        "Image context:",
+        f"- State: {context.get('state') or 'unknown'}",
+        f"- Region: {region_key}",
+        f"- Date taken: {date_taken}",
+        f"- Date source: {date_source}",
+        f"- Season phase: {season_phase}",
+        f"- Season-phase confidence: {season_confidence}",
+        "",
+        "Regional caution:",
+        f"- {REGION_PROMPT_HINTS.get(region_key, REGION_PROMPT_HINTS['unknown'])}",
+        "",
+        "Seasonal caution:",
+        f"- {SEASON_PROMPT_HINTS.get(season_bucket, 'Use season only as supporting context, never as proof of age.')}",
+        "",
+        "Seasonal context rules:",
+        "- Use state, region, date_taken, and season_phase as supporting context only.",
+        "- Regional context sets baseline expectations for body size, phenotype, and common aging pitfalls.",
+        "- Seasonal context modifies how visible body cues should be interpreted at the time the image was taken.",
+        "- Do not treat region, date, or season as direct evidence of age.",
     ]
+    # Phase-specific cue reliability modifiers
+    if season_phase == "rut":
+        lines.append("- RUT ACTIVE: Reduce the weight of neck swelling, brisket thickness, and temporary front-end bulk. These are seasonal, not age indicators.")
+    elif season_phase == "post_rut":
+        lines.append("- POST-RUT ACTIVE: Reduce the weight of low body mass, gaunt appearance, and reduced belly fullness. Post-rut stress mimics younger age classes.")
+    elif season_phase == "pre_rut":
+        lines.append("- PRE-RUT ACTIVE: Do not under-age solely because the neck is thin or the body appears lean. Pre-rut bucks have not yet bulked.")
+
+    lines.append("- If seasonal or regional context conflicts with visible anatomy, prioritize visible anatomy and reduce confidence rather than forcing an age.")
+    lines.append("- If season_phase is unknown, continue using visible anatomy and regional context without blocking age estimation.")
+
     if context.get("notes"):
         lines.append(f"- Hunter notes (supplemental, not ground truth): {context['notes']}")
     return "\n".join(lines)
@@ -1799,6 +1891,9 @@ def normalize_model_analysis(
         "region_key": context.get("region_key"),
         "region_source": context.get("region_source"),
         "season_bucket": context.get("season_bucket"),
+        "season_phase": context.get("season_phase"),
+        "date_taken": context.get("date_taken"),
+        "date_source": context.get("date_source"),
     }
 
     if not normalized.get("is_valid_deer", False):
@@ -2247,6 +2342,12 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         boone_crockett_status=boone_crockett_status,
         boone_crockett_calculated_at=scan.get("boone_crockett_calculated_at"),
         boone_crockett_updated_at=scan.get("boone_crockett_updated_at"),
+        # Seasonal context
+        date_taken=str(scan["date_taken"]) if scan.get("date_taken") else None,
+        season_phase=scan.get("season_phase"),
+        date_source=scan.get("date_source"),
+        season_phase_confidence=None,  # Not stored in DB for legacy scans; available on fresh analyses
+        season_phase_reason=None,
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
@@ -3359,11 +3460,23 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             local_image_id=data.local_image_id,
         )
         user_profile_state = user.get("state")
+
+        # Extract raw image bytes for EXIF date extraction
+        raw_image_bytes = None
+        try:
+            b64_part = image_data.split(",", 1)[-1] if "," in image_data else image_data
+            import base64 as b64_mod
+            raw_image_bytes = b64_mod.b64decode(b64_part)
+        except Exception:
+            pass
+
         scan_context = build_scan_context(
             scan_state=data.state,
             user_profile_state=user_profile_state,
             scan_datetime=scan_created_at,
             notes=data.notes,
+            date_taken=data.date_taken,
+            image_bytes=raw_image_bytes,
         )
         context_text = format_scan_context_for_prompt(scan_context)
         logger.info(
@@ -3496,6 +3609,10 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
             season_bucket=scan_context.get("season_bucket"),
             analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+            # Seasonal context fields
+            date_taken=scan_context.get("date_taken"),
+            date_source=scan_context.get("date_source"),
+            season_phase=scan_context.get("season_phase"),
             analysis_model=selected_model,
             age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
             retake_reason=calibrated_analysis.get("retake_reason"),
@@ -3562,6 +3679,12 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             consensus=calibrated_analysis.get("consensus"),
             # Cloud image storage (R2)
             image_url=image_url,
+            # Seasonal context
+            date_taken=scan_context.get("date_taken"),
+            season_phase=scan_context.get("season_phase"),
+            date_source=scan_context.get("date_source"),
+            season_phase_confidence=scan_context.get("season_confidence"),
+            season_phase_reason=scan_context.get("season_reason"),
         )
         
     except openai.OpenAIError as e:
@@ -4599,6 +4722,7 @@ async def edit_scan_with_reanalysis(
                 user_profile_state=user_profile_state,
                 scan_datetime=scan.get("created_at") or datetime.utcnow(),
                 notes=scan.get("notes"),
+                date_taken=data.date_taken or (str(scan.get("date_taken")) if scan.get("date_taken") else None),
             )
 
             # Build hint text from user corrections with context about original analysis
@@ -4759,6 +4883,9 @@ Provide your complete REVISED analysis in JSON format."""
                     calibration_strategy=calibrated_analysis.get("calibration_strategy"),
                     calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
                     season_bucket=reanalysis_context.get("season_bucket"),
+                    date_taken=reanalysis_context.get("date_taken"),
+                    season_phase=reanalysis_context.get("season_phase"),
+                    date_source=reanalysis_context.get("date_source"),
                     analysis_prompt_version=REANALYSIS_PROMPT_VERSION,
                     analysis_model=selected_model,
                     age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
@@ -4789,6 +4916,25 @@ Provide your complete REVISED analysis in JSON format."""
             update_values["antler_points_right"] = data.antler_points_right
         if total_points is not None and update_values.get("deer_sex") != "Doe":
             update_values["antler_points"] = total_points
+
+        # Update date_taken and re-derive season even without LLM re-analysis
+        if data.date_taken is not None:
+            from datetime import date as date_cls
+            try:
+                parsed_date = date_cls.fromisoformat(data.date_taken)
+                update_values["date_taken"] = parsed_date
+                update_values["date_source"] = "client"
+                # Derive season from the new date
+                state_for_season = scan.get("region_state") or user.get("state")
+                region_for_season = scan.get("region_key") or "southeast"
+                season_result = derive_season_phase(
+                    state=state_for_season,
+                    date_taken=parsed_date,
+                    region=region_for_season,
+                )
+                update_values["season_phase"] = season_result.season_phase
+            except (ValueError, TypeError):
+                pass
         
         if update_values:
             update_query = scans_table.update().where(

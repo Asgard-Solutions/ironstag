@@ -98,7 +98,8 @@
       "./plugins/android-edge-to-edge-cleanup-plugin.js",
       "./plugins/android-colors-plugin.js",
       "./plugins/android-large-screen-libs-plugin.js",
-      "expo-iap"
+      "expo-iap",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true

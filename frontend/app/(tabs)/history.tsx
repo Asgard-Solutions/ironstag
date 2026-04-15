@@ -14,7 +14,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart, CloudOff, RefreshCw, Trash2 } from 'lucide-react-native';
+import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart, CloudOff, RefreshCw, Trash2, Leaf } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
@@ -46,11 +46,26 @@ interface Scan {
   recommendation: string | null;
   notes: string | null;
   created_at: string;
+  // Seasonal context
+  date_taken?: string | null;
+  season_phase?: string | null;
   // Cloud image storage (R2) - for cross-device access
   image_url?: string | null;
   // Favorites and Tags
   is_favorite?: boolean;
   tags?: string[];
+}
+
+// Season phase display helpers
+const SEASON_LABELS: Record<string, string> = {
+  pre_rut: 'Pre-Rut',
+  rut: 'Rut',
+  post_rut: 'Post-Rut',
+};
+
+function getSeasonLabel(phase: string | null | undefined): string | null {
+  if (!phase || phase === 'unknown') return null;
+  return SEASON_LABELS[phase] || null;
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
@@ -308,9 +323,14 @@ export default function HistoryScreen() {
         scan.confidence ? `${scan.confidence}%` : null,
         scan.confidence?.toString(),
         // Date formats
+        scan.date_taken ? format(new Date(scan.date_taken + 'T12:00:00'), 'MMM d, yyyy') : null,
+        scan.date_taken ? format(new Date(scan.date_taken + 'T12:00:00'), 'MMMM') : null,
         scan.created_at ? format(new Date(scan.created_at), 'MMM d, yyyy') : null,
         scan.created_at ? format(new Date(scan.created_at), 'MMM d yyyy') : null,
         scan.created_at ? format(new Date(scan.created_at), 'MMMM') : null,
+        // Season phase
+        scan.season_phase ? scan.season_phase.replace('_', ' ') : null,
+        scan.season_phase ? getSeasonLabel(scan.season_phase) : null,
         // Tags
         ...(scan.tags || []),
       ].filter(Boolean).join(' ').toLowerCase();
@@ -389,9 +409,20 @@ export default function HistoryScreen() {
                 {(item.antler_points_left !== null || item.antler_points_right !== null) && 
                   ` (${item.antler_points_left || 0}L/${item.antler_points_right || 0}R)`}
               </Text>
-              <Text style={styles.dateText}>
-                {format(new Date(item.created_at), 'MMM d, yyyy')}
-              </Text>
+              <View style={styles.dateSeasonRow}>
+                <Text style={styles.dateText}>
+                  {item.date_taken
+                    ? format(new Date(item.date_taken + 'T12:00:00'), 'MMM d, yyyy')
+                    : 'No date set'}
+                </Text>
+                {getSeasonLabel(item.season_phase) && (
+                  <>
+                    <View style={styles.dateDot} />
+                    <Leaf size={11} color={colors.primary} />
+                    <Text style={styles.seasonLabelText}>{getSeasonLabel(item.season_phase)}</Text>
+                  </>
+                )}
+              </View>
               {/* Tags display */}
               {item.tags && item.tags.length > 0 && (
                 <View style={styles.tagsRow}>
@@ -950,6 +981,22 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 12,
     color: colors.textMuted,
+  },
+  dateSeasonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dateDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.textMuted,
+  },
+  seasonLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
   },
   // Tags display on scan cards
   tagsRow: {

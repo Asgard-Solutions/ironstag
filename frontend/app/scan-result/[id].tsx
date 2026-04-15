@@ -37,6 +37,7 @@ import {
   ChevronRight,
   Shield,
   Eye,
+  Leaf,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
@@ -165,6 +166,11 @@ interface ScanResult {
   boone_crockett_status?: 'draft' | 'complete' | null;
   boone_crockett_calculated_at?: string | null;
   boone_crockett_updated_at?: string | null;
+  // Seasonal context
+  date_taken?: string | null;
+  season_phase?: string | null;
+  date_source?: string | null;
+  season_phase_confidence?: string | null;
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
@@ -186,6 +192,18 @@ function getAgeDisplayText(age: number | null): string {
     return 'Uncertain';
   }
   return `${age} years`;
+}
+
+// Season phase display helpers
+const SEASON_LABELS: Record<string, string> = {
+  pre_rut: 'Pre-Rut',
+  rut: 'Rut',
+  post_rut: 'Post-Rut',
+  unknown: 'Unknown',
+};
+
+function getSeasonLabel(phase: string | null | undefined): string {
+  return SEASON_LABELS[phase || 'unknown'] || 'Unknown';
 }
 
 function getDisplayRecommendation(scan: ScanResult): 'HARVEST' | 'PASS' | null {
@@ -383,7 +401,7 @@ function ScorePairedMeasurementRow({
   );
 }
 
-const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Elk', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
+const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
 const DEER_SEX_OPTIONS = ['Buck', 'Doe', 'Unknown'];
 
 export default function ScanResultScreen() {
@@ -405,7 +423,13 @@ export default function ScanResultScreen() {
   const [editDeerType, setEditDeerType] = useState<string>('');
   const [editPointsLeft, setEditPointsLeft] = useState<string>('');
   const [editPointsRight, setEditPointsRight] = useState<string>('');
+  const [editDateTaken, setEditDateTaken] = useState<string>('');
+  const editCurrentYear = new Date().getFullYear();
+  const [editPickerYear, setEditPickerYear] = useState(editCurrentYear);
+  const [editPickerMonth, setEditPickerMonth] = useState(new Date().getMonth() + 1);
+  const [editPickerDay, setEditPickerDay] = useState(new Date().getDate());
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [reanalysisStatus, setReanalysisStatus] = useState<string | null>(null);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [scoreForm, setScoreForm] = useState<BcScoreFormState>(createEmptyBcScoreFormState());
   const [isSavingScore, setIsSavingScore] = useState(false);
@@ -671,6 +695,21 @@ export default function ScanResultScreen() {
     setEditDeerType(scan.deer_type || '');
     setEditPointsLeft(scan.antler_points_left?.toString() || '');
     setEditPointsRight(scan.antler_points_right?.toString() || '');
+    setEditDateTaken(scan.date_taken || '');
+    // Initialize wheel pickers
+    if (scan.date_taken) {
+      const parts = scan.date_taken.split('-');
+      if (parts.length === 3) {
+        setEditPickerYear(parseInt(parts[0], 10));
+        setEditPickerMonth(parseInt(parts[1], 10));
+        setEditPickerDay(parseInt(parts[2], 10));
+      }
+    } else {
+      const now = new Date();
+      setEditPickerYear(now.getFullYear());
+      setEditPickerMonth(now.getMonth() + 1);
+      setEditPickerDay(now.getDate());
+    }
     setShowEditModal(true);
   };
 
@@ -678,6 +717,7 @@ export default function ScanResultScreen() {
     if (!scan) return;
 
     setIsSubmittingEdit(true);
+    setReanalysisStatus('Preparing corrections...');
     try {
       const editData: any = {};
 
@@ -694,7 +734,12 @@ export default function ScanResultScreen() {
         editData.antler_points_right = parseInt(editPointsRight, 10);
       }
 
+      // Include date_taken from wheel picker — always send it
+      const pickerDateStr = `${editPickerYear}-${String(editPickerMonth).padStart(2, '0')}-${String(editPickerDay).padStart(2, '0')}`;
+      editData.date_taken = pickerDateStr;
+
       if (imageUri) {
+        setReanalysisStatus('Loading image for re-analysis...');
         try {
           let base64Image: string;
 
@@ -721,6 +766,7 @@ export default function ScanResultScreen() {
           console.log('Image included for re-analysis, length:', base64Image.length);
         } catch (imgError) {
           console.log('Could not include image for re-analysis:', imgError);
+          setReanalysisStatus(null);
           Alert.alert(
             'Image Not Available',
             'Unable to access the original image. The scan will be updated without re-analysis.',
@@ -730,24 +776,36 @@ export default function ScanResultScreen() {
       }
 
       if (editData.image_base64) {
-        Alert.alert('Re-analyzing', 'Sending image to AI for new analysis...');
+        setReanalysisStatus('Sending to AI for re-analysis...\nThis may take 10-20 seconds');
+      } else {
+        setReanalysisStatus('Saving updates...');
       }
 
       const response = await scanAPI.editScan(scan.id, editData);
-      setScan(response.data);
+      // Merge the response with the date we sent, in case the backend
+      // doesn't yet support date_taken in the edit response
+      const updatedScan = {
+        ...response.data,
+        date_taken: response.data.date_taken || editData.date_taken || scan.date_taken,
+        season_phase: response.data.season_phase || scan.season_phase,
+      };
+      setScan(updatedScan);
+      setReanalysisStatus(null);
       setShowEditModal(false);
 
       if (editData.image_base64) {
-        Alert.alert('Success', 'Scan re-analyzed with your corrections!');
+        Alert.alert('Re-analysis Complete', 'Your deer has been re-analyzed with the updated information.');
       } else {
-        Alert.alert('Success', 'Scan details updated');
+        Alert.alert('Updated', 'Scan details saved successfully.');
       }
     } catch (error: any) {
       console.error('Failed to update scan:', error);
+      setReanalysisStatus(null);
       const message = error.response?.data?.detail || 'Failed to update scan';
       Alert.alert('Error', message);
     } finally {
       setIsSubmittingEdit(false);
+      setReanalysisStatus(null);
     }
   };
 
@@ -955,13 +1013,29 @@ export default function ScanResultScreen() {
           </View>
         )}
 
-        {/* Date + Share row */}
+        {/* Date / Season + Share row */}
         <View style={styles.metaRow}>
-          <View style={styles.dateContainer}>
-            <Calendar size={14} color={colors.textMuted} />
-            <Text style={styles.dateText}>
-              {format(new Date(scan.created_at), 'MMM d, yyyy h:mm a')}
-            </Text>
+          <View style={styles.dateSeasonContainer}>
+            {scan.date_taken ? (
+              <>
+                <Calendar size={14} color={colors.primary} />
+                <Text style={styles.dateText}>
+                  {format(new Date(scan.date_taken + 'T12:00:00'), 'MMM d, yyyy')}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Calendar size={14} color={colors.textMuted} />
+                <Text style={styles.dateText}>No date set</Text>
+              </>
+            )}
+            {scan.season_phase && scan.season_phase !== 'unknown' && (
+              <>
+                <View style={styles.metaDot} />
+                <Leaf size={14} color={colors.primary} />
+                <Text style={styles.seasonText}>{getSeasonLabel(scan.season_phase)}</Text>
+              </>
+            )}
           </View>
           <TouchableOpacity
             style={styles.shareButton}
@@ -1460,15 +1534,89 @@ export default function ScanResultScreen() {
                 keyboardType="numeric"
               />
 
+              <Text style={styles.inputLabel}>Date Taken</Text>
+              <View style={styles.editDateWheelRow}>
+                {/* Year */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Year</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerYear}
+                      onValueChange={(val) => setEditPickerYear(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {Array.from({ length: 30 }, (_, i) => editCurrentYear - i).map((yr) => (
+                        <Picker.Item key={yr} label={String(yr)} value={yr} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                {/* Month */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Month</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerMonth}
+                      onValueChange={(val) => setEditPickerMonth(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {[
+                        { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 },
+                        { label: 'Mar', value: 3 }, { label: 'Apr', value: 4 },
+                        { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
+                        { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 },
+                        { label: 'Sep', value: 9 }, { label: 'Oct', value: 10 },
+                        { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
+                      ].map((m) => (
+                        <Picker.Item key={m.value} label={m.label} value={m.value} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                {/* Day */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Day</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerDay}
+                      onValueChange={(val) => setEditPickerDay(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {Array.from(
+                        { length: new Date(editPickerYear, editPickerMonth, 0).getDate() },
+                        (_, i) => i + 1,
+                      ).map((d) => (
+                        <Picker.Item key={d} label={String(d)} value={d} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              </View>
+              <Text style={styles.dateHintText}>
+                Setting the date helps determine seasonal context (rut phase) for more accurate aging
+              </Text>
+
               <Text style={styles.editNote}>
                 Your corrections will be used to re-analyze this deer with updated information.
               </Text>
             </ScrollView>
 
+            {/* Re-analysis progress overlay */}
+            {isSubmittingEdit && reanalysisStatus && (
+              <View style={styles.reanalysisOverlay}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.reanalysisStatusText}>{reanalysisStatus}</Text>
+              </View>
+            )}
+
             <View style={[styles.modalFooter, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, isSubmittingEdit && styles.disabledButton]}
                 onPress={() => setShowEditModal(false)}
+                disabled={isSubmittingEdit}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -1478,7 +1626,10 @@ export default function ScanResultScreen() {
                 disabled={isSubmittingEdit}
               >
                 {isSubmittingEdit ? (
-                  <ActivityIndicator size="small" color={colors.white} />
+                  <View style={styles.submitLoadingRow}>
+                    <ActivityIndicator size="small" color={colors.white} />
+                    <Text style={styles.submitButtonText}>Re-analyzing...</Text>
+                  </View>
                 ) : (
                   <Text style={styles.submitButtonText}>Update & Re-analyze</Text>
                 )}
@@ -2109,9 +2260,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  dateSeasonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
   dateText: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  metaDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.textMuted,
+  },
+  seasonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
   },
   recommendationContainer: {
     flexDirection: 'row',
@@ -3114,6 +3283,51 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
   },
+  dateHintText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginBottom: spacing.sm,
+    lineHeight: 16,
+  },
+  editDateWheelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  editDateWheelCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  editDateWheelLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  editDateWheelPickerWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    width: '100%',
+    height: 130,
+  },
+  editDateWheelPicker: {
+    width: '100%',
+    height: 130,
+    color: colors.textPrimary,
+    backgroundColor: 'transparent',
+  },
+  editDateWheelItemStyle: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    height: 130,
+  },
   modalFooter: {
     flexDirection: 'row',
     padding: spacing.md,
@@ -3147,6 +3361,33 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  reanalysisOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(10, 15, 12, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+  },
+  reanalysisStatusText: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: spacing.lg,
+    lineHeight: 24,
+  },
+  submitLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
 
   title: {

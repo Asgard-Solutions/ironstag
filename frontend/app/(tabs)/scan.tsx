@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  TextInput,
   ActivityIndicator,
   Image,
   ScrollView,
@@ -33,6 +34,7 @@ import {
   MapPin,
   WifiOff,
   RotateCcw,
+  Calendar,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -44,7 +46,9 @@ import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { useRevenueCat } from '../../hooks/useRevenueCat';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { StatePicker, getStateName } from '../../components/StatePicker';
+import { Picker } from '@react-native-picker/picker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
+import { format } from 'date-fns';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 
@@ -81,6 +85,14 @@ export default function ScanScreen() {
   // Hunting location state (per-scan override)
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [huntingLocation, setHuntingLocation] = useState<string | null>(null);
+
+  // Date taken state (per-scan)
+  const [dateTaken, setDateTaken] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [pickerYear, setPickerYear] = useState(currentYear);
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth() + 1);
+  const [pickerDay, setPickerDay] = useState(new Date().getDate());
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
@@ -251,6 +263,7 @@ export default function ScanScreen() {
         image_base64: capturedImage,
         local_image_id: localImageId,
         state: stateToSend,
+        date_taken: dateTaken ? format(dateTaken, 'yyyy-MM-dd') : undefined,
       });
       console.log('API response:', response.data);
 
@@ -264,8 +277,9 @@ export default function ScanScreen() {
         });
       }
       
-      // Reset hunting location override after successful scan
+      // Reset per-scan overrides after successful scan
       setHuntingLocation(null);
+      setDateTaken(null);
 
       // Use replace instead of push to prevent the Android back button
       // from returning to the "analyzing" state
@@ -491,6 +505,53 @@ export default function ScanScreen() {
               <Text style={styles.locationInlineChangeText}>Change</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Date Taken Row */}
+          <View style={styles.locationInlineRow}>
+            <View style={styles.locationInlineLeft}>
+              <View style={styles.locationInlineIconWrap}>
+                <Calendar size={16} color={colors.primary} />
+              </View>
+              <View style={styles.locationInlineCopy}>
+                <Text style={styles.locationInlineLabel}>Date Taken</Text>
+                <Text style={styles.locationInlineText}>
+                  {dateTaken
+                    ? format(dateTaken, 'MMM d, yyyy')
+                    : 'Not set (optional)'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.dateActionRow}>
+              {dateTaken && (
+                <TouchableOpacity
+                  style={styles.dateClearButton}
+                  onPress={() => setDateTaken(null)}
+                >
+                  <Text style={styles.dateClearText}>Clear</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.locationInlineChange}
+                onPress={() => {
+                  if (dateTaken) {
+                    setPickerYear(dateTaken.getFullYear());
+                    setPickerMonth(dateTaken.getMonth() + 1);
+                    setPickerDay(dateTaken.getDate());
+                  } else {
+                    const now = new Date();
+                    setPickerYear(now.getFullYear());
+                    setPickerMonth(now.getMonth() + 1);
+                    setPickerDay(now.getDate());
+                  }
+                  setShowDatePicker(true);
+                }}
+              >
+                <Text style={styles.locationInlineChangeText}>
+                  {dateTaken ? 'Change' : 'Set Date'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         {/* State Picker Modal */}
@@ -505,6 +566,118 @@ export default function ScanScreen() {
           title="Select Hunting Location"
           allowClear={true}
         />
+
+        {/* Date Picker Modal */}
+        {showDatePicker && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={showDatePicker}
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <TouchableOpacity
+              style={styles.datePickerOverlay}
+              activeOpacity={1}
+              onPress={() => setShowDatePicker(false)}
+            >
+              <View
+                style={styles.datePickerContainer}
+                onStartShouldSetResponder={() => true}
+              >
+                <View style={styles.datePickerHeader}>
+                  <Text style={styles.datePickerTitle}>When was this photo taken?</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <X size={20} color={colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Wheel Pickers: Year / Month / Day */}
+                <View style={styles.dateWheelRow}>
+                  {/* Year */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Year</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerYear}
+                        onValueChange={(val) => setPickerYear(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {Array.from({ length: 30 }, (_, i) => currentYear - i).map((yr) => (
+                          <Picker.Item key={yr} label={String(yr)} value={yr} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+
+                  {/* Month */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Month</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerMonth}
+                        onValueChange={(val) => setPickerMonth(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {[
+                          { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 },
+                          { label: 'Mar', value: 3 }, { label: 'Apr', value: 4 },
+                          { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
+                          { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 },
+                          { label: 'Sep', value: 9 }, { label: 'Oct', value: 10 },
+                          { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
+                        ].map((m) => (
+                          <Picker.Item key={m.value} label={m.label} value={m.value} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+
+                  {/* Day */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Day</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerDay}
+                        onValueChange={(val) => setPickerDay(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {Array.from(
+                          { length: new Date(pickerYear, pickerMonth, 0).getDate() },
+                          (_, i) => i + 1,
+                        ).map((d) => (
+                          <Picker.Item key={d} label={String(d)} value={d} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+                </View>
+
+                <Text style={styles.datePickerHint}>
+                  Helps determine seasonal context for more accurate aging
+                </Text>
+
+                {/* Confirm button */}
+                <TouchableOpacity
+                  style={styles.dateConfirmButton}
+                  onPress={() => {
+                    const d = new Date(pickerYear, pickerMonth - 1, pickerDay);
+                    if (d <= new Date()) {
+                      setDateTaken(d);
+                      setShowDatePicker(false);
+                    } else {
+                      Alert.alert('Invalid Date', 'Date cannot be in the future.');
+                    }
+                  }}
+                >
+                  <Text style={styles.dateConfirmText}>Set Date</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+        )}
       </View>
     );
   }
@@ -1300,6 +1473,108 @@ const styles = StyleSheet.create({
   },
   locationInlineChangeText: {
     fontSize: 14,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
+  },
+  dateActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateClearButton: {
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateClearText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  // ── Date Picker Modal ──
+  datePickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    padding: 0,
+  },
+  datePickerContainer: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  datePickerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  dateWheelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dateWheelCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dateWheelLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  dateWheelPickerWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    width: '100%',
+    height: 150,
+  },
+  dateWheelPicker: {
+    width: '100%',
+    height: 150,
+    color: colors.textPrimary,
+    backgroundColor: 'transparent',
+  },
+  dateWheelItemStyle: {
+    fontSize: 18,
+    color: colors.textPrimary,
+    height: 150,
+  },
+  datePickerHint: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  dateConfirmButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateConfirmText: {
+    fontSize: 16,
     fontWeight: '700',
     color: colors.textOnPrimary,
   },
