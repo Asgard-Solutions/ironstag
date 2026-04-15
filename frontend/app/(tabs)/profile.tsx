@@ -8,7 +8,6 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
-  ActionSheetIOS,
   Platform,
   Modal,
   TextInput,
@@ -16,7 +15,7 @@ import {
   Image,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   User,
@@ -27,10 +26,7 @@ import {
   Shield,
   Info,
   Trash2,
-  AtSign,
-  Mail,
   Clock,
-  Camera,
   Settings,
   FileText,
   ExternalLink,
@@ -71,7 +67,6 @@ const CLEANUP_INTERVALS = [
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
   const { user, isAuthenticated, logout, updateUser } = useAuthStore();
   const { 
     stats, 

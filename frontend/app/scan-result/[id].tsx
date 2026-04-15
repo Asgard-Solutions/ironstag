@@ -30,7 +30,6 @@ import {
   X,
   Target,
   Calendar,
-  AlertTriangle,
   Pencil,
   AlertCircle,
   MessageSquare,
@@ -40,7 +39,6 @@ import {
   Leaf,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';

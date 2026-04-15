@@ -4,6 +4,7 @@
  */
 import { Platform } from 'react-native';
 import * as ExpoIAP from 'expo-iap';
+import type { Product, ProductOrSubscription, ProductSubscription, Purchase } from 'expo-iap';
 import api from '../utils/api';
 
 // Product IDs configured in App Store Connect / Google Play Console
@@ -79,18 +80,17 @@ class IAPService {
       
       console.log('[IAP] Loading products:', productIds);
       
-      const products = await ExpoIAP.getProducts(productIds);
+      // expo-iap v3 uses fetchProducts with { skus, type } args
+      const products = await ExpoIAP.fetchProducts({ skus: productIds, type: 'subs' });
       
       console.log('[IAP] Products loaded:', products);
       
-      this.products = products.map(p => ({
-        productId: p.productId,
-        title: p.title || p.productId,
+      this.products = (products ?? []).map((p: Product | ProductOrSubscription | ProductSubscription) => ({
+        productId: p.id,
+        title: p.title || p.id,
         description: p.description || '',
-        price: p.localizedPrice || p.price || '$0.00',
-        priceAmountMicros: p.priceAmountMicros?.toString(),
-        priceCurrencyCode: p.priceCurrencyCode,
-        subscriptionPeriod: p.subscriptionPeriod,
+        price: p.displayPrice || String(p.price ?? '$0.00'),
+        priceCurrencyCode: p.currency,
       }));
       
       return this.products;
@@ -114,10 +114,27 @@ class IAPService {
     try {
       console.log('[IAP] Initiating purchase for:', productId);
       
-      // Request the purchase
-      const purchase = await ExpoIAP.requestPurchase({ sku: productId });
+      // expo-iap v3 requestPurchase uses platform-specific request shape
+      const purchaseResult = await ExpoIAP.requestPurchase({
+        type: 'subs',
+        request: Platform.select({
+          ios: { apple: { sku: productId } },
+          android: { google: { skus: [productId] } },
+          default: { apple: { sku: productId } },
+        }),
+      });
       
-      console.log('[IAP] Purchase response:', purchase);
+      console.log('[IAP] Purchase response:', purchaseResult);
+      
+      if (!purchaseResult) {
+        return {
+          success: false,
+          message: 'Purchase was canceled',
+        };
+      }
+
+      // requestPurchase can return Purchase | Purchase[] — normalize to single
+      const purchase: Purchase = Array.isArray(purchaseResult) ? purchaseResult[0] : purchaseResult;
       
       if (!purchase) {
         return {
@@ -167,13 +184,11 @@ class IAPService {
   /**
    * Validate purchase with our backend server
    */
-  private async validatePurchase(purchase: any): Promise<PurchaseResult> {
+  private async validatePurchase(purchase: Purchase): Promise<PurchaseResult> {
     try {
       const platform = Platform.OS;
-      const receiptData = Platform.select({
-        ios: purchase.transactionReceipt,
-        android: purchase.purchaseToken,
-      });
+      // expo-iap v3 uses unified `purchaseToken` field (JWS on iOS, token on Android)
+      const receiptData = purchase.purchaseToken;
       
       console.log('[IAP] Validating purchase with server...');
       
@@ -181,7 +196,7 @@ class IAPService {
         receipt_data: receiptData,
         platform: platform,
         product_id: purchase.productId,
-        transaction_id: purchase.transactionId,
+        transaction_id: 'transactionId' in purchase ? (purchase as any).transactionId : purchase.id,
       });
       
       console.log('[IAP] Validation response:', response.data);

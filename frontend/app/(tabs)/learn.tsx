@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   Calendar, 
@@ -15,10 +14,8 @@ import {
   Target,
   ChevronDown, 
   ChevronUp, 
-  BookOpen, 
   Shield, 
   Trees,
-  Lock,
   AlertCircle,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';

@@ -8,7 +8,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../utils/api';
+import api from '../utils/api';
 
 const STORAGE_KEYS = {
   DEBUG_ENABLED: '@iron_stag_debug_enabled',

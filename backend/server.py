@@ -21,7 +21,7 @@ import string
 import msal
 from databases import Database
 import sqlalchemy
-from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Text, JSON
+from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Date, Text, JSON
 
 # Import region-aware confidence calibration module (replaces basic calibration)
 from region_calibration import (
@@ -187,6 +187,10 @@ scans_table = Table(
     Column("boone_crockett_status", String(20), nullable=True),
     Column("boone_crockett_calculated_at", DateTime, nullable=True),
     Column("boone_crockett_updated_at", DateTime, nullable=True),
+    # Seasonal context fields
+    Column("date_taken", Date, nullable=True),        # Image capture date (YYYY-MM-DD)
+    Column("date_source", String(20), nullable=True),  # client, image_metadata, unknown
+    Column("season_phase", String(20), nullable=True),  # pre_rut, rut, post_rut, unknown
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -297,7 +301,12 @@ OPENAI_ANALYSIS_MODEL = os.environ.get('OPENAI_ANALYSIS_MODEL', 'gpt-4o').strip(
 OPENAI_REANALYSIS_MODEL = os.environ.get('OPENAI_REANALYSIS_MODEL', '').strip() or OPENAI_ANALYSIS_MODEL
 OPENAI_MODEL_AB_TEST_CANDIDATE = os.environ.get('OPENAI_MODEL_AB_TEST_CANDIDATE', 'gpt-4.1').strip() or 'gpt-4.1'
 REVENUECAT_SECRET_KEY = os.environ.get('REVENUECAT_SECRET_KEY', '')
-JWT_SECRET = os.environ.get('JWT_SECRET', 'iron-stag-secret-key-2025')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET environment variable must be set. "
+        "Refusing to start with no secret configured."
+    )
 JWT_ALGORITHM = 'HS256'
 
 # Apple IAP Configuration
@@ -1029,6 +1038,20 @@ async def startup():
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
+
+    # ── Startup validation: verify ORM metadata matches required columns ──
+    REQUIRED_SCAN_COLUMNS = {"date_taken", "date_source", "season_phase"}
+    orm_columns = set(c.name for c in scans_table.columns)
+    missing_in_orm = REQUIRED_SCAN_COLUMNS - orm_columns
+    if missing_in_orm:
+        logger.error(
+            "CRITICAL: scans_table ORM metadata is missing columns that the application "
+            "requires: %s. Inserts will fail with 'Unconsumed column names'. "
+            "Fix the Table(...) definition in server.py.",
+            missing_in_orm,
+        )
+    else:
+        logger.info("Startup validation passed: all required seasonal columns present in ORM metadata")
 
     await get_live_active_curves(force_refresh=True)
     
@@ -1808,7 +1831,7 @@ def build_scan_context(
         "season_confidence": season_result.confidence,
         "season_reason": season_result.reason,
         "season_near_boundary": season_result.near_boundary,
-        "date_taken": str(resolved_date) if resolved_date else None,
+        "date_taken": resolved_date,  # Native date object for DB; serialize to str at response time
         "date_source": date_source,
         "notes": clean_notes,
     }
@@ -1892,7 +1915,7 @@ def normalize_model_analysis(
         "region_source": context.get("region_source"),
         "season_bucket": context.get("season_bucket"),
         "season_phase": context.get("season_phase"),
-        "date_taken": context.get("date_taken"),
+        "date_taken": str(context["date_taken"]) if context.get("date_taken") else None,
         "date_source": context.get("date_source"),
     }
 
@@ -3730,7 +3753,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             # Cloud image storage (R2)
             image_url=image_url,
             # Seasonal context
-            date_taken=scan_context.get("date_taken"),
+            date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
             season_phase=scan_context.get("season_phase"),
             date_source=scan_context.get("date_source"),
             season_phase_confidence=scan_context.get("season_confidence"),
@@ -6014,11 +6037,14 @@ async def enable_debug_mode(secret: str):
 # Include router
 app.include_router(api_router)
 
-# CORS
+# CORS — Mobile app uses Bearer token auth (not cookies), so
+# allow_credentials is not needed. Wildcard origin is acceptable
+# because React Native does not enforce CORS; this setting only
+# affects browser-based access (Swagger docs, Expo web preview).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

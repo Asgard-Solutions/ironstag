@@ -14,7 +14,6 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Search, MapPin, Check } from 'lucide-react-native';

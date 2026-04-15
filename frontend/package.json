@@ -33,6 +33,7 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "@tanstack/react-query": "^5.90.16",
+    "@unrs/resolver-binding-linux-arm64-gnu": "^1.11.1",
     "axios": "^1.13.2",
     "date-fns": "^4.1.0",
     "expo": "54.0.33",

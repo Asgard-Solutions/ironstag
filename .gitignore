@@ -1,4 +1,10 @@
 # ======================================================
+# Emergent (DO NOT TRACK)
+# ======================================================
+#.emergent/
+#.emergent/emergent.yml
+
+# ======================================================
 # Global / IDE
 # ======================================================
 .idea/
@@ -55,7 +61,7 @@ android/
 ios/
 
 # ======================================================
-# 🔥 EAS OVERRIDES — REQUIRED
+# EAS overrides
 # Allow Android native project for EAS builds
 # ======================================================
 !frontend/android/
@@ -64,7 +70,6 @@ ios/
 # ======================================================
 # Android / IntelliJ
 # ======================================================
-.idea
 .gradle
 local.properties
 *.iml
@@ -82,6 +87,8 @@ venv/
 # ======================================================
 # Environment files (DO NOT COMMIT)
 # ======================================================
+.env
+.env.*
 *.env
 *.env.*
 !.env.example
@@ -93,9 +100,11 @@ venv/
 *credentials.json*
 google-play-service-account.json
 *.pem
+*.key
+.credentials
 
 # ======================================================
-# Archives
+# Archives / Binaries
 # ======================================================
 **/*.zip
 **/*.tar.gz
@@ -112,79 +121,34 @@ expo-env.d.ts
 chainlit.md
 .chainlit
 .ipynb_checkpoints/
-.vercel
-android-sdk/
+.vercel/
+android-sdk/-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
 -e 
-# Environment files
+# Environment and credential files
+.env
+.env.*
 *.env
-*.env.*
-# Environment files
-*.env
-*.env.*
+credentials.json
+*.pem
+*.key
+.credentials
 -e 
-# Environment files
+# Environment and credential files
+.env
+.env.*
 *.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
+credentials.json
+*.pem
+*.key
+.credentials
 -e 
 # Environment and credential files
 .env

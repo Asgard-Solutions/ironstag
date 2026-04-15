@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { PurchasesPackage } from 'react-native-purchases';
-import { revenueCatService, RevenueCatProduct, PurchaseResult, ENTITLEMENT_ID } from '../services/RevenueCatService';
+import { revenueCatService, PurchaseResult } from '../services/RevenueCatService';
 import { useAuthStore } from '../stores/authStore';
 
 export interface UseRevenueCatReturn {
@@ -146,7 +146,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
         
         // Sync with backend
         if (user?.id) {
-          await revenueCatService.syncWithBackend(user.id, result.customerInfo);
+          await revenueCatService.syncWithBackend(result.customerInfo);
         }
       } else if (result.message !== 'Purchase was cancelled') {
         setError(result.message);
@@ -197,7 +197,7 @@ export function useRevenueCat(): UseRevenueCatReturn {
         
         // Sync with backend
         if (user?.id) {
-          await revenueCatService.syncWithBackend(user.id, result.customerInfo);
+          await revenueCatService.syncWithBackend(result.customerInfo);
         }
       } else {
         setError(result.message);
