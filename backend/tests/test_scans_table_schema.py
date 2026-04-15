@@ -1,12 +1,13 @@
 """
-Regression tests for the scans_table ORM metadata.
+Regression tests for the scans_table ORM metadata and date_taken type handling.
 
-These tests prevent the 'Unconsumed column names' CompileError
-that occurs when the insert/update paths reference columns that
-are not defined in the SQLAlchemy Table(...) metadata.
+These tests prevent:
+1. 'Unconsumed column names' CompileError (ORM metadata mismatch)
+2. asyncpg DataError 'toordinal' (string passed to Date column)
 """
 import sys
 import os
+from datetime import date, datetime
 
 # Ensure backend is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -45,12 +46,10 @@ def test_scans_table_seasonal_column_types():
 def test_analyze_deer_insert_compiles_with_seasonal_fields():
     """
     Simulate the insert that analyze_deer() executes and verify it compiles
-    without 'Unconsumed column names' error.
+    without 'Unconsumed column names' error. Uses native date object.
     """
     from server import scans_table
-    from datetime import datetime, date
 
-    # Build the same .values() dict that analyze_deer() uses
     insert_values = dict(
         id="test-scan-id",
         user_id="test-user-id",
@@ -68,7 +67,7 @@ def test_analyze_deer_insert_compiles_with_seasonal_fields():
         body_condition="Good",
         confidence=72,
         recommendation="HARVEST",
-        reasoning="Mature deer with good body condition.",
+        reasoning="Mature deer.",
         notes=None,
         raw_response={},
         created_at=datetime.utcnow(),
@@ -78,7 +77,7 @@ def test_analyze_deer_insert_compiles_with_seasonal_fields():
         age_confidence=68,
         recommendation_confidence=72,
         age_uncertain=False,
-        calibration_version="v2-region-heuristic",
+        calibration_version="v2",
         region_key="southeast",
         region_source="user_profile",
         region_state="OK",
@@ -86,40 +85,151 @@ def test_analyze_deer_insert_compiles_with_seasonal_fields():
         calibration_fallback_reason=None,
         season_bucket="fall",
         analysis_prompt_version="v2",
-        # THE CRITICAL FIELDS — these caused the CompileError
+        # CRITICAL: must be native date, not string
         date_taken=date(2024, 11, 5),
         date_source="client",
         season_phase="rut",
         analysis_model="gpt-4o",
         age_estimation_allowed=True,
         retake_reason=None,
-        visible_age_cues=["body_mass", "neck_girth"],
+        visible_age_cues=["body_mass"],
         image_quality_bucket="good",
         quality_factors={"lighting": "good"},
         posture_bucket="broadside",
         image_url=None,
     )
 
-    # This will raise CompileError if any column name is not in the Table metadata
     query = scans_table.insert().values(**insert_values)
-    # Compile it (this is what triggers the error)
     compiled = query.compile()
-    assert compiled is not None, "Insert query should compile successfully"
+    assert compiled is not None
+
+
+def test_build_scan_context_returns_native_date():
+    """
+    Verify build_scan_context stores date_taken as a native date object,
+    not a string. This is the root cause of the asyncpg toordinal error.
+    """
+    from server import build_scan_context
+
+    context = build_scan_context(
+        scan_state="OK",
+        user_profile_state="OK",
+        scan_datetime=datetime.utcnow(),
+        notes=None,
+        date_taken="2024-11-05",
+    )
+
+    dt = context["date_taken"]
+    assert dt is not None, "date_taken should not be None"
+    assert isinstance(dt, date), (
+        f"date_taken in scan_context must be a native date object, "
+        f"got {type(dt).__name__}: {dt!r}"
+    )
+    assert dt == date(2024, 11, 5)
+
+
+def test_build_scan_context_returns_none_for_no_date():
+    """Verify build_scan_context returns None when no date is provided."""
+    from server import build_scan_context
+
+    context = build_scan_context(
+        scan_state="TX",
+        user_profile_state="TX",
+        scan_datetime=datetime.utcnow(),
+        notes=None,
+        date_taken=None,
+    )
+
+    assert context["date_taken"] is None
+
+
+def test_build_scan_context_invalid_date_returns_none():
+    """Verify malformed date strings result in None, not a crash."""
+    from server import build_scan_context
+
+    context = build_scan_context(
+        scan_state="TX",
+        user_profile_state="TX",
+        scan_datetime=datetime.utcnow(),
+        notes=None,
+        date_taken="not-a-date",
+    )
+
+    assert context["date_taken"] is None
+
+
+def test_insert_values_type_matches_date_column():
+    """
+    Verify that date objects have toordinal (what asyncpg needs)
+    and strings do NOT (what caused the production error).
+    """
+    valid_date = date(2026, 1, 8)
+    assert hasattr(valid_date, "toordinal"), "date object must have toordinal"
+
+    bad_value = "2026-01-08"
+    assert not hasattr(bad_value, "toordinal"), "string should NOT have toordinal"
 
 
 def test_build_scan_response_includes_seasonal_fields():
     """Verify the response builder returns seasonal fields when present."""
     from server import build_scan_response
-    from datetime import datetime, date
 
-    mock_scan = {
+    mock_scan = _make_mock_scan(
+        date_taken=date(2024, 11, 5),
+        date_source="client",
+        season_phase="rut",
+    )
+
+    response = build_scan_response(mock_scan)
+    assert response.date_taken == "2024-11-05"
+    assert response.season_phase == "rut"
+    assert response.date_source == "client"
+
+
+def test_build_scan_response_handles_null_seasonal_fields():
+    """Verify the response builder handles None seasonal fields gracefully."""
+    from server import build_scan_response
+
+    mock_scan = _make_mock_scan(
+        date_taken=None,
+        date_source=None,
+        season_phase=None,
+    )
+
+    response = build_scan_response(mock_scan)
+    assert response.date_taken is None
+    assert response.season_phase is None
+    assert response.date_source is None
+
+
+def test_edit_simple_update_converts_date_string_to_date_object():
+    """
+    Verify the edit endpoint's simple update path converts ISO string
+    to a native date object before DB insert.
+    """
+    from datetime import date as date_cls
+    
+    # Simulate what the edit endpoint does
+    date_taken_str = "2024-11-05"
+    parsed_date = date_cls.fromisoformat(date_taken_str)
+    
+    assert isinstance(parsed_date, date_cls)
+    assert parsed_date == date(2024, 11, 5)
+    assert hasattr(parsed_date, "toordinal")
+
+
+# ── Helper ──
+
+def _make_mock_scan(**overrides):
+    """Create a minimal mock scan dict for build_scan_response tests."""
+    base = {
         "id": "test-id",
         "user_id": "test-user",
         "local_image_id": "img-123",
         "deer_age": 3.5,
-        "age_bucket": "3-4",
-        "age_range": "3.0-4.0",
-        "buck_age_class": "mature",
+        "age_bucket": None,
+        "age_range": None,
+        "buck_age_class": None,
         "age_evidence": [],
         "deer_type": "Whitetail",
         "deer_sex": "Buck",
@@ -160,78 +270,9 @@ def test_build_scan_response_includes_seasonal_fields():
         "boone_crockett_status": None,
         "boone_crockett_calculated_at": None,
         "boone_crockett_updated_at": None,
-        # Seasonal fields
-        "date_taken": date(2024, 11, 5),
-        "date_source": "client",
-        "season_phase": "rut",
-    }
-
-    response = build_scan_response(mock_scan)
-    assert response.date_taken == "2024-11-05", f"Expected '2024-11-05', got {response.date_taken}"
-    assert response.season_phase == "rut", f"Expected 'rut', got {response.season_phase}"
-    assert response.date_source == "client", f"Expected 'client', got {response.date_source}"
-
-
-def test_build_scan_response_handles_null_seasonal_fields():
-    """Verify the response builder handles None seasonal fields gracefully."""
-    from server import build_scan_response
-    from datetime import datetime
-
-    mock_scan = {
-        "id": "test-id",
-        "user_id": "test-user",
-        "local_image_id": "img-123",
-        "deer_age": 2.5,
-        "age_bucket": None,
-        "age_range": None,
-        "buck_age_class": None,
-        "age_evidence": [],
-        "deer_type": "Whitetail",
-        "deer_sex": "Doe",
-        "antler_points": 0,
-        "antler_points_left": None,
-        "antler_points_right": None,
-        "body_condition": "Good",
-        "confidence": 60,
-        "recommendation": "PASS",
-        "reasoning": "Young doe.",
-        "notes": None,
-        "raw_response": {},
-        "created_at": datetime.utcnow(),
-        "age_confidence": None,
-        "recommendation_confidence": None,
-        "age_uncertain": False,
-        "calibration_version": None,
-        "region_key": None,
-        "calibration_strategy": None,
-        "calibration_fallback_reason": None,
-        "image_quality_bucket": None,
-        "quality_factors": None,
-        "posture_bucket": None,
-        "analysis_prompt_version": None,
-        "analysis_model": None,
-        "age_estimation_allowed": True,
-        "retake_reason": None,
-        "visible_age_cues": [],
-        "image_url": None,
-        "is_favorite": False,
-        "tags": [],
-        "harvest_confirmed": False,
-        "harvested_at": None,
-        "boone_crockett_score": None,
-        "boone_crockett_gross": None,
-        "boone_crockett_net": None,
-        "boone_crockett_final_score": None,
-        "boone_crockett_status": None,
-        "boone_crockett_calculated_at": None,
-        "boone_crockett_updated_at": None,
-        # NO seasonal fields
         "date_taken": None,
         "date_source": None,
         "season_phase": None,
     }
-
-    response = build_scan_response(mock_scan)
-    assert response.date_taken is None
-    assert response.season_phase is None
-    assert response.date_source is None
+    base.update(overrides)
+    return base

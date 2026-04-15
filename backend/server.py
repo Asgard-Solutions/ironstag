@@ -1826,7 +1826,7 @@ def build_scan_context(
         "season_confidence": season_result.confidence,
         "season_reason": season_result.reason,
         "season_near_boundary": season_result.near_boundary,
-        "date_taken": str(resolved_date) if resolved_date else None,
+        "date_taken": resolved_date,  # Native date object for DB; serialize to str at response time
         "date_source": date_source,
         "notes": clean_notes,
     }
@@ -1910,7 +1910,7 @@ def normalize_model_analysis(
         "region_source": context.get("region_source"),
         "season_bucket": context.get("season_bucket"),
         "season_phase": context.get("season_phase"),
-        "date_taken": context.get("date_taken"),
+        "date_taken": str(context["date_taken"]) if context.get("date_taken") else None,
         "date_source": context.get("date_source"),
     }
 
@@ -3748,7 +3748,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             # Cloud image storage (R2)
             image_url=image_url,
             # Seasonal context
-            date_taken=scan_context.get("date_taken"),
+            date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
             season_phase=scan_context.get("season_phase"),
             date_source=scan_context.get("date_source"),
             season_phase_confidence=scan_context.get("season_confidence"),
