@@ -70,6 +70,7 @@ export const authAPI = {
     email?: string;
     current_password?: string;
     new_password?: string;
+    state?: string;
   }) => api.put('/auth/profile', data),
 
   acceptDisclaimer: (accepted: boolean) =>

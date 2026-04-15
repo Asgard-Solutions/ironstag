@@ -34,7 +34,7 @@ export const Input: React.FC<InputProps> = ({
       <View style={[styles.inputContainer, error && styles.inputError]}>
         {icon && <View style={styles.icon}>{icon}</View>}
         <TextInput
-          style={[styles.input, icon && styles.inputWithIcon]}
+          style={[styles.input, icon ? styles.inputWithIcon : undefined]}
           placeholderTextColor={colors.textMuted}
           secureTextEntry={isSecure}
           {...props}

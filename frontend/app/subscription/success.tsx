@@ -8,7 +8,7 @@ import { colors } from '../../constants/theme';
 
 export default function SubscriptionSuccess() {
   const router = useRouter();
-  const { updateUser, refreshUser } = useAuthStore();
+  const { updateUser } = useAuthStore();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Confirming your subscription...');
 
@@ -39,10 +39,7 @@ export default function SubscriptionSuccess() {
           router.replace('/(tabs)');
         }, 2500);
       } else {
-        // Subscription not yet processed, try refreshing user
-        await refreshUser();
-        
-        // Check again
+        // Subscription not yet processed, retry once
         const retryResponse = await subscriptionAPI.getStatus();
         if (retryResponse.data.is_premium || retryResponse.data.tier === 'master_stag') {
           updateUser({ 
