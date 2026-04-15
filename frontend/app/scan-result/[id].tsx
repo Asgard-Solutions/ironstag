@@ -973,13 +973,29 @@ export default function ScanResultScreen() {
           </View>
         )}
 
-        {/* Date + Share row */}
+        {/* Date / Season + Share row */}
         <View style={styles.metaRow}>
-          <View style={styles.dateContainer}>
-            <Calendar size={14} color={colors.textMuted} />
-            <Text style={styles.dateText}>
-              {format(new Date(scan.created_at), 'MMM d, yyyy h:mm a')}
-            </Text>
+          <View style={styles.dateSeasonContainer}>
+            {scan.date_taken ? (
+              <>
+                <Calendar size={14} color={colors.primary} />
+                <Text style={styles.dateText}>
+                  {format(new Date(scan.date_taken + 'T12:00:00'), 'MMM d, yyyy')}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Calendar size={14} color={colors.textMuted} />
+                <Text style={styles.dateText}>No date set</Text>
+              </>
+            )}
+            {scan.season_phase && scan.season_phase !== 'unknown' && (
+              <>
+                <View style={styles.metaDot} />
+                <Leaf size={14} color={colors.primary} />
+                <Text style={styles.seasonText}>{getSeasonLabel(scan.season_phase)}</Text>
+              </>
+            )}
           </View>
           <TouchableOpacity
             style={styles.shareButton}
@@ -996,28 +1012,6 @@ export default function ScanResultScreen() {
             )}
           </TouchableOpacity>
         </View>
-
-        {/* ────── DATE TAKEN & SEASON PHASE CHIPS ────── */}
-        {(scan.date_taken || scan.season_phase) && (
-          <View style={styles.seasonRow}>
-            {scan.date_taken && (
-              <View style={styles.seasonChip}>
-                <Calendar size={13} color={colors.primary} />
-                <Text style={styles.seasonChipText}>
-                  {format(new Date(scan.date_taken + 'T12:00:00'), 'MMM d, yyyy')}
-                </Text>
-              </View>
-            )}
-            {scan.season_phase && scan.season_phase !== 'unknown' && (
-              <View style={[styles.seasonChip, styles.seasonChipHighlight]}>
-                <Leaf size={13} color={colors.primary} />
-                <Text style={[styles.seasonChipText, styles.seasonChipHighlightText]}>
-                  {getSeasonLabel(scan.season_phase)}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
 
         {/* ────── HERO RECOMMENDATION BANNER ────── */}
         <View
@@ -2149,9 +2143,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  dateSeasonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
+  },
   dateText: {
     color: colors.textMuted,
     fontSize: 12,
+  },
+  metaDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.textMuted,
+  },
+  seasonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
   },
   recommendationContainer: {
     flexDirection: 'row',
@@ -2175,36 +2187,6 @@ const styles = StyleSheet.create({
   shareButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
-  },
-  seasonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: spacing.md,
-    flexWrap: 'wrap',
-  },
-  seasonChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: colors.surface,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  seasonChipHighlight: {
-    backgroundColor: colors.primaryMuted,
-    borderColor: colors.borderBrass,
-  },
-  seasonChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  seasonChipHighlightText: {
     color: colors.primary,
   },
   summaryCard: {
