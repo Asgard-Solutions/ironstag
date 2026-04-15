@@ -46,6 +46,7 @@ import { useOfflineQueue } from '../../hooks/useOfflineQueue';
 import { useRevenueCat } from '../../hooks/useRevenueCat';
 import { scanAPI, subscriptionAPI, authAPI } from '../../utils/api';
 import { StatePicker, getStateName } from '../../components/StatePicker';
+import { Picker } from '@react-native-picker/picker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format } from 'date-fns';
 
@@ -88,6 +89,10 @@ export default function ScanScreen() {
   // Date taken state (per-scan)
   const [dateTaken, setDateTaken] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [pickerYear, setPickerYear] = useState(currentYear);
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth() + 1);
+  const [pickerDay, setPickerDay] = useState(new Date().getDate());
 
   const isPremium = user?.subscription_tier === 'master_stag';
 
@@ -527,7 +532,19 @@ export default function ScanScreen() {
               )}
               <TouchableOpacity
                 style={styles.locationInlineChange}
-                onPress={() => setShowDatePicker(true)}
+                onPress={() => {
+                  if (dateTaken) {
+                    setPickerYear(dateTaken.getFullYear());
+                    setPickerMonth(dateTaken.getMonth() + 1);
+                    setPickerDay(dateTaken.getDate());
+                  } else {
+                    const now = new Date();
+                    setPickerYear(now.getFullYear());
+                    setPickerMonth(now.getMonth() + 1);
+                    setPickerDay(now.getDate());
+                  }
+                  setShowDatePicker(true);
+                }}
               >
                 <Text style={styles.locationInlineChangeText}>
                   {dateTaken ? 'Change' : 'Set Date'}
@@ -573,37 +590,90 @@ export default function ScanScreen() {
                     <X size={20} color={colors.textPrimary} />
                   </TouchableOpacity>
                 </View>
-                <TextInput
-                  style={styles.datePickerInput}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={10}
-                  defaultValue={dateTaken ? format(dateTaken, 'yyyy-MM-dd') : ''}
-                  onSubmitEditing={(e) => {
-                    const val = e.nativeEvent.text.trim();
-                    try {
-                      const parts = val.split('-');
-                      if (parts.length === 3) {
-                        const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-                        if (!isNaN(d.getTime()) && d <= new Date()) {
-                          setDateTaken(d);
-                          setShowDatePicker(false);
-                        } else {
-                          Alert.alert('Invalid Date', 'Please enter a valid past date.');
-                        }
-                      } else {
-                        Alert.alert('Invalid Format', 'Use YYYY-MM-DD format.');
-                      }
-                    } catch {
-                      Alert.alert('Invalid Date', 'Please enter a valid date in YYYY-MM-DD format.');
-                    }
-                  }}
-                  returnKeyType="done"
-                />
+
+                {/* Wheel Pickers: Year / Month / Day */}
+                <View style={styles.dateWheelRow}>
+                  {/* Year */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Year</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerYear}
+                        onValueChange={(val) => setPickerYear(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {Array.from({ length: 30 }, (_, i) => currentYear - i).map((yr) => (
+                          <Picker.Item key={yr} label={String(yr)} value={yr} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+
+                  {/* Month */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Month</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerMonth}
+                        onValueChange={(val) => setPickerMonth(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {[
+                          { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 },
+                          { label: 'Mar', value: 3 }, { label: 'Apr', value: 4 },
+                          { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
+                          { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 },
+                          { label: 'Sep', value: 9 }, { label: 'Oct', value: 10 },
+                          { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
+                        ].map((m) => (
+                          <Picker.Item key={m.value} label={m.label} value={m.value} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+
+                  {/* Day */}
+                  <View style={styles.dateWheelCol}>
+                    <Text style={styles.dateWheelLabel}>Day</Text>
+                    <View style={styles.dateWheelPickerWrap}>
+                      <Picker
+                        selectedValue={pickerDay}
+                        onValueChange={(val) => setPickerDay(val)}
+                        style={styles.dateWheelPicker}
+                        itemStyle={styles.dateWheelItemStyle}
+                      >
+                        {Array.from(
+                          { length: new Date(pickerYear, pickerMonth, 0).getDate() },
+                          (_, i) => i + 1,
+                        ).map((d) => (
+                          <Picker.Item key={d} label={String(d)} value={d} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+                </View>
+
                 <Text style={styles.datePickerHint}>
                   Helps determine seasonal context for more accurate aging
                 </Text>
+
+                {/* Confirm button */}
+                <TouchableOpacity
+                  style={styles.dateConfirmButton}
+                  onPress={() => {
+                    const d = new Date(pickerYear, pickerMonth - 1, pickerDay);
+                    if (d <= new Date()) {
+                      setDateTaken(d);
+                      setShowDatePicker(false);
+                    } else {
+                      Alert.alert('Invalid Date', 'Date cannot be in the future.');
+                    }
+                  }}
+                >
+                  <Text style={styles.dateConfirmText}>Set Date</Text>
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
           </Modal>
@@ -1430,16 +1500,16 @@ const styles = StyleSheet.create({
   datePickerOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    justifyContent: 'flex-end',
+    padding: 0,
   },
   datePickerContainer: {
     backgroundColor: colors.background,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    width: '100%',
-    maxWidth: 340,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    paddingTop: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   datePickerHeader: {
     flexDirection: 'row',
@@ -1452,23 +1522,61 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  datePickerInput: {
+  dateWheelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dateWheelCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  dateWheelLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  dateWheelPickerWrap: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.md,
-    padding: spacing.md,
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '500',
     borderWidth: 1,
     borderColor: colors.border,
-    textAlign: 'center',
-    letterSpacing: 1,
+    overflow: 'hidden',
+    width: '100%',
+    height: 150,
+  },
+  dateWheelPicker: {
+    width: '100%',
+    height: 150,
+    color: colors.textPrimary,
+    backgroundColor: 'transparent',
+  },
+  dateWheelItemStyle: {
+    fontSize: 18,
+    color: colors.textPrimary,
+    height: 150,
   },
   datePickerHint: {
     fontSize: 12,
     color: colors.textMuted,
     textAlign: 'center',
-    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dateConfirmButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateConfirmText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textOnPrimary,
   },
   analyzingContainer: {
     justifyContent: 'center',
