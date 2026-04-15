@@ -74,6 +74,8 @@ from season_derivation import (
     derive_season_phase,
     resolve_date_taken,
     extract_exif_date,
+    normalize_state,
+    SeasonPhaseResult,
 )
 from bc_typical_whitetail import (
     build_bc_score_record,
@@ -1772,23 +1774,26 @@ def build_scan_context(
         effective_dt = scan_datetime
 
     season_bucket = get_season_bucket(effective_dt, region_info.region_key.value)
-    season_phase = derive_season_phase(
+    season_result: SeasonPhaseResult = derive_season_phase(
         state=scan_state or user_profile_state,
-        region_key=region_info.region_key.value,
         date_taken=resolved_date,
+        region=region_info.region_key.value,
     )
     clean_notes = notes.strip() if isinstance(notes, str) and notes.strip() else None
 
     # Logging for observability
     logger.info(
         "Scan context resolved | state=%s region=%s date_taken=%s season_phase=%s "
-        "season_bucket=%s date_source=%s",
+        "confidence=%s season_bucket=%s date_source=%s near_boundary=%s reason=%s",
         region_info.region_state,
         region_info.region_key.value,
         str(resolved_date) if resolved_date else "none",
-        season_phase,
+        season_result.season_phase,
+        season_result.confidence,
         season_bucket,
         date_source,
+        season_result.near_boundary,
+        season_result.reason,
     )
 
     return {
@@ -1796,7 +1801,10 @@ def build_scan_context(
         "region_key": region_info.region_key.value,
         "region_source": region_info.region_source.value,
         "season_bucket": season_bucket,
-        "season_phase": season_phase,
+        "season_phase": season_result.season_phase,
+        "season_confidence": season_result.confidence,
+        "season_reason": season_result.reason,
+        "season_near_boundary": season_result.near_boundary,
         "date_taken": str(resolved_date) if resolved_date else None,
         "date_source": date_source,
         "notes": clean_notes,

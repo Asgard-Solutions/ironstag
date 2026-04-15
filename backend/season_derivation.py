@@ -1,69 +1,170 @@
 """
 season_derivation.py
-Isolated utility for deriving season_phase from state + date_taken.
-Designed to be refined by wildlife experts without changing the API contract.
+Isolated, pure utility for deriving season_phase from state + date_taken.
+
+IMPORTANT: The output of this utility is heuristic support for prompt context,
+NOT biological truth. Rut timing varies by local herd, weather, photoperiod,
+and genetics. These ranges are deliberately conservative.
+
+Designed for:
+- Wildlife experts to tune season_config.py without changing this code.
+- Prompt builders to receive structured, debug-friendly results.
+- Future refinement without breaking the API contract.
 """
 
 from datetime import datetime, date
 from typing import Optional, Dict, Tuple
+from dataclasses import dataclass, asdict
+
+from season_config import (
+    SeasonWindowConfig,
+    DateWindow,
+    STATE_SEASON_INDEX,
+    REGION_SEASON_INDEX,
+    STATE_NAME_TO_ABBR,
+    SEASON_WINDOW_CONFIGS,
+)
+
 
 # ============================================================================
-# SEASON PHASE ENUM VALUES
+# OUTPUT MODEL
 # ============================================================================
-# These are the canonical values exposed to clients.
-SEASON_PHASES = ("pre_rut", "rut", "post_rut", "unknown")
+
+@dataclass(frozen=True)
+class SeasonPhaseResult:
+    """Structured result from season phase derivation."""
+    season_phase: str          # pre_rut | rut | post_rut | unknown
+    confidence: str            # high | medium | low
+    reason: str                # Human/machine-readable explanation
+    state: Optional[str]       # Normalized state abbreviation or None
+    region: Optional[str]      # Resolved region key or None
+    date_taken: Optional[str]  # Normalized YYYY-MM-DD or None
+    # Debug metadata
+    matched_config_key: Optional[str] = None
+    matched_window: Optional[str] = None
+    near_boundary: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 # ============================================================================
-# REGION-AWARE SEASON WINDOWS
+# STATE NORMALIZATION
 # ============================================================================
-# Each region maps to approximate date ranges for pre_rut, rut, post_rut.
-# Dates outside any window default to "unknown" (off-season / velvet period).
-# Format: (start_month, start_day, end_month, end_day)
-# These are deliberately conservative heuristics.
 
-REGION_SEASON_WINDOWS: Dict[str, Dict[str, Tuple[int, int, int, int]]] = {
-    "northeast": {
-        "pre_rut":  (10,  1, 10, 31),
-        "rut":      (11,  1, 11, 30),
-        "post_rut": (12,  1, 12, 31),
-    },
-    "midwest": {
-        "pre_rut":  (10,  1, 10, 31),
-        "rut":      (11,  1, 11, 25),
-        "post_rut": (11, 26, 12, 31),
-    },
-    "southeast": {
-        "pre_rut":  (10, 15, 11, 14),
-        "rut":      (11, 15, 12, 31),
-        "post_rut": ( 1,  1,  1, 31),
-    },
-    "south_texas": {
-        "pre_rut":  (11, 15, 12, 14),
-        "rut":      (12, 15,  1, 15),
-        "post_rut": ( 1, 16,  2, 15),
-    },
-    "plains": {
-        "pre_rut":  (10, 15, 11,  9),
-        "rut":      (11, 10, 11, 30),
-        "post_rut": (12,  1, 12, 31),
-    },
-    "northern": {
-        "pre_rut":  ( 9, 25, 10, 24),
-        "rut":      (10, 25, 11, 20),
-        "post_rut": (11, 21, 12, 15),
-    },
-}
+def normalize_state(raw: Optional[str]) -> Optional[str]:
+    """
+    Normalize state input to uppercase two-letter abbreviation.
+    Handles: None, empty, lowercase, full names, extra whitespace.
+    Returns None if normalization fails.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
 
-# Fallback when region is unknown
-DEFAULT_SEASON_WINDOWS: Dict[str, Tuple[int, int, int, int]] = {
-    "pre_rut":  (10,  1, 10, 31),
-    "rut":      (11,  1, 11, 30),
-    "post_rut": (12,  1, 12, 31),
-}
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+
+    # Try as 2-letter abbreviation
+    if len(cleaned) <= 3:
+        upper = cleaned.upper()
+        if upper in STATE_SEASON_INDEX:
+            return upper
+        # Might be a valid state not in our season config
+        # Still return it normalized
+        if len(upper) == 2 and upper.isalpha():
+            return upper
+        return None
+
+    # Try as full state name
+    lower = cleaned.lower()
+    abbr = STATE_NAME_TO_ABBR.get(lower)
+    if abbr:
+        return abbr
+
+    return None
 
 
-def _date_in_window(month: int, day: int, window: Tuple[int, int, int, int]) -> bool:
-    """Check if month/day falls within a (start_month, start_day, end_month, end_day) window."""
+# ============================================================================
+# DATE HANDLING
+# ============================================================================
+
+def parse_date_taken(raw: Optional[str]) -> Optional[date]:
+    """
+    Parse and validate a date_taken string in YYYY-MM-DD format.
+    Returns None for invalid, empty, or unparseable input.
+    Never raises exceptions.
+    """
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        return date.fromisoformat(raw.strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def resolve_date_taken(
+    client_date: Optional[str],
+    exif_date: Optional[datetime],
+) -> Tuple[Optional[date], str]:
+    """
+    Resolve the effective date_taken and its source.
+    Priority: client-provided > EXIF metadata > None.
+
+    Returns:
+        (date_taken, source) where source is "client", "image_metadata", or "unknown".
+    """
+    parsed = parse_date_taken(client_date)
+    if parsed:
+        return parsed, "client"
+
+    if exif_date and isinstance(exif_date, datetime):
+        return exif_date.date(), "image_metadata"
+
+    return None, "unknown"
+
+
+def extract_exif_date(image_bytes: bytes) -> Optional[datetime]:
+    """
+    Try to extract the capture date from JPEG EXIF metadata.
+    Returns None if no reliable date is found. Never raises.
+    """
+    try:
+        import io
+        from PIL import Image as PilImage
+
+        img = PilImage.open(io.BytesIO(image_bytes))
+        exif_data = img.getexif()
+        if not exif_data:
+            return None
+
+        # Try DateTimeOriginal (tag 36867) first, then DateTime (tag 306)
+        for tag_id in (36867, 306):
+            raw = exif_data.get(tag_id)
+            if raw and isinstance(raw, str):
+                try:
+                    return datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
+                except ValueError:
+                    continue
+
+        return None
+    except Exception:
+        return None
+
+
+# ============================================================================
+# CORE DATE-IN-WINDOW LOGIC
+# ============================================================================
+
+def _day_of_year(month: int, day: int) -> int:
+    """Approximate day-of-year for month/day (ignoring leap years, good enough for windows)."""
+    # Cumulative days per month (non-leap)
+    cum = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    return cum[month - 1] + day
+
+
+def _date_in_window(month: int, day: int, window: DateWindow) -> bool:
+    """Check if month/day falls within a DateWindow (inclusive)."""
     sm, sd, em, ed = window
     if sm <= em:
         # Normal range within same year segment
@@ -75,86 +176,160 @@ def _date_in_window(month: int, day: int, window: Tuple[int, int, int, int]) -> 
                (month < em or (month == em and day <= ed))
 
 
+def _days_from_boundary(month: int, day: int, window: DateWindow) -> int:
+    """
+    Compute minimum distance (in days) from current date to the nearest
+    boundary of the window. Used to detect "near boundary" dates.
+    Returns 0 if exactly on a boundary, or a positive integer.
+    """
+    doy = _day_of_year(month, day)
+    start_doy = _day_of_year(window.start_month, window.start_day)
+    end_doy = _day_of_year(window.end_month, window.end_day)
+
+    dist_start = abs(doy - start_doy)
+    dist_end = abs(doy - end_doy)
+
+    # Handle year wrap (distances can't exceed ~183)
+    dist_start = min(dist_start, 365 - dist_start)
+    dist_end = min(dist_end, 365 - dist_end)
+
+    return min(dist_start, dist_end)
+
+
+# ============================================================================
+# MAIN DERIVATION FUNCTION
+# ============================================================================
+
 def derive_season_phase(
-    state: Optional[str],
-    region_key: Optional[str],
-    date_taken: Optional[date],
-) -> str:
+    state: Optional[str] = None,
+    date_taken: Optional[date] = None,
+    region: Optional[str] = None,
+) -> SeasonPhaseResult:
     """
-    Derive season_phase from region + date.
+    Derive season_phase from state + date_taken.
 
-    Returns one of: "pre_rut", "rut", "post_rut", "unknown".
-    Conservative: returns "unknown" when confidence is low.
+    This function is pure, deterministic, and side-effect free.
+
+    Priority for config resolution:
+      1. State-specific config (highest confidence)
+      2. Region-level fallback (medium confidence)
+      3. Unknown (low confidence)
+
+    Args:
+        state:      Raw state input (abbreviation or full name). Normalized internally.
+        date_taken: Parsed date object, or None.
+        region:     Optional pre-resolved region key. Used as fallback if state
+                    doesn't map to a config.
+
+    Returns:
+        SeasonPhaseResult with phase, confidence, reason, and debug metadata.
     """
+    # Step 1: Normalize state
+    norm_state = normalize_state(state)
+
+    # Step 2: No date → unknown immediately
     if date_taken is None:
-        return "unknown"
+        return SeasonPhaseResult(
+            season_phase="unknown",
+            confidence="low",
+            reason="No date_taken provided; cannot determine seasonal phase.",
+            state=norm_state,
+            region=region,
+            date_taken=None,
+        )
 
+    date_str = date_taken.isoformat()
     month = date_taken.month
     day = date_taken.day
 
-    # Pick region windows; fall back to default
-    rk = (region_key or "unknown").lower()
-    windows = REGION_SEASON_WINDOWS.get(rk, DEFAULT_SEASON_WINDOWS)
+    # Step 3: Resolve config by state (highest specificity)
+    config: Optional[SeasonWindowConfig] = None
+    config_source = "none"
 
-    for phase, window in windows.items():
+    if norm_state and norm_state in STATE_SEASON_INDEX:
+        config = STATE_SEASON_INDEX[norm_state]
+        config_source = "state"
+
+    # Step 4: Fall back to region config
+    if config is None and region:
+        rk = region.strip().lower()
+        if rk in REGION_SEASON_INDEX:
+            config = REGION_SEASON_INDEX[rk]
+            config_source = "region_fallback"
+
+    # Step 5: No config found
+    if config is None:
+        return SeasonPhaseResult(
+            season_phase="unknown",
+            confidence="low",
+            reason=f"No season config for state={norm_state} region={region}. "
+                   f"Date {date_str} cannot be evaluated.",
+            state=norm_state,
+            region=region,
+            date_taken=date_str,
+        )
+
+    resolved_region = config.region_key
+
+    # Step 6: Check each phase window
+    phase_windows = [
+        ("pre_rut", config.pre_rut),
+        ("rut", config.rut),
+        ("post_rut", config.post_rut),
+    ]
+
+    for phase_name, window in phase_windows:
         if _date_in_window(month, day, window):
-            return phase
+            # Determine boundary proximity
+            boundary_dist = _days_from_boundary(month, day, window)
+            near_boundary = boundary_dist <= config.boundary_edge_days
 
-    return "unknown"
+            # Determine confidence
+            if config_source == "state":
+                confidence = "medium" if near_boundary else "high"
+            else:
+                # Region fallback is inherently less precise
+                confidence = "low" if near_boundary else "medium"
 
+            window_str = (
+                f"{window.start_month:02d}/{window.start_day:02d}"
+                f"–{window.end_month:02d}/{window.end_day:02d}"
+            )
 
-def resolve_date_taken(
-    client_date: Optional[str],
-    exif_date: Optional[datetime],
-) -> Tuple[Optional[date], str]:
-    """
-    Resolve the effective date_taken and its source.
+            reason_parts = [
+                f"Date {date_str} falls within {phase_name} window "
+                f"({window_str}) for {resolved_region}.",
+            ]
+            if near_boundary:
+                reason_parts.append(
+                    f"Near phase boundary ({boundary_dist}d from edge); "
+                    f"confidence downgraded."
+                )
+            if config_source == "region_fallback":
+                reason_parts.append(
+                    f"Derived from region fallback ({region}), not state-specific config."
+                )
 
-    Priority: client-provided > EXIF metadata > None.
+            return SeasonPhaseResult(
+                season_phase=phase_name,
+                confidence=confidence,
+                reason=" ".join(reason_parts),
+                state=norm_state,
+                region=resolved_region,
+                date_taken=date_str,
+                matched_config_key=config.region_key,
+                matched_window=window_str,
+                near_boundary=near_boundary,
+            )
 
-    Returns:
-        (date_taken, source) where source is "client", "image_metadata", or "unknown".
-    """
-    # 1. Client-provided date
-    if client_date:
-        try:
-            parsed = date.fromisoformat(client_date)
-            return parsed, "client"
-        except (ValueError, TypeError):
-            pass
-
-    # 2. EXIF date
-    if exif_date:
-        return exif_date.date(), "image_metadata"
-
-    return None, "unknown"
-
-
-def extract_exif_date(image_bytes: bytes) -> Optional[datetime]:
-    """
-    Try to extract the capture date from JPEG EXIF metadata.
-    Returns None if no reliable date is found.
-    """
-    try:
-        import io
-        from PIL import Image as PilImage
-        from PIL.ExifTags import Base as ExifBase
-
-        img = PilImage.open(io.BytesIO(image_bytes))
-        exif_data = img.getexif()
-        if not exif_data:
-            return None
-
-        # Try DateTimeOriginal (tag 36867) first, then DateTime (tag 306)
-        for tag_id in (36867, 306):
-            raw = exif_data.get(tag_id)
-            if raw and isinstance(raw, str):
-                # EXIF format: "YYYY:MM:DD HH:MM:SS"
-                try:
-                    return datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
-                except ValueError:
-                    continue
-
-        return None
-    except Exception:
-        return None
+    # Step 7: Date doesn't fall in any phase window (off-season / velvet)
+    return SeasonPhaseResult(
+        season_phase="unknown",
+        confidence="high" if config_source == "state" else "medium",
+        reason=f"Date {date_str} is outside all season windows for "
+               f"{resolved_region}. Likely off-season or velvet period.",
+        state=norm_state,
+        region=resolved_region,
+        date_taken=date_str,
+        matched_config_key=config.region_key,
+    )
