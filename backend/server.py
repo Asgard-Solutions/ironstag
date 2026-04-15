@@ -301,7 +301,12 @@ OPENAI_ANALYSIS_MODEL = os.environ.get('OPENAI_ANALYSIS_MODEL', 'gpt-4o').strip(
 OPENAI_REANALYSIS_MODEL = os.environ.get('OPENAI_REANALYSIS_MODEL', '').strip() or OPENAI_ANALYSIS_MODEL
 OPENAI_MODEL_AB_TEST_CANDIDATE = os.environ.get('OPENAI_MODEL_AB_TEST_CANDIDATE', 'gpt-4.1').strip() or 'gpt-4.1'
 REVENUECAT_SECRET_KEY = os.environ.get('REVENUECAT_SECRET_KEY', '')
-JWT_SECRET = os.environ.get('JWT_SECRET', 'iron-stag-secret-key-2025')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET environment variable must be set. "
+        "Refusing to start with no secret configured."
+    )
 JWT_ALGORITHM = 'HS256'
 
 # Apple IAP Configuration
@@ -6032,11 +6037,14 @@ async def enable_debug_mode(secret: str):
 # Include router
 app.include_router(api_router)
 
-# CORS
+# CORS — Mobile app uses Bearer token auth (not cookies), so
+# allow_credentials is not needed. Wildcard origin is acceptable
+# because React Native does not enforce CORS; this setting only
+# affects browser-based access (Swagger docs, Expo web preview).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
