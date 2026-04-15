@@ -21,7 +21,7 @@ import string
 import msal
 from databases import Database
 import sqlalchemy
-from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Text, JSON
+from sqlalchemy import MetaData, Table, Column, String, Integer, Float, Boolean, DateTime, Date, Text, JSON
 
 # Import region-aware confidence calibration module (replaces basic calibration)
 from region_calibration import (
@@ -187,6 +187,10 @@ scans_table = Table(
     Column("boone_crockett_status", String(20), nullable=True),
     Column("boone_crockett_calculated_at", DateTime, nullable=True),
     Column("boone_crockett_updated_at", DateTime, nullable=True),
+    # Seasonal context fields
+    Column("date_taken", Date, nullable=True),        # Image capture date (YYYY-MM-DD)
+    Column("date_source", String(20), nullable=True),  # client, image_metadata, unknown
+    Column("season_phase", String(20), nullable=True),  # pre_rut, rut, post_rut, unknown
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -1029,6 +1033,20 @@ async def startup():
         logger.info("Database migrations completed")
     except Exception as e:
         logger.warning(f"Migration note: {e}")
+
+    # ── Startup validation: verify ORM metadata matches required columns ──
+    REQUIRED_SCAN_COLUMNS = {"date_taken", "date_source", "season_phase"}
+    orm_columns = set(c.name for c in scans_table.columns)
+    missing_in_orm = REQUIRED_SCAN_COLUMNS - orm_columns
+    if missing_in_orm:
+        logger.error(
+            "CRITICAL: scans_table ORM metadata is missing columns that the application "
+            "requires: %s. Inserts will fail with 'Unconsumed column names'. "
+            "Fix the Table(...) definition in server.py.",
+            missing_in_orm,
+        )
+    else:
+        logger.info("Startup validation passed: all required seasonal columns present in ORM metadata")
 
     await get_live_active_curves(force_refresh=True)
     
