@@ -11,10 +11,12 @@ import Purchases, {
 } from 'react-native-purchases';
 import { useAuthStore } from '../stores/authStore';
 
-// RevenueCat API Keys - from RevenueCat Dashboard > API Keys
+// RevenueCat PUBLIC SDK keys — loaded from environment variables.
+// These are public client-side keys (appl_/goog_ prefix), safe for mobile builds.
+// Secret server keys (sk_ prefix) must NEVER appear here.
 const REVENUECAT_API_KEYS = {
-  ios: 'appl_eSwYrXwjGuDNJWReWNrIvMARzFc', // Iron Stag (App Store)
-  android: 'goog_MZUtDk1KjnEPjVzDNqWAiYxPQAV', // Iron Stag (Play Store)
+  ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY || '',
+  android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY || '',
 };
 
 // Backend API URL - must be absolute for native apps

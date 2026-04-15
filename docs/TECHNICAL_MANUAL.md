@@ -1007,11 +1007,14 @@ The unofficial B&C workflow is intentionally separate from AI analysis:
 #### Configuration
 
 ```typescript
-// iOS
-REVENUECAT_IOS_API_KEY=sk_mhkZTJXJjpUcNrCYVRyMYAPDOgKgV
+// iOS (public SDK key — safe for client)
+REVENUECAT_IOS_API_KEY=appl_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-// Android
-REVENUECAT_ANDROID_API_KEY=goog_MZUtDk1KjnEPjVZDnQWAiYxPQAV
+// Android (public SDK key — safe for client)
+REVENUECAT_ANDROID_API_KEY=goog_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+// Server-side only (NEVER expose in client/EXPO_PUBLIC_ vars)
+// REVENUECAT_SECRET_KEY=sk_... (set in Railway env only)
 ```
 
 #### Flow
@@ -1336,8 +1339,8 @@ MS_GRAPH_SENDER_EMAIL=support@domain.com
 EXPO_PUBLIC_API_BASE_URL=https://ironstag-production.up.railway.app
 EXPO_PUBLIC_BACKEND_URL=https://ironstag-production.up.railway.app/api
 
-# RevenueCat
-EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=sk_xxx
+# RevenueCat (public SDK keys only — sk_ keys must NEVER go here)
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_xxx
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_xxx
 ```
 
