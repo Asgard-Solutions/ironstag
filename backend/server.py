@@ -3438,6 +3438,11 @@ async def sync_revenuecat_subscription(data: RevenueCatSyncRequest, user: dict =
 
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
 async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_current_user)):
+    logger.info(
+        "Starting analyze_deer | user_id=%s local_image_id=%s state=%s date_taken=%s",
+        user.get("id"), data.local_image_id, data.state, data.date_taken,
+    )
+
     eligibility = await check_scan_eligibility(user)
     if not eligibility["allowed"]:
         raise HTTPException(
@@ -3451,42 +3456,59 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         )
     
     try:
+        # ── Step 1: Decode image ──
+        logger.info("Step 1: Decoding image data")
         image_data = data.image_base64
         if not image_data.startswith("data:"):
             image_data = f"data:image/jpeg;base64,{image_data}"
         scan_created_at = datetime.utcnow()
+
+        # ── Step 2: Select model ──
+        logger.info("Step 2: Selecting analysis model")
         selected_model, model_variant = select_analysis_model(
             user_id=user["id"],
             local_image_id=data.local_image_id,
         )
         user_profile_state = user.get("state")
 
-        # Extract raw image bytes for EXIF date extraction
+        # ── Step 3: Extract raw image bytes for EXIF ──
+        logger.info("Step 3: Extracting raw image bytes for EXIF")
         raw_image_bytes = None
         try:
             b64_part = image_data.split(",", 1)[-1] if "," in image_data else image_data
             import base64 as b64_mod
             raw_image_bytes = b64_mod.b64decode(b64_part)
+            logger.info("Image decoded successfully, size=%d bytes", len(raw_image_bytes) if raw_image_bytes else 0)
         except Exception:
-            pass
+            logger.warning("Base64 decode failed for EXIF extraction", exc_info=True)
 
-        scan_context = build_scan_context(
-            scan_state=data.state,
-            user_profile_state=user_profile_state,
-            scan_datetime=scan_created_at,
-            notes=data.notes,
-            date_taken=data.date_taken,
-            image_bytes=raw_image_bytes,
-        )
-        context_text = format_scan_context_for_prompt(scan_context)
+        # ── Step 4: Build scan context (season, region) ──
+        logger.info("Step 4: Building scan context")
+        try:
+            scan_context = build_scan_context(
+                scan_state=data.state,
+                user_profile_state=user_profile_state,
+                scan_datetime=scan_created_at,
+                notes=data.notes,
+                date_taken=data.date_taken,
+                image_bytes=raw_image_bytes,
+            )
+            context_text = format_scan_context_for_prompt(scan_context)
+        except Exception:
+            logger.exception(
+                "Scan context build failed | user_id=%s state=%s date_taken=%s",
+                user.get("id"), data.state, data.date_taken,
+            )
+            raise
+
         logger.info(
-            "Using analysis model %s for user %s local_image_id %s (variant=%s)",
-            selected_model,
-            user["id"],
-            data.local_image_id,
-            model_variant,
+            "Using analysis model %s for user %s local_image_id %s (variant=%s) | season=%s date=%s",
+            selected_model, user["id"], data.local_image_id, model_variant,
+            scan_context.get("season_phase"), scan_context.get("date_taken"),
         )
 
+        # ── Step 5: Call OpenAI model ──
+        logger.info("Step 5: Calling OpenAI model %s", selected_model)
         user_content = [
             {
                 "type": "text",
@@ -3500,15 +3522,30 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             {"type": "image_url", "image_url": {"url": image_data}},
         ]
 
-        initial_analysis = run_model_analysis_pass(
-            model=selected_model,
-            system_prompt=build_analysis_system_prompt(),
-            user_content=user_content,
-            max_output_tokens=1400,
-            prompt_version=ANALYSIS_PROMPT_VERSION,
-            context=scan_context,
-        )
+        try:
+            initial_analysis = run_model_analysis_pass(
+                model=selected_model,
+                system_prompt=build_analysis_system_prompt(),
+                user_content=user_content,
+                max_output_tokens=1400,
+                prompt_version=ANALYSIS_PROMPT_VERSION,
+                context=scan_context,
+            )
+        except openai.OpenAIError as e:
+            logger.exception(
+                "OpenAI API error during analyze_deer | user_id=%s model=%s",
+                user.get("id"), selected_model,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "OPENAI_FAILURE",
+                    "message": f"AI analysis failed: {str(e)}"
+                }
+            )
 
+        # ── Step 6: Process response ──
+        logger.info("Step 6: Processing AI response")
         if initial_analysis is None:
             analysis = {
                 "is_valid_deer": False,
@@ -3550,84 +3587,97 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     "save_scan": False
                 }
             )
-        # Apply region-aware confidence calibration
+
+        # ── Step 7: Calibrate confidence ──
+        logger.info("Step 7: Applying calibration")
         active_curves = await get_live_active_curves()
         calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
             analysis=analysis,
-            state=data.state,  # From request
-            user_profile_state=user_profile_state,  # Fallback from user profile
+            state=data.state,
+            user_profile_state=user_profile_state,
             active_curves=active_curves,
         )
 
         scan_id = str(uuid.uuid4())
 
-        # Upload image to R2 cloud storage for cross-device access
+        # ── Step 8: Upload to R2 ──
         image_url = None
         if R2_ENABLED:
             try:
+                logger.info("Step 8: Uploading image to R2")
                 image_url = upload_scan_image(scan_id, image_data)
                 if image_url:
                     logger.info(f"Image uploaded to R2 for scan {scan_id}")
             except Exception as e:
                 logger.warning(f"Failed to upload image to R2: {e}")
-                # Continue without cloud image - local image still works
-        
-        query = scans_table.insert().values(
-            id=scan_id,
-            user_id=user["id"],
-            local_image_id=data.local_image_id,
-            deer_age=calibrated_analysis.get("deer_age"),  # May be null if age_uncertain
-            age_bucket=calibrated_analysis.get("age_bucket"),
-            age_range=calibrated_analysis.get("age_range"),
-            buck_age_class=calibrated_analysis.get("buck_age_class"),
-            age_evidence=calibrated_analysis.get("age_evidence"),
-            deer_type=calibrated_analysis.get("deer_type"),
-            deer_sex=calibrated_analysis.get("deer_sex"),
-            antler_points=calibrated_analysis.get("antler_points"),
-            antler_points_left=calibrated_analysis.get("antler_points_left"),
-            antler_points_right=calibrated_analysis.get("antler_points_right"),
-            body_condition=calibrated_analysis.get("body_condition"),
-            confidence=calibrated_analysis.get("confidence"),  # Now holds recommendation_confidence
-            recommendation=calibrated_analysis.get("recommendation"),
-            reasoning=calibrated_analysis.get("reasoning"),
-            notes=data.notes,
-            raw_response=analysis,  # Preserve original for debugging
-            created_at=scan_created_at,
-            # Calibration fields
-            raw_confidence=calibrated_analysis.get("raw_confidence"),
-            raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
-            raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
-            age_confidence=calibrated_analysis.get("age_confidence"),
-            recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
-            age_uncertain=calibrated_analysis.get("age_uncertain", False),
-            calibration_version=calibrated_analysis.get("calibration_version"),
-            # Region fields (always persist, feature-flag controls response visibility)
-            region_key=calibrated_analysis.get("region_key"),
-            region_source=calibrated_analysis.get("region_source"),
-            region_state=calibrated_analysis.get("region_state"),
-            calibration_strategy=calibrated_analysis.get("calibration_strategy"),
-            calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
-            season_bucket=scan_context.get("season_bucket"),
-            analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
-            # Seasonal context fields
-            date_taken=scan_context.get("date_taken"),
-            date_source=scan_context.get("date_source"),
-            season_phase=scan_context.get("season_phase"),
-            analysis_model=selected_model,
-            age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
-            retake_reason=calibrated_analysis.get("retake_reason"),
-            visible_age_cues=calibrated_analysis.get("visible_age_cues"),
-            image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
-            quality_factors=calibrated_analysis.get("quality_factors"),
-            posture_bucket=calibrated_analysis.get("posture_bucket"),
-            # Cloud image storage (R2)
-            image_url=image_url,
-        )
-        await database.execute(query)
+
+        # ── Step 9: Save to database ──
+        logger.info("Step 9: Saving scan to database | scan_id=%s", scan_id)
+        try:
+            query = scans_table.insert().values(
+                id=scan_id,
+                user_id=user["id"],
+                local_image_id=data.local_image_id,
+                deer_age=calibrated_analysis.get("deer_age"),
+                age_bucket=calibrated_analysis.get("age_bucket"),
+                age_range=calibrated_analysis.get("age_range"),
+                buck_age_class=calibrated_analysis.get("buck_age_class"),
+                age_evidence=calibrated_analysis.get("age_evidence"),
+                deer_type=calibrated_analysis.get("deer_type"),
+                deer_sex=calibrated_analysis.get("deer_sex"),
+                antler_points=calibrated_analysis.get("antler_points"),
+                antler_points_left=calibrated_analysis.get("antler_points_left"),
+                antler_points_right=calibrated_analysis.get("antler_points_right"),
+                body_condition=calibrated_analysis.get("body_condition"),
+                confidence=calibrated_analysis.get("confidence"),
+                recommendation=calibrated_analysis.get("recommendation"),
+                reasoning=calibrated_analysis.get("reasoning"),
+                notes=data.notes,
+                raw_response=analysis,
+                created_at=scan_created_at,
+                # Calibration fields
+                raw_confidence=calibrated_analysis.get("raw_confidence"),
+                raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
+                raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
+                age_confidence=calibrated_analysis.get("age_confidence"),
+                recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
+                age_uncertain=calibrated_analysis.get("age_uncertain", False),
+                calibration_version=calibrated_analysis.get("calibration_version"),
+                # Region fields
+                region_key=calibrated_analysis.get("region_key"),
+                region_source=calibrated_analysis.get("region_source"),
+                region_state=calibrated_analysis.get("region_state"),
+                calibration_strategy=calibrated_analysis.get("calibration_strategy"),
+                calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
+                season_bucket=scan_context.get("season_bucket"),
+                analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+                # Seasonal context fields
+                date_taken=scan_context.get("date_taken"),
+                date_source=scan_context.get("date_source"),
+                season_phase=scan_context.get("season_phase"),
+                analysis_model=selected_model,
+                age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
+                retake_reason=calibrated_analysis.get("retake_reason"),
+                visible_age_cues=calibrated_analysis.get("visible_age_cues"),
+                image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
+                quality_factors=calibrated_analysis.get("quality_factors"),
+                posture_bucket=calibrated_analysis.get("posture_bucket"),
+                # Cloud image storage (R2)
+                image_url=image_url,
+            )
+            await database.execute(query)
+            logger.info("Scan saved to database successfully | scan_id=%s", scan_id)
+        except Exception:
+            logger.exception(
+                "Database insert failed | scan_id=%s user_id=%s",
+                scan_id, user.get("id"),
+            )
+            raise
 
         await use_scan(user)
 
-        # Build response with feature-flagged fields
+        # ── Step 10: Build response ──
+        logger.info("Step 10: Building response | scan_id=%s", scan_id)
         config = RegionCalibrationConfig
 
         return DeerAnalysisResponse(
@@ -3652,7 +3702,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             antler_points_left=calibrated_analysis.get("antler_points_left"),
             antler_points_right=calibrated_analysis.get("antler_points_right"),
             body_condition=calibrated_analysis.get("body_condition"),
-            confidence=calibrated_analysis.get("confidence"),  # Recommendation confidence for backward compat
+            confidence=calibrated_analysis.get("confidence"),
             recommendation=calibrated_analysis.get("recommendation"),
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
@@ -3687,9 +3737,33 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             season_phase_reason=scan_context.get("season_reason"),
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is (eligibility, not-a-deer, etc.)
+        raise
     except openai.OpenAIError as e:
-        logger.error(f"OpenAI error: {e}")
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
+        logger.exception("OpenAI error during analyze_deer | user_id=%s", user.get("id"))
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "OPENAI_FAILURE",
+                "message": f"AI analysis failed: {str(e)}"
+            }
+        )
+    except Exception as e:
+        logger.exception(
+            "Unhandled analyze_deer failure | user_id=%s local_image_id=%s state=%s date_taken=%s",
+            user.get("id"),
+            getattr(data, "local_image_id", None),
+            getattr(data, "state", None),
+            getattr(data, "date_taken", None),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "ANALYZE_DEER_FAILED",
+                "message": "Server failed while analyzing the image. Please try again."
+            }
+        )
 
 # ============ SCANS ROUTES ============
 
