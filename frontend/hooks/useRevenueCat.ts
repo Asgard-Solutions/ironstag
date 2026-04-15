@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { PurchasesPackage } from 'react-native-purchases';
-import { revenueCatService, RevenueCatProduct, PurchaseResult, ENTITLEMENT_ID } from '../services/RevenueCatService';
+import { revenueCatService, PurchaseResult } from '../services/RevenueCatService';
 import { useAuthStore } from '../stores/authStore';
 
 export interface UseRevenueCatReturn {

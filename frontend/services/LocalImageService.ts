@@ -473,7 +473,7 @@ class LocalImageServiceClass {
    * Get all image IDs with their creation timestamps
    * Used for batch deletion operations
    */
-  async getAllImageIds(): Promise<Array<{ id: string; createdAt: number }>> {
+  async getAllImageIds(): Promise<{ id: string; createdAt: number }[]> {
     const metadata = await this.getAllMetadata();
     return Object.entries(metadata).map(([id, meta]) => ({
       id,

@@ -6,11 +6,9 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
-  TextInput,
   ActivityIndicator,
   Image,
   ScrollView,
-  Linking,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -23,7 +21,6 @@ import {
   X, 
   Zap, 
   AlertTriangle, 
-  Target,
   Info,
   Check,
   XCircle,
@@ -32,7 +29,6 @@ import {
   ArrowLeft,
   Crown,
   MapPin,
-  WifiOff,
   RotateCcw,
   Calendar,
 } from 'lucide-react-native';

@@ -16,8 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Search, Filter, X, Camera, Crown, Target, AlertCircle, MessageSquare, Heart, CloudOff, RefreshCw, Trash2, Leaf } from 'lucide-react-native';
 import { Card } from '../../components/Card';
-import { Badge } from '../../components/Badge';
-import { Button } from '../../components/Button';
 import { ScanListSkeleton } from '../../components/Skeleton';
 import { OfflineBanner } from '../../components/OfflineIndicator';
 import { useAuthStore } from '../../stores/authStore';
@@ -172,7 +170,7 @@ function ScanImage({ localImageId, imageUrl }: { localImageId: string; imageUrl?
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   
   // Offline queue for pending scans
   const { 

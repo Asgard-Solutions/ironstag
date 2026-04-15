@@ -13,7 +13,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { useAuthStore } from '../../stores/authStore';
 import { authAPI } from '../../utils/api';
-import { colors, spacing, borderRadius } from '../../constants/theme';
+import { colors, spacing } from '../../constants/theme';
 
 export default function DisclaimerScreen() {
   const insets = useSafeAreaInsets();
