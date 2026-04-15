@@ -65,6 +65,12 @@
       "env": {
         "APP_ENV": "production"
       }
+    },
+     "production-apk": {
+      "extends": "production",
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
 
