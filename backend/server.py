@@ -677,6 +677,8 @@ class DeerAnalysisResponse(BaseModel):
     date_taken: Optional[str] = None       # ISO date YYYY-MM-DD
     season_phase: Optional[str] = None     # pre_rut, rut, post_rut, unknown
     date_source: Optional[str] = None      # client, image_metadata, unknown
+    season_phase_confidence: Optional[str] = None  # high, medium, low
+    season_phase_reason: Optional[str] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
     # Favorites and Tags
@@ -1815,37 +1817,43 @@ def format_scan_context_for_prompt(context: Dict[str, Any]) -> str:
     region_key = context.get("region_key") or "unknown"
     season_bucket = context.get("season_bucket") or "unknown"
     season_phase = context.get("season_phase") or "unknown"
+    season_confidence = context.get("season_confidence") or "low"
     date_taken = context.get("date_taken") or "unknown"
+    date_source = context.get("date_source") or "unknown"
+
+    # ── Image context block (matches spec example format) ──
     lines = [
-        "Field context:",
-        f"- User-reported state: {context.get('state') or 'unknown'}",
-        f"- Region profile: {region_key}",
-        f"- Image date: {date_taken}",
-        f"- Seasonal phase: {season_phase}",
-        f"- Regional caution: {REGION_PROMPT_HINTS.get(region_key, REGION_PROMPT_HINTS['unknown'])}",
-        f"- Seasonal caution: {SEASON_PROMPT_HINTS.get(season_bucket, 'Use season only as supporting context, never as proof of age.')}",
+        "Image context:",
+        f"- State: {context.get('state') or 'unknown'}",
+        f"- Region: {region_key}",
+        f"- Date taken: {date_taken}",
+        f"- Date source: {date_source}",
+        f"- Season phase: {season_phase}",
+        f"- Season-phase confidence: {season_confidence}",
+        "",
+        "Regional caution:",
+        f"- {REGION_PROMPT_HINTS.get(region_key, REGION_PROMPT_HINTS['unknown'])}",
+        "",
+        "Seasonal caution:",
+        f"- {SEASON_PROMPT_HINTS.get(season_bucket, 'Use season only as supporting context, never as proof of age.')}",
         "",
         "Seasonal context rules:",
-        "- Use state, region, image date, and seasonal phase as supporting context only.",
-        "- Treat seasonal context as a modifier of cue reliability, not direct evidence of age.",
-        "- Region sets baseline body-size and phenotype expectations.",
-        "- Season modifies interpretation of visible body cues.",
-        "- Neither region nor season should be treated as direct evidence of age.",
+        "- Use state, region, date_taken, and season_phase as supporting context only.",
+        "- Regional context sets baseline expectations for body size, phenotype, and common aging pitfalls.",
+        "- Seasonal context modifies how visible body cues should be interpreted at the time the image was taken.",
+        "- Do not treat region, date, or season as direct evidence of age.",
     ]
-    # Add phase-specific cue reliability modifiers
+    # Phase-specific cue reliability modifiers
     if season_phase == "rut":
-        lines.extend([
-            "- RUT ACTIVE: Reduce the weight of neck swelling, brisket thickness, and temporary front-end bulk. These are seasonal, not age indicators.",
-        ])
+        lines.append("- RUT ACTIVE: Reduce the weight of neck swelling, brisket thickness, and temporary front-end bulk. These are seasonal, not age indicators.")
     elif season_phase == "post_rut":
-        lines.extend([
-            "- POST-RUT ACTIVE: Reduce the weight of low body mass, gaunt appearance, and reduced belly fullness. Post-rut stress mimics younger age classes.",
-        ])
+        lines.append("- POST-RUT ACTIVE: Reduce the weight of low body mass, gaunt appearance, and reduced belly fullness. Post-rut stress mimics younger age classes.")
     elif season_phase == "pre_rut":
-        lines.extend([
-            "- PRE-RUT ACTIVE: Do not under-age solely because the neck is thin or the body appears lean. Pre-rut bucks have not yet bulked.",
-        ])
-    lines.append("- If contextual expectations conflict with visible anatomy, prioritize visible anatomy and lower confidence rather than forcing an age.")
+        lines.append("- PRE-RUT ACTIVE: Do not under-age solely because the neck is thin or the body appears lean. Pre-rut bucks have not yet bulked.")
+
+    lines.append("- If seasonal or regional context conflicts with visible anatomy, prioritize visible anatomy and reduce confidence rather than forcing an age.")
+    lines.append("- If season_phase is unknown, continue using visible anatomy and regional context without blocking age estimation.")
+
     if context.get("notes"):
         lines.append(f"- Hunter notes (supplemental, not ground truth): {context['notes']}")
     return "\n".join(lines)
@@ -2337,6 +2345,8 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         date_taken=str(scan["date_taken"]) if scan.get("date_taken") else None,
         season_phase=scan.get("season_phase"),
         date_source=scan.get("date_source"),
+        season_phase_confidence=None,  # Not stored in DB for legacy scans; available on fresh analyses
+        season_phase_reason=None,
     )
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
@@ -3672,6 +3682,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             date_taken=scan_context.get("date_taken"),
             season_phase=scan_context.get("season_phase"),
             date_source=scan_context.get("date_source"),
+            season_phase_confidence=scan_context.get("season_confidence"),
+            season_phase_reason=scan_context.get("season_reason"),
         )
         
     except openai.OpenAIError as e:
