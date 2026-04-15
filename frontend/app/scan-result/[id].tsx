@@ -424,6 +424,10 @@ export default function ScanResultScreen() {
   const [editPointsLeft, setEditPointsLeft] = useState<string>('');
   const [editPointsRight, setEditPointsRight] = useState<string>('');
   const [editDateTaken, setEditDateTaken] = useState<string>('');
+  const editCurrentYear = new Date().getFullYear();
+  const [editPickerYear, setEditPickerYear] = useState(editCurrentYear);
+  const [editPickerMonth, setEditPickerMonth] = useState(new Date().getMonth() + 1);
+  const [editPickerDay, setEditPickerDay] = useState(new Date().getDate());
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [scoreForm, setScoreForm] = useState<BcScoreFormState>(createEmptyBcScoreFormState());
@@ -691,6 +695,20 @@ export default function ScanResultScreen() {
     setEditPointsLeft(scan.antler_points_left?.toString() || '');
     setEditPointsRight(scan.antler_points_right?.toString() || '');
     setEditDateTaken(scan.date_taken || '');
+    // Initialize wheel pickers
+    if (scan.date_taken) {
+      const parts = scan.date_taken.split('-');
+      if (parts.length === 3) {
+        setEditPickerYear(parseInt(parts[0], 10));
+        setEditPickerMonth(parseInt(parts[1], 10));
+        setEditPickerDay(parseInt(parts[2], 10));
+      }
+    } else {
+      const now = new Date();
+      setEditPickerYear(now.getFullYear());
+      setEditPickerMonth(now.getMonth() + 1);
+      setEditPickerDay(now.getDate());
+    }
     setShowEditModal(true);
   };
 
@@ -714,11 +732,10 @@ export default function ScanResultScreen() {
         editData.antler_points_right = parseInt(editPointsRight, 10);
       }
 
-      // Include date_taken if set or changed
-      if (editDateTaken && editDateTaken !== (scan.date_taken || '')) {
-        editData.date_taken = editDateTaken;
-      } else if (editDateTaken) {
-        editData.date_taken = editDateTaken;
+      // Include date_taken from wheel picker
+      const pickerDateStr = `${editPickerYear}-${String(editPickerMonth).padStart(2, '0')}-${String(editPickerDay).padStart(2, '0')}`;
+      if (pickerDateStr !== (scan.date_taken || '')) {
+        editData.date_taken = pickerDateStr;
       }
 
       if (imageUri) {
@@ -1504,15 +1521,66 @@ export default function ScanResultScreen() {
               />
 
               <Text style={styles.inputLabel}>Date Taken</Text>
-              <TextInput
-                style={styles.textInput}
-                value={editDateTaken}
-                onChangeText={setEditDateTaken}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-              />
+              <View style={styles.editDateWheelRow}>
+                {/* Year */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Year</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerYear}
+                      onValueChange={(val) => setEditPickerYear(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {Array.from({ length: 30 }, (_, i) => editCurrentYear - i).map((yr) => (
+                        <Picker.Item key={yr} label={String(yr)} value={yr} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                {/* Month */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Month</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerMonth}
+                      onValueChange={(val) => setEditPickerMonth(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {[
+                        { label: 'Jan', value: 1 }, { label: 'Feb', value: 2 },
+                        { label: 'Mar', value: 3 }, { label: 'Apr', value: 4 },
+                        { label: 'May', value: 5 }, { label: 'Jun', value: 6 },
+                        { label: 'Jul', value: 7 }, { label: 'Aug', value: 8 },
+                        { label: 'Sep', value: 9 }, { label: 'Oct', value: 10 },
+                        { label: 'Nov', value: 11 }, { label: 'Dec', value: 12 },
+                      ].map((m) => (
+                        <Picker.Item key={m.value} label={m.label} value={m.value} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+                {/* Day */}
+                <View style={styles.editDateWheelCol}>
+                  <Text style={styles.editDateWheelLabel}>Day</Text>
+                  <View style={styles.editDateWheelPickerWrap}>
+                    <Picker
+                      selectedValue={editPickerDay}
+                      onValueChange={(val) => setEditPickerDay(val)}
+                      style={styles.editDateWheelPicker}
+                      itemStyle={styles.editDateWheelItemStyle}
+                    >
+                      {Array.from(
+                        { length: new Date(editPickerYear, editPickerMonth, 0).getDate() },
+                        (_, i) => i + 1,
+                      ).map((d) => (
+                        <Picker.Item key={d} label={String(d)} value={d} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              </View>
               <Text style={styles.dateHintText}>
                 Setting the date helps determine seasonal context (rut phase) for more accurate aging
               </Text>
@@ -3195,6 +3263,44 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: spacing.sm,
     lineHeight: 16,
+  },
+  editDateWheelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  editDateWheelCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  editDateWheelLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  editDateWheelPickerWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    width: '100%',
+    height: 130,
+  },
+  editDateWheelPicker: {
+    width: '100%',
+    height: 130,
+    color: colors.textPrimary,
+    backgroundColor: 'transparent',
+  },
+  editDateWheelItemStyle: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    height: 130,
   },
   modalFooter: {
     flexDirection: 'row',
