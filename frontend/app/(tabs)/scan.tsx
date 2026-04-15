@@ -563,7 +563,10 @@ export default function ScanScreen() {
               activeOpacity={1}
               onPress={() => setShowDatePicker(false)}
             >
-              <View style={styles.datePickerContainer}>
+              <View
+                style={styles.datePickerContainer}
+                onStartShouldSetResponder={() => true}
+              >
                 <View style={styles.datePickerHeader}>
                   <Text style={styles.datePickerTitle}>When was this photo taken?</Text>
                   <TouchableOpacity onPress={() => setShowDatePicker(false)}>
