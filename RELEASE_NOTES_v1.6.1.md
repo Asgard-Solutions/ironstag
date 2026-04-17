@@ -103,23 +103,11 @@ This is a **recommended update** that improves app stability and fixes several i
 
 ---
 
-## 🏆 Coming Soon
-
-We're continuing to work on exciting new features for the next major release:
-- Enhanced photo analysis capabilities
-- Additional scoring system options
-- More detailed regional customization
-- Advanced filtering and search options
-
----
-
 ## 💬 Support & Feedback
 
 Found a bug or have suggestions? We're here to help:
 
-- **Email**: support@ironstag.com
-- **In-App Support**: Settings → Help & Support
-- **FAQ**: Available in app and at [ironstag.com/faq](https://ironstag.com/faq)
+- **Email**: support@asgardsolution.io
 
 ---
 
