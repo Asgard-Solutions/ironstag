@@ -1,7 +1,7 @@
 # Iron Stag - Technical Manual
 
-**Version 1.1.0**  
-**Last Updated: March 2026**
+**Version 1.8.0**  
+**Last Updated: July 2026**
 
 ---
 
@@ -411,7 +411,7 @@ Authorization: Bearer <access_token>
   "retake_reason": null,
   "visible_age_cues": ["chest_vs_hindquarters", "neck_to_face_ratio", "belly_sag"],
   "recommendation": "HARVEST",
-  "analysis_prompt_version": "age-v4-buck-rubric",
+  "analysis_prompt_version": "age-v6-species-rubrics",
   "analysis_model": "gpt-4.1",
   "harvest_confirmed": false,
   "boone_crockett_score": null,
@@ -929,9 +929,10 @@ REANALYSIS_MODEL = env("OPENAI_REANALYSIS_MODEL", ANALYSIS_MODEL)
 AB_TEST_ENABLED = env_bool("OPENAI_MODEL_AB_TEST_ENABLED", False)
 AB_TEST_CANDIDATE = env("OPENAI_MODEL_AB_TEST_CANDIDATE", "gpt-4.1")
 CALIBRATION_CURVES_ENABLED = env_bool("CALIBRATION_CURVES_ENABLED", False)
+ANALYSIS_PROMPT_VERSION = "age-v6-species-rubrics"
 ```
 
-#### System Prompt
+#### System Prompt (v6 — Species-Specific Rubrics)
 
 The backend sends a structured multimodal prompt that instructs the model to:
 
@@ -940,8 +941,31 @@ The backend sends a structured multimodal prompt that instructs the model to:
 3. **Only accept** Whitetail and Mule Deer
 4. **Use region context** from the request state/home state when available
 5. **Gate poor images** by checking quality, blur, occlusion, posture, and visible body cues
-6. **Age valid deer** using body evidence, with buck class support (`1.5` through `6.5+`) and doe-specific body-profile cues
-7. **Return structured fields** such as `age_estimation_allowed`, `retake_reason`, `visible_age_cues`, `buck_age_class`, separate confidence signals, and recommendation
+6. **Age valid deer** using species-specific rubrics:
+   - **Whitetail Buck rubric**: Age classes 1.5 through 6.5+ with detailed body morphology descriptions
+   - **Whitetail Doe rubric**: Age classes 0.5 through 5.5+ with body-profile based descriptions (chest depth, belly sag, backline, leg ratio, face shape)
+   - **Mule Deer rubric**: Age classes 1.5 through 5.5+ with species-specific cues (ear-to-face ratio, fork depth, body proportions)
+   - **Fawn identification**: Dedicated guidance for 0.5-year identification (spotted coat, small body, proportionally long legs)
+7. **Return structured fields** including `age_estimation_allowed`, `retake_reason`, `visible_age_cues`, `buck_age_class`, separate confidence signals, `confidence_reasoning`, and recommendation
+
+#### Image Analysis Detail Level
+
+Images are sent with `"detail": "high"` to force full-resolution analysis. This ensures fine body details (belly sag, face length, chest depth) are accurately assessed even in trail camera photos.
+
+#### Token Limits
+
+All analysis calls use `max_output_tokens=2000` to prevent truncation of detailed structured JSON responses.
+
+#### Selective Consensus
+
+When initial analysis confidence is low or the deer is near the harvest boundary (3.5 years), multiple analysis passes are run:
+- **Initial pass**: `temperature=0` (deterministic)
+- **Consensus passes**: `temperature=0.2` (varied perspectives)
+- Consensus merging uses median age, majority voting for recommendation, and **alternate age support** — alternate ages from disagreeing passes that agree with the consensus reduce confidence penalties.
+
+#### Confidence Reasoning
+
+The model returns a `confidence_reasoning` field explaining why confidence is at its assigned level, referencing specific visible cues, image quality issues, or perspective limitations. This is stored in `raw_response` and surfaced in the API response.
 
 The model is allowed to withhold a numeric age when the image quality is too poor or the visible age cues are insufficient. Live scans can also apply active empirical calibration curves from the database to improve confidence calibration and abstention behavior.
 
@@ -1350,22 +1374,32 @@ EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_xxx
 
 ### Authentication
 - JWT tokens expire after 30 days
-- Passwords hashed with bcrypt (12 rounds)
+- Passwords hashed with Argon2 (via `argon2-cffi`)
 - Tokens stored in platform secure storage
+- `JWT_SECRET` strictly required from environment variables (fail-fast on startup)
 
 ### API Security
 - All endpoints require authentication (except health, login, register)
 - User can only access their own data
-- Rate limiting recommended for production
+- Rate limiting on auth endpoints (10 attempts per 15-minute window per IP)
+- Admin endpoints protected by `x-admin-secret` header dependency injection
+- `ADMIN_SECRET` required in production (fail-fast on startup)
+
+### Secret Management
+- No hardcoded secret fallbacks in production
+- RevenueCat webhook validation fails closed without `REVENUECAT_WEBHOOK_SECRET`
+- Only public SDK keys (`appl_`/`goog_`) bundled in client builds
+- Secret (`sk_`) RevenueCat keys restricted to backend-only Railway environment
 
 ### Data Privacy
-- Images are NOT stored on server
+- Images are NOT stored on server (optional R2 cloud storage for cross-device access)
 - Only analysis results are stored
 - User can delete all data via Delete Account
 
 ### HTTPS
 - All API communication over HTTPS
 - TLS 1.2+ required
+- CORS configured without `allow_credentials` (Bearer token auth)
 
 ---
 
@@ -1545,28 +1579,29 @@ tail -f /var/log/supervisor/backend.err.log
 
 ## 18. API Rate Limits
 
-### Recommended Limits (Production)
+### Current Limits (Production)
 
 | Endpoint | Limit | Window |
 |----------|-------|--------|
-| /auth/login | 10 | 1 minute |
-| /auth/register | 5 | 1 minute |
-| /analyze-deer | 20 | 1 hour |
-| /scans | 100 | 1 minute |
-| General | 1000 | 1 hour |
+| /auth/login | 10 | 15 minutes |
+| /auth/register | 10 | 15 minutes |
+| /auth/request-password-reset | 10 | 15 minutes |
+| /auth/verify-password-reset | 10 | 15 minutes |
+| /analyze-deer | Per subscription tier | N/A |
+| /admin/* | Requires x-admin-secret header | N/A |
 
 ### Implementation
 
+Rate limiting is implemented via an in-memory `InMemoryRateLimiter` class in `server.py`:
+
 ```python
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+class InMemoryRateLimiter:
+    def is_rate_limited(self, key: str, max_attempts: int, window_seconds: int) -> bool
+    def record_attempt(self, key: str)
 
-limiter = Limiter(key_func=get_remote_address)
-
-@app.post("/api/auth/login")
-@limiter.limit("10/minute")
-async def login(...):
-    ...
+# Applied to auth endpoints
+AUTH_RATE_LIMIT_MAX = 10
+AUTH_RATE_LIMIT_WINDOW = 900  # 15 minutes
 ```
 
 ---

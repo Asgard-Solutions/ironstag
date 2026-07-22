@@ -2,8 +2,8 @@
 
 ![Iron Stag Logo](../frontend/assets/images/iron_stag_logo.png)
 
-**Version 1.2.0**  
-**Last Updated: March 2026**
+**Version 1.8.0**  
+**Last Updated: July 2026**
 
 ---
 
