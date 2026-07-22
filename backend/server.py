@@ -435,6 +435,7 @@ def run_model_analysis_pass(
     prompt_version: str,
     context: Dict[str, Any],
     post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+    temperature: float = 0,
 ) -> Optional[Dict[str, Any]]:
     response = openai_client.chat.completions.create(
         **build_chat_completion_request(
@@ -450,7 +451,7 @@ def run_model_analysis_pass(
                 },
             ],
             max_output_tokens=max_output_tokens,
-            temperature=0,
+            temperature=temperature,
         )
     )
     response_text = response.choices[0].message.content or ""
@@ -690,6 +691,8 @@ class DeerAnalysisResponse(BaseModel):
     retake_reason: Optional[str] = None
     visible_age_cues: Optional[List[str]] = None
     consensus: Optional[Dict[str, Any]] = None
+    # Confidence reasoning
+    confidence_reasoning: Optional[str] = None  # Model's explanation of confidence level
     # Seasonal context
     date_taken: Optional[str] = None       # ISO date YYYY-MM-DD
     season_phase: Optional[str] = None     # pre_rut, rut, post_rut, unknown
@@ -1148,8 +1151,8 @@ def check_auth_rate_limit(request: Request):
     rate_limiter.record_attempt(key)
 
 
-ANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist"
-REANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist-reanalysis"
+ANALYSIS_PROMPT_VERSION = "age-v6-species-rubrics"
+REANALYSIS_PROMPT_VERSION = "age-v6-species-rubrics-reanalysis"
 
 REGION_PROMPT_HINTS = {
     "midwest": "Large-bodied deer are common. Use body maturity more than antler spread.",
@@ -1247,6 +1250,39 @@ Buck age-class rubric:
 - 4.5: neck blends into shoulders, deeper chest, waistline has dropped, fully mature frame
 - 5.5: shoulder and neck mass look heavy, belly rounds or sags, head appears blockier, legs look short for the body
 - 6.5+: very heavy body, obvious belly/back sag, loose skin in face/brisket, darker or grayer forehead/muzzle
+"""
+
+DOE_AGE_CLASS_PROMPT_GUIDANCE = """
+Doe age-class rubric (body-profile based):
+- 0.5 (fawn): very small body, short face relative to ears, high and tight belly, legs appear proportionally long, narrow chest, no visible muscle definition
+- 1.5: slender, lean body with minimal muscle; long-looking legs compared to torso; narrow chest; flat belly line; face appears narrow and long for head size
+- 2.5: body begins to fill out; chest slightly deeper; belly line flat to slightly rounded; proportional legs; face still relatively narrow; hips and shoulders roughly balanced
+- 3.5: noticeably deeper chest; belly line begins to drop slightly; shoulders broader than hips; back remains fairly straight; face appears fuller; legs look proportional to body
+- 4.5: heavy chest and shoulders; belly clearly rounded or sagging; backline may begin to dip; legs appear shorter relative to torso depth; face wider, more blocky
+- 5.5+: very deep, heavy body; pronounced belly sag; swayed or dipped backline; legs appear short; face wide and blocky; overall body appears thick and compact
+"""
+
+MULE_DEER_AGE_CLASS_PROMPT_GUIDANCE = """
+Mule Deer age-class rubric:
+- 1.5: thin-framed, lean body; long-looking legs relative to torso; narrow chest; small, slender face; ears appear oversized relative to face and antlers (bucks: small forked antlers)
+- 2.5: body beginning to fill; hindquarters still slightly larger than chest; belly flat; face still narrow; ears still appear large relative to head; moderate neck (bucks: taller but still narrow antler frame)
+- 3.5: chest and shoulders now equal to or heavier than hindquarters; body athletic and balanced; face proportional to ears; neck thickens noticeably during rut (bucks: wider antler spread, deeper forks)
+- 4.5: deep chest; neck blends into heavy shoulders; belly beginning to drop; face appears wider and more mature; ears appear normal or smaller relative to face mass (bucks: heavy, wide antlers with deep forks)
+- 5.5+: very heavy body; belly sag and/or swayed back clearly visible; face wide, blocky, potentially graying muzzle; legs appear short for body depth; ears proportionally small on heavy head (bucks: massive antler mass, potentially losing points)
+Note: Mule deer have proportionally larger ears than whitetail—do not mistake large ears alone as a youth indicator. Use ear-to-face ratio changes across age classes instead.
+"""
+
+FAWN_IDENTIFICATION_GUIDANCE = """
+Fawn (0.5 year) identification cues:
+- Very small overall body size compared to adult deer
+- Spotted coat (white spots on brown, visible spring through early fall; spots fade by late fall)
+- Short face with large, round-looking eyes; ears appear oversized for head
+- High, tight belly with no sag; narrow, undeveloped chest
+- Legs appear very long and thin relative to small torso
+- No antler development (button bucks may show slight bumps under skin)
+- Often seen with or near adult does
+- If spots are visible, the deer is almost certainly a fawn regardless of other cues
+- In late fall/winter when spots are gone, use extremely small body size, very narrow chest, and proportionally long legs as primary fawn indicators
 """
 AGE_QUALITY_GATE_MESSAGES = {
     "poor_image_quality": "The image quality is too poor for a reliable age estimate.",
@@ -2115,6 +2151,7 @@ def normalize_model_analysis(
         normalized["confidence"] = normalized["raw_recommendation_confidence"] or normalized["raw_age_confidence"] or 0
 
     normalized["reasoning"] = str(normalized.get("reasoning") or "").strip() or None
+    normalized["confidence_reasoning"] = str(normalized.get("confidence_reasoning") or "").strip()[:500] or None
 
     return apply_age_estimation_gate(normalized)
 
@@ -2187,6 +2224,7 @@ If the image DOES contain a valid deer, return:
     {{"feature": "<cue>", "observation": "<what you observed>", "impact": "<older|younger|neutral|unknown>"}}
   ],
   "confidence": <0-100>,
+  "confidence_reasoning": "<1-2 sentences explaining why confidence is at this level>",
   "recommendation": <"HARVEST" or "PASS" or null>,
   "reasoning": "<brief explanation>"
 }}
@@ -2199,8 +2237,21 @@ Critical rules:
 - Do not set `age_estimation_allowed` true unless at least {MIN_VISIBLE_CRITICAL_AGE_CUES} critical cues are marked visible.
 - Body morphology is the primary basis for age. Antlers are only a weak secondary cue.
 - Use visible cues such as chest depth, belly sag, backline, leg length, face length, neck/brisket, chest-vs-hindquarter balance, waistline, head blockiness, tarsal staining, and overall body mass.
-- For bucks, first place the deer into the nearest buck age class, then make the numeric age align with that class.
+
+Species-specific aging rubrics:
+
+For WHITETAIL BUCKS, first place the deer into the nearest buck age class, then make the numeric age align with that class.
 {BUCK_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+For WHITETAIL DOES, use the doe-specific body-profile rubric:
+{DOE_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+For MULE DEER (bucks and does), use the mule deer aging rubric:
+{MULE_DEER_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+Fawn identification (applies to all species and sexes):
+{FAWN_IDENTIFICATION_GUIDANCE.strip()}
+
 - For does, age from body profile only. If chest depth, belly line, backline, leg-to-body ratio, face length, and overall body mass are clearly visible, provide the best half-year estimate instead of defaulting to null.
 - For does, do not require antlers or buck-specific cues before giving an age estimate.
 - Rut-swollen necks, coat thickness, and perspective can mislead. Stay conservative.
@@ -2228,6 +2279,7 @@ Critical rules:
 - If the deer is a doe, antler fields must be null.
 - Use `foreshortening_risk` and `distance_risk` to reflect perspective uncertainty.
 - Set confidence equal to recommendation_confidence for backward compatibility.
+- `confidence_reasoning` must explain why confidence is at the given level, referencing specific visible cues, image quality issues, or perspective limitations.
 - Provide 3 to 6 concise age_evidence items whenever possible."""
 
 
@@ -2291,6 +2343,7 @@ Return:
     {{"feature": "<cue>", "observation": "<what you observed>", "impact": "<older|younger|neutral|unknown>"}}
   ],
   "confidence": <0-100>,
+  "confidence_reasoning": "<1-2 sentences explaining why confidence is at this level>",
   "recommendation": <"HARVEST" or "PASS" or null>,
   "reasoning": "<brief explanation>"
 }}
@@ -2304,8 +2357,21 @@ Critical rules:
 - If any required checklist key is missing, set `age_estimation_allowed` to false.
 - Do not set `age_estimation_allowed` true unless at least {MIN_VISIBLE_CRITICAL_AGE_CUES} critical cues are marked visible.
 - Body morphology is the primary basis for age. Antlers are only a weak secondary cue.
-- For bucks, first place the deer into the nearest buck age class, then make the numeric age align with that class.
+
+Species-specific aging rubrics:
+
+For WHITETAIL BUCKS, first place the deer into the nearest buck age class, then make the numeric age align with that class.
 {BUCK_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+For WHITETAIL DOES, use the doe-specific body-profile rubric:
+{DOE_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+For MULE DEER (bucks and does), use the mule deer aging rubric:
+{MULE_DEER_AGE_CLASS_PROMPT_GUIDANCE.strip()}
+
+Fawn identification (applies to all species and sexes):
+{FAWN_IDENTIFICATION_GUIDANCE.strip()}
+
 - Corrected antler points may inform the analysis slightly, but they must not dominate age.
 - If the corrected sex is Doe, all antler fields must be null.
 - For does, age from body profile only and do not require antlers or buck-specific cues before giving an age estimate.
@@ -2329,7 +2395,8 @@ Critical rules:
 - For does, use visible body cues when they are available; only abstain when the photo truly lacks enough anatomy to age reliably.
 - Antler point count can never be a standalone basis for age.
 - Use `foreshortening_risk` and `distance_risk` to reflect perspective uncertainty.
-- Set confidence equal to recommendation_confidence for backward compatibility."""
+- Set confidence equal to recommendation_confidence for backward compatibility.
+- `confidence_reasoning` must explain why confidence is at the given level, referencing specific visible cues, image quality issues, or perspective limitations."""
 
 def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     """
@@ -2417,6 +2484,7 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         retake_reason=scan.get("retake_reason"),
         visible_age_cues=scan.get("visible_age_cues") or [],
         consensus=(scan.get("raw_response") or {}).get("consensus"),
+        confidence_reasoning=(scan.get("raw_response") or {}).get("confidence_reasoning"),
         # Cloud image storage (R2) - for cross-device image access
         image_url=scan.get("image_url"),
         # Favorites and Tags
@@ -3616,7 +3684,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     "Visible body anatomy must dominate the age estimate."
                 ),
             },
-            {"type": "image_url", "image_url": {"url": image_data}},
+            {"type": "image_url", "image_url": {"url": image_data, "detail": "high"}},
         ]
 
         try:
@@ -3624,7 +3692,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 model=selected_model,
                 system_prompt=build_analysis_system_prompt(),
                 user_content=user_content,
-                max_output_tokens=1400,
+                max_output_tokens=2000,
                 prompt_version=ANALYSIS_PROMPT_VERSION,
                 context=scan_context,
             )
@@ -3657,9 +3725,10 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     model=selected_model,
                     system_prompt=build_analysis_system_prompt(),
                     user_content=user_content,
-                    max_output_tokens=1400,
+                    max_output_tokens=2000,
                     prompt_version=ANALYSIS_PROMPT_VERSION,
                     context=scan_context,
+                    temperature=0.2,
                 ),
             )
             if analysis.get("consensus"):
@@ -3824,6 +3893,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             retake_reason=calibrated_analysis.get("retake_reason"),
             visible_age_cues=calibrated_analysis.get("visible_age_cues") or [],
             consensus=calibrated_analysis.get("consensus"),
+            confidence_reasoning=calibrated_analysis.get("confidence_reasoning"),
             # Cloud image storage (R2)
             image_url=image_url,
             # Seasonal context
@@ -4978,14 +5048,14 @@ Provide your complete REVISED analysis in JSON format."""
 
             user_content = [
                 {"type": "text", "text": user_message},
-                {"type": "image_url", "image_url": {"url": image_data}},
+                {"type": "image_url", "image_url": {"url": image_data, "detail": "high"}},
             ]
 
             initial_analysis = run_model_analysis_pass(
                 model=selected_model,
                 system_prompt=build_reanalysis_system_prompt(),
                 user_content=user_content,
-                max_output_tokens=1500,
+                max_output_tokens=2000,
                 prompt_version=REANALYSIS_PROMPT_VERSION,
                 context=reanalysis_context,
                 post_parse=apply_reanalysis_overrides,
@@ -5001,10 +5071,11 @@ Provide your complete REVISED analysis in JSON format."""
                         model=selected_model,
                         system_prompt=build_reanalysis_system_prompt(),
                         user_content=user_content,
-                        max_output_tokens=1500,
+                        max_output_tokens=2000,
                         prompt_version=REANALYSIS_PROMPT_VERSION,
                         context=reanalysis_context,
                         post_parse=apply_reanalysis_overrides,
+                        temperature=0.2,
                     ),
                 )
                 if analysis.get("consensus"):
