@@ -497,3 +497,23 @@ agent_communication:
     message: "✅ OFFLINE QUEUE & TAGS UI IMPLEMENTATION COMPLETE: Implemented Option A (Offline Queue) and Option C (Tags UI). 1) Offline Queue: Full integration into scan.tsx - scans taken while offline are automatically queued and synced when back online. Added OfflineBanner to scan tab, Pending Scans section in History tab with sync/remove functionality. Network detection via @react-native-community/netinfo. 2) Tags UI: Created TagsEditor component for scan result page, displays tags on history cards, backend already has POST /scans/{id}/tags and GET /scans/tags/all endpoints. User can add custom tags or choose from suggestions."
   - agent: "main"
     message: "✅ SCAN RESULT UX OVERHAUL COMPLETE: Implemented comprehensive improvements to the Scan Result screen: 1) Hero Recommendation Banner - HARVEST/PASS is now the dominant visual element with centered banner, large text, and explanatory subtext 2) Age + Confidence Side-by-Side Cards - Estimated age and confidence displayed in twin cards with human-readable confidence bands (High/Moderate/Low) and guidance text 3) 'Why We Think This' Section - AI analysis converted from raw paragraph into structured summary + scannable bullet cue chips extracted from reasoning text 4) Share Scan Feature - branded share card rendered via ViewShot with native share sheet via expo-sharing, text fallback included 5) Improved Feedback Copy - 'Did we get it right?' with 'Help improve future estimates' subtext 6) Ethical Messaging Refined - shield icon, supportive tone, positioned as 'supports your judgment' 7) New ScanSummaryCard reusable component created for hero and share card rendering"
+  - agent: "main"
+    message: "Google Play rejection fix: Removed android.permission.READ_EXTERNAL_STORAGE and android.permission.READ_MEDIA_IMAGES from app.json permissions. App uses expo-image-picker which implements Android photo picker on API 33+, making these broad permissions unnecessary. Bumped versionCode/buildNumber to 106. Need to verify app.json is valid and permissions are correct."
+  - agent: "testing"
+    message: "✅ GOOGLE PLAY PHOTO PICKER COMPLIANCE TESTING COMPLETE: Comprehensive verification completed successfully with 6/6 checks passed (100% success rate). All Google Play submission requirements met: 1) app.json is valid JSON ✅ 2) android.permissions contains ONLY 'android.permission.CAMERA' and 'com.android.vending.BILLING' - no storage permissions ✅ 3) expo-image-picker plugin properly configured ✅ 4) Version 1.8.0, versionCode 106, buildNumber '106' correct ✅ 5) Backend operational (returns 401 for /api/auth/me) ✅ 6) scan.tsx uses expo-image-picker for photo selection ✅. The app now complies with Google Play's photo picker policy by using Android's native photo picker (API 33+) instead of broad storage permissions. Ready for Google Play resubmission."
+
+backend:
+  - task: "Google Play Photo Picker Compliance - Remove READ_MEDIA_IMAGES and READ_EXTERNAL_STORAGE permissions"
+    implemented: true
+    working: true
+    file: "/app/frontend/app.json"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Removed READ_EXTERNAL_STORAGE and READ_MEDIA_IMAGES from android.permissions in app.json. Only CAMERA and BILLING remain. expo-image-picker plugin handles photo picker automatically."
+      - working: true
+        agent: "testing"
+        comment: "✅ GOOGLE PLAY PHOTO PICKER COMPLIANCE VERIFIED: All requirements met for Google Play submission. 1) app.json is valid JSON ✅ 2) android.permissions array contains ONLY 'android.permission.CAMERA' and 'com.android.vending.BILLING' (lines 42-45) - no READ_EXTERNAL_STORAGE, no READ_MEDIA_IMAGES, no READ_MEDIA_VIDEO ✅ 3) expo-image-picker plugin properly configured in plugins array (lines 72-76) with photosPermission message ✅ 4) Version 1.8.0, versionCode 106, buildNumber '106' all correct ✅ 5) Backend starts correctly - curl http://localhost:8001/api/auth/me returns 401 'Not authenticated' as expected ✅ 6) scan.tsx uses expo-image-picker (line 17 import, line 180 launchImageLibraryAsync) ✅. The app now uses Android's native photo picker (API 33+) via expo-image-picker, eliminating the need for broad storage permissions. Ready for Google Play resubmission."
