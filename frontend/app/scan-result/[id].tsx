@@ -37,13 +37,20 @@ import {
   Shield,
   Eye,
   Leaf,
+  Info,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
 import { TagsEditor } from '../../components/TagsEditor';
-import { AgeFields, describeAge, UNCERTAIN_RECOMMENDATION_TEXT } from '../../utils/ageEstimate';
+import {
+  AgeFields,
+  describeAge,
+  DEFAULT_HARVEST_AGE,
+  formatHarvestAge,
+  uncertainRecommendationText,
+} from '../../utils/ageEstimate';
 import {
   MultiPhotoEvidence,
   MultiImageSummary,
@@ -85,7 +92,6 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../consta
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
 const BC_DISCLAIMER =
   'Unofficial Boone & Crockett estimate. User-entered measurements only. Official Boone & Crockett scores require a certified official measurer.';
 const BC_REFERENCE_NOTE =
@@ -180,6 +186,7 @@ interface ScanResult extends AgeFields {
   season_phase_confidence?: string | null;
   // Confidence breakdown from backend calibration
   confidence_breakdown?: { age: number | null; recommendation: number | null } | null;
+  confidence_reasoning?: string | null;
   // Score audit trail (structured, versioned) — for debugging only
   score_audit?: Record<string, unknown> | null;
   // Age uncertainty flag from backend
@@ -249,7 +256,7 @@ function getDisplayRecommendation(scan: ScanResult): 'HARVEST' | 'PASS' | null {
   if (scan.age_estimation_allowed === false || deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
   }
-  return deerAge >= HARVEST_RECOMMENDATION_MIN_AGE ? 'HARVEST' : 'PASS';
+  return deerAge >= (scan.harvest_age_threshold ?? DEFAULT_HARVEST_AGE) ? 'HARVEST' : 'PASS';
 }
 
 function getDefaultBcScoreType(scan?: Pick<ScanResult, 'deer_type'> | null): BcScoreType {
@@ -1163,8 +1170,11 @@ export default function ScanResultScreen() {
               : recommendationVariant === 'pass'
                 ? 'Based on age estimate and development indicators'
                 : ageInfo.recommendationUncertain
-                  ? UNCERTAIN_RECOMMENDATION_TEXT
+                  ? uncertainRecommendationText(scan.harvest_age_threshold)
                   : 'Unable to determine a clear recommendation'}
+          </Text>
+          <Text testID="hero-harvest-age" style={styles.heroHarvestAge}>
+            Your harvest age: {formatHarvestAge(scan.harvest_age_threshold)}
           </Text>
         </View>
 
@@ -1230,6 +1240,18 @@ export default function ScanResultScreen() {
               Scores reflect an estimate of certainty, not a verified probability.
             </Text>
           </Card>
+
+        {!!scan.confidence_reasoning && (
+          <Card style={styles.reasonCard}>
+            <View style={styles.reasonHeader}>
+              <Info size={16} color={colors.primary} />
+              <Text style={styles.reasonTitle}>Why this confidence?</Text>
+            </View>
+            <Text testID="confidence-reasoning-text" style={styles.reasonText}>
+              {scan.confidence_reasoning}
+            </Text>
+          </Card>
+        )}
 
         {scan.retake_reason && (
           <Card style={styles.retakeCard}>
@@ -2338,6 +2360,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
   },
+  heroHarvestAge: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
 
   // (legacy – kept for other uses)
   recommendationBadge: {
@@ -2427,6 +2455,26 @@ const styles = StyleSheet.create({
   summaryCard: {
     marginBottom: spacing.md,
     padding: spacing.md,
+  },
+  reasonCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  reasonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  reasonTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  reasonText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
   summaryTitle: {
     fontSize: 18,

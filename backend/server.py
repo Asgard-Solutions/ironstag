@@ -149,6 +149,7 @@ users_table = Table(
     Column("apple_user_id", String(100), nullable=True),
     # User profile state for region fallback
     Column("state", String(2), nullable=True),  # Two-letter state code (e.g., IA, TX)
+    Column("harvest_age_threshold", Float, nullable=True),  # Hunter's minimum harvest age (default 3.5)
 )
 
 scans_table = Table(
@@ -546,6 +547,7 @@ def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[
         "age_evidence": [{"feature": "chest_depth", "observation": "Mock: chest moderately deep", "impact": "older"}],
         "recommendation": "HARVEST",
         "reasoning": "Mock analysis response (ANALYSIS_MOCK_MODEL).",
+        "confidence_reasoning": "Mock: clear broadside view of chest and belly, but legs are partly hidden by grass.",
     }
     if "mock:range" in notes:
         response.update(deer_age=3.5, age_lower=3.5, age_upper=4.5,
@@ -774,6 +776,7 @@ class UserResponse(BaseModel):
     disclaimer_accepted: bool = False
     disclaimer_accepted_at: Optional[datetime] = None
     state: Optional[str] = None  # Two-letter state code for region calibration
+    harvest_age_threshold: float = 3.5  # Hunter's minimum harvest age
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -786,6 +789,7 @@ class ProfileUpdate(BaseModel):
     current_password: Optional[str] = None
     new_password: Optional[str] = None
     state: Optional[str] = None  # Two-letter state code for region calibration
+    harvest_age_threshold: Optional[float] = None  # One of HARVEST_AGE_OPTIONS
 
 class DisclaimerAccept(BaseModel):
     accepted: bool
@@ -842,6 +846,7 @@ class DeerAnalysisResponse(BaseModel):
     range_reasoning: Optional[str] = None
     range_coverage_confidence: Optional[int] = None  # only set from a validated age_range_coverage calibration
     recommendation_status: Optional[str] = None  # age_based | uncertain_range_crosses_threshold
+    harvest_age_threshold: Optional[float] = None  # Harvest age the HARVEST/PASS call was made against
     buck_age_class: Optional[str] = None
     age_evidence: Optional[List[Dict[str, str]]] = None
     cue_checklist: Optional[Dict[str, str]] = None
@@ -1059,6 +1064,7 @@ async def startup():
     try:
         # User profile state for region fallback
         await database.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS state VARCHAR(2)")
+        await database.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS harvest_age_threshold FLOAT")
         
         # Add antler_points_left column if it doesn't exist
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_left INTEGER")
@@ -1651,6 +1657,33 @@ def derive_management_recommendation(
     if age_estimation_allowed is False or deer_age is None:
         return None
     return "HARVEST" if is_mature_harvest_age(deer_age) else "PASS"
+
+
+HARVEST_AGE_OPTIONS = (2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5)
+
+
+def user_harvest_age(user: Optional[dict]) -> float:
+    value = (user or {}).get("harvest_age_threshold")
+    return float(value) if value in HARVEST_AGE_OPTIONS else HARVEST_RECOMMENDATION_MIN_AGE
+
+
+def apply_harvest_age(resp: "DeerAnalysisResponse", threshold: float) -> "DeerAnalysisResponse":
+    """Re-derive HARVEST/PASS from the stored age (or range) against the hunter's harvest age.
+    Age and range are never changed; scans without a usable age keep their stored call."""
+    resp.harvest_age_threshold = threshold
+    if resp.age_estimation_allowed is False or resp.deer_age is None:
+        return resp
+    lower, upper = resp.age_lower, resp.age_upper
+    if lower is not None and upper is not None and resp.range_status != "legacy_class_bin":
+        if lower < threshold and (resp.age_upper_open or upper >= threshold):
+            resp.recommendation = None
+            resp.recommendation_status = "uncertain_range_crosses_threshold"
+            return resp
+        resp.recommendation = "HARVEST" if lower >= threshold else "PASS"
+    else:
+        resp.recommendation = "HARVEST" if resp.deer_age >= threshold else "PASS"
+    resp.recommendation_status = "age_based"
+    return resp
 
 
 MAX_INFORMATIVE_AGE_RANGE_YEARS = float(os.environ.get("MAX_INFORMATIVE_AGE_RANGE_YEARS", "2.0"))
@@ -2751,7 +2784,11 @@ Fawn identification (applies to all species and sexes):
 - Set confidence equal to recommendation_confidence for backward compatibility.
 - `confidence_reasoning` must explain why confidence is at the given level, referencing specific visible cues, image quality issues, or perspective limitations."""
 
-def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = None) -> DeerAnalysisResponse:
+def build_scan_response(
+    scan: dict,
+    images: Optional[List[Dict[str, Any]]] = None,
+    harvest_age: float = HARVEST_RECOMMENDATION_MIN_AGE,
+) -> DeerAnalysisResponse:
     """
     Helper to build DeerAnalysisResponse with calibration and region fields.
     Handles both new scans (with calibration data) and legacy scans (without).
@@ -2796,7 +2833,7 @@ def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = Non
             else computed.get("finalScore")
         )
 
-    return DeerAnalysisResponse(
+    resp = DeerAnalysisResponse(
         id=scan["id"],
         user_id=scan["user_id"],
         local_image_id=scan["local_image_id"],
@@ -2855,7 +2892,7 @@ def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = Non
         image_url=scan.get("image_url"),
         # Favorites and Tags
         is_favorite=scan.get("is_favorite") or False,
-        tags=scan.get("tags") or [],
+        tags=(json.loads(scan["tags"]) if isinstance(scan.get("tags"), str) else (scan.get("tags") or [])),
         harvest_confirmed=bool(scan.get("harvest_confirmed")) if scan.get("harvest_confirmed") is not None else False,
         harvested_at=scan.get("harvested_at"),
         boone_crockett_score=normalized_bc_score,
@@ -2872,6 +2909,7 @@ def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = Non
         season_phase_confidence=None,  # Not stored in DB for legacy scans; available on fresh analyses
         season_phase_reason=None,
     )
+    return apply_harvest_age(resp, harvest_age)
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
@@ -3003,7 +3041,8 @@ async def login(data: UserLogin, request: Request):
             total_scans_used=user.get("total_scans_used", 0),
             disclaimer_accepted=user.get("disclaimer_accepted", False),
             disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
-            state=user.get("state")
+            state=user.get("state"),
+            harvest_age_threshold=user_harvest_age(user)
         )
     )
 
@@ -3031,7 +3070,8 @@ async def apple_sign_in(data: AppleSignInRequest):
                 total_scans_used=user.get("total_scans_used", 0),
                 disclaimer_accepted=user.get("disclaimer_accepted", False),
                 disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
-                state=user.get("state")
+                state=user.get("state"),
+                harvest_age_threshold=user_harvest_age(user)
             )
         )
     
@@ -3061,7 +3101,8 @@ async def apple_sign_in(data: AppleSignInRequest):
                     total_scans_used=existing_user.get("total_scans_used", 0),
                     disclaimer_accepted=existing_user.get("disclaimer_accepted", False),
                     disclaimer_accepted_at=existing_user.get("disclaimer_accepted_at"),
-                    state=existing_user.get("state")
+                    state=existing_user.get("state"),
+                    harvest_age_threshold=user_harvest_age(existing_user)
                 )
             )
     
@@ -3119,7 +3160,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False),
         disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
-        state=user.get("state")
+        state=user.get("state"),
+        harvest_age_threshold=user_harvest_age(user)
     )
 
 @api_router.put("/auth/profile", response_model=UserResponse)
@@ -3167,6 +3209,11 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
             updates["state"] = data.state.upper()
         else:
             raise HTTPException(status_code=400, detail="State must be a 2-letter code (e.g., TX, IA)")
+
+    if data.harvest_age_threshold is not None:
+        if data.harvest_age_threshold not in HARVEST_AGE_OPTIONS:
+            raise HTTPException(status_code=400, detail="Harvest age must be one of 2.0, 2.5, ... 6.5 (in half-year steps)")
+        updates["harvest_age_threshold"] = data.harvest_age_threshold
     
     if updates:
         query = users_table.update().where(users_table.c.id == user["id"]).values(**updates)
@@ -3184,7 +3231,8 @@ async def update_profile(data: ProfileUpdate, user: dict = Depends(get_current_u
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user.get("disclaimer_accepted", False),
         disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
-        state=user.get("state")
+        state=user.get("state"),
+        harvest_age_threshold=user_harvest_age(user)
     )
 
 # ============ ACCOUNT DELETION ============
@@ -3376,7 +3424,8 @@ async def accept_disclaimer(data: DisclaimerAccept, user: dict = Depends(get_cur
         total_scans_used=user.get("total_scans_used", 0),
         disclaimer_accepted=user["disclaimer_accepted"],
         disclaimer_accepted_at=user.get("disclaimer_accepted_at"),
-        state=user.get("state")
+        state=user.get("state"),
+        harvest_age_threshold=user_harvest_age(user)
     )
 
 # ============ SUBSCRIPTION HELPERS ============
@@ -4271,7 +4320,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
     existing_scan = await claim_submission(user["id"], submission_id)
     if existing_scan:
         logger.info("Duplicate submission %s -> returning scan %s (no charge)", submission_id, existing_scan["id"])
-        return build_scan_response(existing_scan, images=await fetch_scan_images(existing_scan["id"]))
+        return build_scan_response(existing_scan, images=await fetch_scan_images(existing_scan["id"]), harvest_age=user_harvest_age(user))
 
     uploaded_keys: List[str] = []
     try:
@@ -4475,7 +4524,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
 
         # ── Step 10: Build response ──
         config = RegionCalibrationConfig
-        return DeerAnalysisResponse(
+        return apply_harvest_age(DeerAnalysisResponse(
             id=scan_id,
             user_id=user["id"],
             local_image_id=data.local_image_id,
@@ -4537,7 +4586,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             date_source=scan_context.get("date_source"),
             season_phase_confidence=scan_context.get("season_confidence"),
             season_phase_reason=scan_context.get("season_reason"),
-        )
+        ), user_harvest_age(user))
 
     except HTTPException:
         raise
@@ -4581,7 +4630,8 @@ async def get_user_scans(
     ).order_by(scans_table.c.created_at.desc()).limit(limit).offset(skip)
     scans = await database.fetch_all(query)
     
-    return [build_scan_response(dict(s)) for s in scans]
+    harvest_age = user_harvest_age(user)
+    return [build_scan_response(dict(s), harvest_age=harvest_age) for s in scans]
 
 @api_router.get("/scans/stats/summary")
 async def get_scan_stats(user: dict = Depends(get_current_user)):
@@ -4589,8 +4639,10 @@ async def get_scan_stats(user: dict = Depends(get_current_user)):
     scans = await database.fetch_all(query)
     
     total = len(scans)
-    harvest = sum(1 for s in scans if s["recommendation"] == "HARVEST")
-    pass_count = sum(1 for s in scans if s["recommendation"] == "PASS")
+    harvest_age = user_harvest_age(user)
+    recommendations = [build_scan_response(dict(s), harvest_age=harvest_age).recommendation for s in scans]
+    harvest = recommendations.count("HARVEST")
+    pass_count = recommendations.count("PASS")
     
     return {"total_scans": total, "harvest_count": harvest, "pass_count": pass_count}
 
@@ -4604,7 +4656,7 @@ async def get_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    return build_scan_response(dict(scan), images=await fetch_scan_images(scan_id))
+    return build_scan_response(dict(scan), images=await fetch_scan_images(scan_id), harvest_age=user_harvest_age(user))
 
 @api_router.put("/scans/{scan_id}", response_model=DeerAnalysisResponse)
 async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_current_user)):
@@ -4712,7 +4764,7 @@ async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_c
     query = scans_table.select().where(scans_table.c.id == scan_id)
     scan = await database.fetch_one(query)
 
-    return build_scan_response(dict(scan))
+    return build_scan_response(dict(scan), harvest_age=user_harvest_age(user))
 
 
 # ============ FAVORITES & TAGS ENDPOINTS ============
@@ -4750,7 +4802,7 @@ async def toggle_favorite(
     
     # Return updated scan
     scan = await database.fetch_one(query)
-    return build_scan_response(dict(scan))
+    return build_scan_response(dict(scan), harvest_age=user_harvest_age(user))
 
 
 @api_router.post("/scans/{scan_id}/tags", response_model=DeerAnalysisResponse)
@@ -4777,20 +4829,18 @@ async def update_tags(
         if len(tag) > 30:
             raise HTTPException(status_code=400, detail="Tag must be 30 characters or less")
     
-    # Clean tags (lowercase, trim whitespace)
-    clean_tags = [tag.strip().lower() for tag in data.tags if tag.strip()]
-    unique_tags = list(dict.fromkeys(clean_tags))  # Remove duplicates, preserve order
+    # Clean tags: keep the hunter's casing, trim whitespace, drop case-insensitive duplicates (first spelling wins)
+    unique_tags = list({tag.strip().lower(): tag.strip() for tag in reversed(data.tags) if tag.strip()}.values())[::-1]
     
     # Update tags
-    import json
     update_query = scans_table.update().where(
         scans_table.c.id == scan_id
-    ).values(tags=json.dumps(unique_tags))
+    ).values(tags=unique_tags)
     await database.execute(update_query)
     
     # Return updated scan
     scan = await database.fetch_one(query)
-    return build_scan_response(dict(scan))
+    return build_scan_response(dict(scan), harvest_age=user_harvest_age(user))
 
 
 @api_router.get("/scans/tags/all")
@@ -5847,7 +5897,7 @@ Provide your complete REVISED analysis in JSON format."""
     query = scans_table.select().where(scans_table.c.id == scan_id)
     updated_scan = await database.fetch_one(query)
     
-    return build_scan_response(dict(updated_scan), images=await fetch_scan_images(scan_id))
+    return build_scan_response(dict(updated_scan), images=await fetch_scan_images(scan_id), harvest_age=user_harvest_age(user))
 
 @api_router.delete("/scans/{scan_id}")
 async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):

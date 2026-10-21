@@ -41,6 +41,7 @@ import {
   Download,
   Smartphone,
   MapPin,
+  Target,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../stores/authStore';
 import { useImageStore } from '../../stores/imageStore';
@@ -50,6 +51,7 @@ import { LocalImageService } from '../../services/LocalImageService';
 import { appUpdateService, VersionCheckResponse } from '../../services/AppUpdateService';
 import { UpdateModal } from '../../components/UpdateModal';
 import { StatePicker, getStateName } from '../../components/StatePicker';
+import { HARVEST_AGE_OPTIONS, formatHarvestAge } from '../../utils/ageEstimate';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 
 // Constants for Privacy & Legal URLs
@@ -116,6 +118,10 @@ export default function ProfileScreen() {
   const [showStatePicker, setShowStatePicker] = useState(false);
   const [isSavingState, setIsSavingState] = useState(false);
 
+  // Harvest age picker state
+  const [showHarvestAgePicker, setShowHarvestAgePicker] = useState(false);
+  const [isSavingHarvestAge, setIsSavingHarvestAge] = useState(false);
+
   // Get biometric state from auth store
   const { biometric, checkBiometricAvailability, enableBiometric, disableBiometric } = useAuthStore();
 
@@ -143,6 +149,22 @@ export default function ProfileScreen() {
       fetchScanStats();
     }, [fetchScanStats])
   );
+
+  // Handle harvest age selection
+  const handleHarvestAgeSelect = async (age: number) => {
+    setShowHarvestAgePicker(false);
+    setIsSavingHarvestAge(true);
+    try {
+      await authAPI.updateProfile({ harvest_age_threshold: age });
+      updateUser({ harvest_age_threshold: age });
+      fetchScanStats();
+    } catch (error: any) {
+      console.error('Failed to update harvest age:', error);
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to update harvest age');
+    } finally {
+      setIsSavingHarvestAge(false);
+    }
+  };
 
   // Handle home state selection
   const handleStateSelect = async (stateCode: string | null) => {
@@ -1053,6 +1075,34 @@ export default function ProfileScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Harvest Age Card */}
+        <TouchableOpacity
+          testID="harvest-age-card"
+          style={styles.homeStateCard}
+          onPress={() => setShowHarvestAgePicker(true)}
+          disabled={isSavingHarvestAge}
+          activeOpacity={0.7}
+        >
+          <View style={styles.homeStateLeft}>
+            <View style={styles.homeStateIconContainer}>
+              <Target size={22} color={colors.primary} />
+            </View>
+            <View style={styles.homeStateContent}>
+              <Text style={styles.homeStateTitle}>Harvest Age</Text>
+              <Text style={styles.homeStateSubtitle}>Deer this age or older are marked HARVEST</Text>
+            </View>
+          </View>
+          {isSavingHarvestAge ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <View style={styles.homeStateBadge}>
+              <Text testID="harvest-age-value" style={styles.homeStateBadgeText}>
+                {formatHarvestAge(user?.harvest_age_threshold)}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
         {/* Local Storage Card */}
         <View style={styles.storageCard}>
           <View style={styles.storageHeader}>
@@ -1333,6 +1383,51 @@ export default function ProfileScreen() {
         title="Select Home State"
         allowClear={true}
       />
+
+      {/* Harvest Age Picker Modal */}
+      <Modal
+        visible={showHarvestAgePicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowHarvestAgePicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowHarvestAgePicker(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Harvest Age</Text>
+              <TouchableOpacity onPress={() => setShowHarvestAgePicker(false)} hitSlop={12}>
+                <X size={24} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalSubtitle}>
+              Deer this age or older are marked HARVEST. Your saved scans update too.
+            </Text>
+            <ScrollView style={styles.harvestAgeList}>
+              {HARVEST_AGE_OPTIONS.map((age) => {
+                const selected = (user?.harvest_age_threshold ?? 3.5) === age;
+                return (
+                  <TouchableOpacity
+                    key={age}
+                    testID={`harvest-age-option-${age.toFixed(1)}`}
+                    style={[styles.intervalOption, selected && styles.intervalOptionSelected]}
+                    onPress={() => handleHarvestAgeSelect(age)}
+                  >
+                    <Text style={[styles.intervalOptionText, selected && styles.intervalOptionTextSelected]}>
+                      {age === 6.5 ? '6.5+ years' : `${age.toFixed(1)} years`}
+                      {age === 3.5 ? ' (default)' : ''}
+                    </Text>
+                    {selected && <Check size={20} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Cleanup Interval Picker Modal */}
       <Modal
@@ -1976,6 +2071,9 @@ const styles = StyleSheet.create({
   },
 
   // Home State Card (new prominent position)
+  harvestAgeList: {
+    maxHeight: 420,
+  },
   homeStateCard: {
     backgroundColor: colors.backgroundCard,
     borderRadius: borderRadius.lg,

@@ -1,0 +1,39 @@
+{
+  "summary": "All 3 iteration_4 features verified end-to-end on preview backend (viewport 390x844). (1) BACKEND tag casing: POST /api/scans/{id}/tags with [\"Big 8\",\" big 8\",\"Creek Stand\",\"CREEK stand\"] stores/returns exactly [\"Big 8\",\"Creek Stand\"] - case preserved, case-insensitive dedupe, first spelling wins (test_update_tags_preserves_casing_and_dedupes PASS). Variant [\"BIG 8\",\"big 8\",\"Big 8\"] -> [\"BIG 8\"] confirms first-wins order. GET /api/scans and GET /api/scans/tags/all return 200. tags/all returns casing preserved: ['Big 8','Creek Stand','big 8']. 6/6 pytest in /app/backend/tests/test_tags_and_reasoning.py PASS (3.22s). (2) TagsEditor dedup client-side: on scan a07ffa15 (existing tag ['Big 8']) opened Add Tag modal, typed 'big 8', pressed Enter -> addTag() short-circuits via tags.some(t=>t.toLowerCase()===cleanTag.toLowerCase()); server-side GET verifies tags still ['Big 8']. (3) History tag-chip filtering: seeded 3 scans - a07ffa15:['Big 8'], 766f61f9:['Creek Stand','Big 8'], aa43f770:['big 8'] (legacy lowercase). Card chips render exact casing: card-tag-'Big 8'(x2), card-tag-'Creek Stand'(x1), card-tag-'big 8'(x1). Tapping card-tag-'Big 8' opens filter panel and filters list from 7 scans -> 3 scans (both 'Big 8' AND 'big 8' scans match case-insensitively). Tapping active filter chip in Tags row clears to 7. Tap card-tag-'Creek Stand' -> 1 scan. Tap card-tag-'big 8' (legacy) -> 3 scans (same case-insensitive match as 'Big 8'). testID history-filter-toggle exists. (4) Confidence reasoning card: seeded raw_response.confidence_reasoning on scan a07ffa15 via direct DB UPDATE. Opened scan-result/a07ffa15 -> 'Why this confidence?' title visible, testID confidence-reasoning-text present with text 'Mock: clear broadside view of chest and belly, but legs are partly hidden by grass.' Opened scan-result/aa43f770 (no CR) -> card hidden (count=0). .env EXPO_PUBLIC_API_BASE_URL was temporarily pointed to preview URL during testing and REVERTED to https://ironstag-production.up.railway.app at the end. Multiphoto user left with tags: a07ffa15=['Big 8'], 766f61f9=['Creek Stand','Big 8'], aa43f770=['big 8'] and confidence_reasoning on a07ffa15.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "history.tsx allTags builder", "issue": "The Tags filter row shows LAST-SEEN casing instead of FIRST-SPELLING-WINS. In /app/frontend/app/(tabs)/history.tsx line 273-277, the Map keyed by lowercase overwrites earlier entries, so if any scan happens to carry a legacy lowercase 'big 8' tag, the filter row chip renders as 'big 8' even though two other scans tagged it as 'Big 8'. Observed: Tags row rendered 'big 8' | 'Creek Stand' (lowercase big 8). Not functionality-breaking (case-insensitive match still works), but inconsistent with backend tag endpoint which keeps first-spelling-wins. Fix: iterate scans in order and only setDefault into the Map (if (!map.has(key)) map.set(key, tag.trim())), OR sort scans by created_at desc and reduce.", "testID": "tag-filter-<tag>", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "History View child", "issue": "Still printing 'Unexpected text node: . A text node cannot be a child of a <View>.' on every History render (carried over from iteration_3). Non-fatal but should be hunted down - likely a stray whitespace between <View> children in dateSeasonRow or tagsRow in /app/frontend/app/(tabs)/history.tsx."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_tags_and_reasoning.py",
+    "/app/test_reports/pytest/tags_and_reasoning.xml",
+    "/app/backend/tests/_seed_iter4.py",
+    "/app/backend/tests/_seed_cr.py"
+  ],
+  "action_items": [
+    "Make the History 'Tags:' filter row chip label follow first-spelling-wins (same as backend). /app/frontend/app/(tabs)/history.tsx line ~273: change Map builder from new Map(... .map(tag=>[key,tag])) to a loop that only inserts if the key is absent (first-spelling-wins), or iterate scans sorted by created_at desc. This will make the chip show 'Big 8' instead of 'big 8' once a correctly-cased scan exists.",
+    "Fix the lingering 'Unexpected text node: ' warning in history.tsx (same issue flagged in iteration_3).",
+    "Mirror backend tag-serialisation fix (from iter_3) + confidence_reasoning plumbing to Railway production before shipping."
+  ],
+  "critical_code_review_comments": [
+    "/app/frontend/app/(tabs)/history.tsx line 273-277: Map(...).values() returns LAST value for each key. For case-insensitive dedup where you want FIRST spelling, convert to a reduce or if-not-has loop. Current behavior ties display casing to iteration order of scans, which is server-ordered - fragile."
+  ],
+  "updated_files": [
+    "/app/frontend/.env (temporarily switched EXPO_PUBLIC_API_BASE_URL to preview URL for testing; REVERTED to https://ironstag-production.up.railway.app at the end)",
+    "/app/backend/tests/test_tags_and_reasoning.py (new pytest suite - 6 tests, all PASS)",
+    "/app/backend/tests/_seed_iter4.py, _seed_cr.py (seed helpers)"
+  ],
+  "success_rate": {"backend": "100% (6/6 pytest PASS)", "frontend": "100% core features (card tag chips preserve casing, tap-to-filter works, case-insensitive filter match works, TagsEditor case-insensitive dedup works, confidence_reasoning card renders when present and hides when absent) - one minor cosmetic bug in filter-row chip label"},
+  "seed_data_creation": "On multiphoto.test@ironstag.dev set tags: a07ffa15=['Big 8'], 766f61f9=['Creek Stand','Big 8'], aa43f770=['big 8' legacy lowercase]. Also set scans.raw_response.confidence_reasoning on a07ffa15 directly via Neon SQL to 'Mock: clear broadside view of chest and belly, but legs are partly hidden by grass.' so the scan-result card appears without needing a fresh mock scan.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Preview backend already has: tag casing-preserving POST, case-insensitive dedup, confidence_reasoning plumbed through build_scan_response. Scan a07ffa15 on multiphoto user has confidence_reasoning in raw_response. frontend/.env EXPO_PUBLIC_API_BASE_URL points to Railway prod which does NOT have these backend features - any UI test must flip it to the preview URL first and restart expo. History card tag chip testID is `card-tag-<exact_tag>` (space allowed, e.g. 'card-tag-Big 8'). Tag filter row chip testID is `tag-filter-<label>` where <label> is whatever the Map produced (currently LAST-SEEN casing - cosmetic bug noted). Login flow: landing->Get Started->/login->inputs nth(0)=email nth(1)=password->Sign In->(tabs)/home. Direct deep-link to /scan-result/<id> loses auth state; always navigate via History row.",
+  "rca_of_issue": "The one minor bug (filter-row chip shows lowercase when a legacy lowercase scan is present): /app/frontend/app/(tabs)/history.tsx builds allTags via `new Map(flatMap(scan.tags).map(t=>[t.toLowerCase(),t.trim()])).values()`. The Map's constructor overwrites on duplicate keys with the LAST pair, so a later lowercase 'big 8' overwrites an earlier 'Big 8'. Backend's dedup is first-spelling-wins (reversed trick). The two layers are inconsistent. Fix: `const map = new Map(); scans.flatMap(s=>s.tags||[]).forEach(t=>{const k=t.trim().toLowerCase(); if(!map.has(k)) map.set(k, t.trim());}); const allTags = [...map.values()].filter(Boolean).sort((a,b)=>a.localeCompare(b));`"
+}

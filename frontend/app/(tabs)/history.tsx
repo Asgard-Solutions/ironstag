@@ -26,8 +26,7 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
-import { AgeFields, describeAge } from '../../utils/ageEstimate';
+import { AgeFields, describeAge, DEFAULT_HARVEST_AGE } from '../../utils/ageEstimate';
 
 interface Scan extends AgeFields {
   id: string;
@@ -106,7 +105,7 @@ function getDisplayRecommendation(scan: Scan): 'HARVEST' | 'PASS' | null {
   if (deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
   }
-  return deerAge >= HARVEST_RECOMMENDATION_MIN_AGE ? 'HARVEST' : 'PASS';
+  return deerAge >= (scan.harvest_age_threshold ?? DEFAULT_HARVEST_AGE) ? 'HARVEST' : 'PASS';
 }
 
 // Component to handle async image loading
@@ -183,6 +182,7 @@ export default function HistoryScreen() {
   const [filters, setFilters] = useState({
     deer_sex: '',
     recommendation: '',
+    tag: '',
   });
   
   // Track which scans have labels (for feedback badge)
@@ -269,6 +269,14 @@ export default function HistoryScreen() {
     }
   };
 
+  // Unique tags across all scans (case-insensitive), sorted for the tag filter row
+  const tagsByKey = new Map<string, string>();
+  scans.flatMap((scan) => scan.tags || []).forEach((tag) => {
+    const key = tag.trim().toLowerCase();
+    if (key && !tagsByKey.has(key)) tagsByKey.set(key, tag.trim()); // first spelling wins (matches backend)
+  });
+  const allTags = Array.from(tagsByKey.values()).sort((a, b) => a.localeCompare(b));
+
   const filteredScans = scans.filter((scan) => {
     const displayRecommendation = getDisplayRecommendation(scan);
 
@@ -284,6 +292,11 @@ export default function HistoryScreen() {
     
     // Apply recommendation filter
     if (filters.recommendation && displayRecommendation !== filters.recommendation) {
+      return false;
+    }
+
+    // Apply tag filter
+    if (filters.tag && !(scan.tags || []).some((tag) => tag.trim().toLowerCase() === filters.tag.toLowerCase())) {
       return false;
     }
     
@@ -332,12 +345,12 @@ export default function HistoryScreen() {
   });
 
   const clearFilters = () => {
-    setFilters({ deer_sex: '', recommendation: '' });
+    setFilters({ deer_sex: '', recommendation: '', tag: '' });
     setSearchQuery('');
     setShowFavoritesOnly(false);
   };
 
-  const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery || showFavoritesOnly;
+  const hasActiveFilters = !!(filters.deer_sex || filters.recommendation || filters.tag || searchQuery || showFavoritesOnly);
 
   const renderScanCard = ({ item }: { item: Scan }) => {
     // Calculate calibrated confidence and check age uncertainty
@@ -405,7 +418,7 @@ export default function HistoryScreen() {
                     ? format(new Date(item.date_taken + 'T12:00:00'), 'MMM d, yyyy')
                     : 'No date set'}
                 </Text>
-                {getSeasonLabel(item.season_phase) && (
+                {!!getSeasonLabel(item.season_phase) && (
                   <>
                     <View style={styles.dateDot} />
                     <Leaf size={11} color={colors.primary} />
@@ -417,9 +430,18 @@ export default function HistoryScreen() {
               {item.tags && item.tags.length > 0 && (
                 <View style={styles.tagsRow}>
                   {item.tags.slice(0, 2).map((tag, index) => (
-                    <View key={index} style={styles.tagChipSmall}>
+                    <TouchableOpacity
+                      key={index}
+                      testID={`card-tag-${tag}`}
+                      style={styles.tagChipSmall}
+                      hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                      onPress={() => {
+                        setFilters((prev) => ({ ...prev, tag }));
+                        setShowFilters(true);
+                      }}
+                    >
                       <Text style={styles.tagChipSmallText}>{tag}</Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {item.tags.length > 2 && (
                     <Text style={styles.moreTagsText}>+{item.tags.length - 2}</Text>
@@ -562,7 +584,7 @@ export default function HistoryScreen() {
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
-              {searchQuery && (
+              {!!searchQuery && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
                   <X size={18} color={colors.textMuted} />
                 </TouchableOpacity>
@@ -580,6 +602,7 @@ export default function HistoryScreen() {
               />
             </TouchableOpacity>
             <TouchableOpacity
+              testID="history-filter-toggle"
               style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
               onPress={() => setShowFilters(!showFilters)}
             >
@@ -634,6 +657,32 @@ export default function HistoryScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {allTags.length > 0 && (
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>Tags:</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.tagFilterScroll}
+                  >
+                    {['', ...allTags].map((tag) => {
+                      const active = filters.tag.toLowerCase() === tag.toLowerCase();
+                      return (
+                        <TouchableOpacity
+                          key={tag || 'all'}
+                          testID={`tag-filter-${tag || 'all'}`}
+                          style={[styles.filterChip, active && styles.filterChipActive]}
+                          onPress={() => setFilters({ ...filters, tag: active ? '' : tag })}
+                        >
+                          <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                            {tag || 'All'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
               {hasActiveFilters && (
                 <TouchableOpacity style={styles.clearFilters} onPress={clearFilters}>
                   <Text style={styles.clearFiltersText}>Clear All Filters</Text>
@@ -851,6 +900,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  tagFilterScroll: {
+    gap: spacing.sm,
+    paddingRight: spacing.md,
   },
   filterLabel: {
     color: colors.textSecondary,
