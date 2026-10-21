@@ -589,23 +589,29 @@ def run_model_analysis_pass(
     prompt_version: str,
     context: Dict[str, Any],
     post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
-    temperature: float = 0,
 ) -> Optional[Dict[str, Any]]:
-    response = openai_client.chat.completions.create(
-        **build_chat_completion_request(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_content,
-                },
-            ],
-            max_output_tokens=max_output_tokens,
-            temperature=temperature,
+    if ANALYSIS_MOCK_MODEL:
+        response_text = build_mock_model_response(user_content, context)
+        if MODEL_CALL_OBSERVER is not None:
+            MODEL_CALL_OBSERVER({"model": model, "mock": True, "prompt_tokens": 0, "completion_tokens": 0, "latency_s": 0.0})
+    else:
+        call_started = time.perf_counter()
+        response = openai_client.chat.completions.create(
+            **build_chat_completion_request(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_content,
+                    },
+                ],
+                max_output_tokens=max_output_tokens,
+                temperature=0,
+            )
         )
         response_text = response.choices[0].message.content or ""
         if MODEL_CALL_OBSERVER is not None:
@@ -858,7 +864,7 @@ class DeerAnalysisResponse(BaseModel):
     created_at: datetime
     # Calibration fields
     age_uncertain: Optional[bool] = None
-    confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
+    confidence_breakdown: Optional[Dict[str, Optional[int]]] = None  # {"age": X|None, "recommendation": Y}
     calibration_version: Optional[str] = None
     # Score audit trail (structured, versioned)
     score_audit: Optional[Dict[str, Any]] = None
@@ -2843,6 +2849,8 @@ def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = Non
         visible_age_cues=scan.get("visible_age_cues") or [],
         consensus=(scan.get("raw_response") or {}).get("consensus"),
         confidence_reasoning=(scan.get("raw_response") or {}).get("confidence_reasoning"),
+        multi_image=(scan.get("raw_response") or {}).get("multi_image"),
+        images=images,
         # Cloud image storage (R2) - for cross-device image access
         image_url=scan.get("image_url"),
         # Favorites and Tags
@@ -4328,28 +4336,16 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             scan_context.get("season_phase"),
         )
 
-        # ── Step 5: Call OpenAI model ──
-        logger.info("Step 5: Calling OpenAI model %s", selected_model)
-        user_content = [
-            {
-                "type": "text",
-                "text": (
-                    "Analyze this image and return JSON only.\n\n"
-                    f"{context_text}\n\n"
-                    "Use region and season as supporting context only. "
-                    "Visible body anatomy must dominate the age estimate."
-                ),
-            },
-            {"type": "image_url", "image_url": {"url": image_data, "detail": "high"}},
-        ]
+        # ── Step 5: One model request containing every evidence photo ──
+        request_parts = build_analysis_request(context_text, evidence)
 
         try:
             analysis = run_analysis_with_consensus(
                 model=selected_model,
-                system_prompt=build_analysis_system_prompt(),
-                user_content=user_content,
-                max_output_tokens=2000,
-                prompt_version=ANALYSIS_PROMPT_VERSION,
+                system_prompt=request_parts["system_prompt"],
+                user_content=request_parts["user_content"],
+                max_output_tokens=request_parts["max_output_tokens"],
+                prompt_version=prompt_version,
                 context=scan_context,
             )
         except openai.OpenAIError as e:
@@ -4366,26 +4362,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 "detected_subject": "Unknown",
                 "message": "Could not analyze the image. Please try again with a clearer photo.",
             }
-        else:
-            analysis = maybe_apply_selective_consensus(
-                initial_analysis=initial_analysis,
-                total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
-                pass_builder=lambda: run_model_analysis_pass(
-                    model=selected_model,
-                    system_prompt=build_analysis_system_prompt(),
-                    user_content=user_content,
-                    max_output_tokens=2000,
-                    prompt_version=ANALYSIS_PROMPT_VERSION,
-                    context=scan_context,
-                    temperature=0.2,
-                ),
-            )
-            if analysis.get("consensus"):
-                logger.info(
-                    "Selective consensus applied for scan local_image_id %s: %s",
-                    data.local_image_id,
-                    analysis.get("consensus"),
-                )
+        elif analysis.get("consensus"):
+            logger.info("Selective consensus applied: %s", analysis.get("consensus"))
 
         if not analysis.get("is_valid_deer", False):
             detected = analysis.get("detected_subject", "Unknown")
@@ -4549,7 +4527,10 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             visible_age_cues=calibrated_analysis.get("visible_age_cues") or [],
             consensus=calibrated_analysis.get("consensus"),
             confidence_reasoning=calibrated_analysis.get("confidence_reasoning"),
-            # Cloud image storage (R2)
+            multi_image=analysis.get("multi_image"),
+            range_reasoning=calibrated_analysis.get("range_reasoning"),
+            range_coverage_confidence=calibrated_analysis.get("range_coverage_confidence"),
+            images=[scan_image_public_record(r) for r in image_rows],
             image_url=image_url,
             date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
             season_phase=scan_context.get("season_phase"),
@@ -5736,44 +5717,19 @@ Provide your complete REVISED analysis in JSON format."""
                 parsed_analysis["is_valid_deer"] = True
                 return parsed_analysis
 
-            user_content = [
-                {"type": "text", "text": user_message},
-                {"type": "image_url", "image_url": {"url": image_data, "detail": "high"}},
-            ]
+            user_content = build_image_user_content(user_message, evidence)
 
             analysis = run_analysis_with_consensus(
                 model=selected_model,
                 system_prompt=build_reanalysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else ""),
                 user_content=user_content,
-                max_output_tokens=2000,
-                prompt_version=REANALYSIS_PROMPT_VERSION,
+                max_output_tokens=1500 + (400 * (len(evidence) - 1)),
+                prompt_version=reanalysis_prompt_version,
                 context=reanalysis_context,
                 post_parse=apply_reanalysis_overrides,
             )
-
-            if initial_analysis is None:
-                analysis = None
-            else:
-                analysis = maybe_apply_selective_consensus(
-                    initial_analysis=initial_analysis,
-                    total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
-                    pass_builder=lambda: run_model_analysis_pass(
-                        model=selected_model,
-                        system_prompt=build_reanalysis_system_prompt(),
-                        user_content=user_content,
-                        max_output_tokens=2000,
-                        prompt_version=REANALYSIS_PROMPT_VERSION,
-                        context=reanalysis_context,
-                        post_parse=apply_reanalysis_overrides,
-                        temperature=0.2,
-                    ),
-                )
-                if analysis.get("consensus"):
-                    logger.info(
-                        "Selective consensus applied for reanalysis scan %s: %s",
-                        scan_id,
-                        analysis.get("consensus"),
-                    )
+            if analysis and analysis.get("consensus"):
+                logger.info("Selective consensus applied for reanalysis scan %s: %s", scan_id, analysis.get("consensus"))
 
             if analysis:
                 analysis = apply_photo_set_guards(analysis, all_images, evidence, duplicates)

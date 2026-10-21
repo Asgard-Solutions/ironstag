@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import calibration_activation
 import confidence_calibration as cc
-from region_calibration import RegionCalibrationConfig, calibrate_from_dict_with_region
+import region_calibration as rc  # module attribute access: other tests reload region_calibration
 
 COMPAT = {"model": "gpt-4o", "prompt_version": "age-v5", "preprocessing_version": "img-prep-v1"}
 RUNTIME = dict(COMPAT)
@@ -72,7 +72,7 @@ def test_sparse_bins_fall_back_instead_of_inflating():
 
 def test_incompatible_artifact_is_not_applied_and_reason_recorded():
     art = dict(_art(), _status="active")
-    _, out = calibrate_from_dict_with_region(_analysis(analysis_model="gpt-4.1"), state="IA", artifacts=[art],
+    _, out = rc.calibrate_from_dict_with_region(_analysis(analysis_model="gpt-4.1"), state="IA", artifacts=[art],
                                              preprocessing_version="img-prep-v1")
     shown = out["score_audit"]["displayed_score"]
     assert shown["target"] == cc.HEURISTIC_TARGET and shown["method"].startswith("heuristic")
@@ -81,7 +81,7 @@ def test_incompatible_artifact_is_not_applied_and_reason_recorded():
 
 def test_compatible_active_artifact_drives_score_with_target():
     art = dict(_art(), _status="active")
-    _, out = calibrate_from_dict_with_region(_analysis(), state="IA", artifacts=[art], preprocessing_version="img-prep-v1")
+    _, out = rc.calibrate_from_dict_with_region(_analysis(), state="IA", artifacts=[art], preprocessing_version="img-prep-v1")
     shown = out["score_audit"]["displayed_score"]
     assert shown["target"] == "exact_age_class" and shown["method_version"] == art["artifact_id"]
     assert out["age_confidence"] == round(cc.apply_artifact(art, 70)[0] * 100)
@@ -89,15 +89,15 @@ def test_compatible_active_artifact_drives_score_with_target():
 
 def test_shadow_artifact_is_recorded_but_not_displayed():
     art = dict(_art(), _status="shadow")
-    _, base = calibrate_from_dict_with_region(_analysis(), state="IA")
-    _, out = calibrate_from_dict_with_region(_analysis(), state="IA", artifacts=[art], preprocessing_version="img-prep-v1")
+    _, base = rc.calibrate_from_dict_with_region(_analysis(), state="IA")
+    _, out = rc.calibrate_from_dict_with_region(_analysis(), state="IA", artifacts=[art], preprocessing_version="img-prep-v1")
     assert out["age_confidence"] == base["age_confidence"]
     assert out["score_audit"]["shadow_calibration"][0]["artifact_id"] == art["artifact_id"]
 
 
 def test_production_default_unchanged_without_artifacts():
-    assert RegionCalibrationConfig.HEURISTIC_VERSION == "v2" and RegionCalibrationConfig.REGION_MAPPING_VERSION == "v1"
-    _, out = calibrate_from_dict_with_region(_analysis(), state="TX")
+    assert rc.RegionCalibrationConfig.HEURISTIC_VERSION == "v2" and rc.RegionCalibrationConfig.REGION_MAPPING_VERSION == "v1"
+    _, out = rc.calibrate_from_dict_with_region(_analysis(), state="TX")
     assert out["region_key"] == "south_texas"
     assert out["score_audit"]["displayed_score"]["target"] == cc.HEURISTIC_TARGET
 
@@ -105,22 +105,22 @@ def test_production_default_unchanged_without_artifacts():
 def test_heuristic_v3_counts_visual_evidence_once_and_drops_antler_penalty():
     qa = _analysis(image_quality_bucket="poor", quality_factors={"blur": "high", "occlusion": "high"},
                    antler_points=None)
-    _, v2 = calibrate_from_dict_with_region(qa, state="IA")
-    RegionCalibrationConfig.HEURISTIC_VERSION = "v3"
+    _, v2 = rc.calibrate_from_dict_with_region(qa, state="IA")
+    rc.RegionCalibrationConfig.HEURISTIC_VERSION = "v3"
     try:
-        _, v3 = calibrate_from_dict_with_region(qa, state="IA")
+        _, v3 = rc.calibrate_from_dict_with_region(qa, state="IA")
     finally:
-        RegionCalibrationConfig.HEURISTIC_VERSION = "v2"
+        rc.RegionCalibrationConfig.HEURISTIC_VERSION = "v2"
     assert v3["age_confidence"] > v2["age_confidence"]  # not stacked: 0.80 instead of 0.80*0.86*0.82*0.9
     assert v3["age_confidence"] <= 70 * 0.75  # still never above the scaled input (no bonus)
 
 
 def test_region_mapping_v2_keeps_texas_uncertain():
-    RegionCalibrationConfig.REGION_MAPPING_VERSION = "v2"
+    rc.RegionCalibrationConfig.REGION_MAPPING_VERSION = "v2"
     try:
-        _, out = calibrate_from_dict_with_region(_analysis(), state="TX")
+        _, out = rc.calibrate_from_dict_with_region(_analysis(), state="TX")
     finally:
-        RegionCalibrationConfig.REGION_MAPPING_VERSION = "v1"
+        rc.RegionCalibrationConfig.REGION_MAPPING_VERSION = "v1"
     assert out["region_key"] == "unknown"
 
 

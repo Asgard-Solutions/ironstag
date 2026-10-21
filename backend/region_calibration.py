@@ -43,6 +43,7 @@ from confidence_calibration import (
     TARGETS,
     apply_artifact,
     check_compatibility,
+    select_artifact,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,9 +88,6 @@ class RegionCalibrationConfig:
     LOW_ANTLER_INFO_PENALTY: float = float(os.environ.get('LOW_ANTLER_INFO_PENALTY', '0.1'))
     UNKNOWN_SEX_PENALTY: float = float(os.environ.get('UNKNOWN_SEX_PENALTY', '0.05'))
     DOE_UNCERTAINTY_THRESHOLD_OFFSET: float = float(os.environ.get('DOE_UNCERTAINTY_THRESHOLD_OFFSET', '0.03'))
-    PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD: float = float(
-        os.environ.get('PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD', '0.18')
-    )
 
 
 # ============================================================================
@@ -576,9 +574,7 @@ def apply_uncertainty_gate(
     threshold = REGION_UNCERTAINTY_THRESHOLDS.get(region_key, 0.68)
     deer_sex_normalized = (deer_sex or "").strip().lower()
 
-    if predicted_age is not None:
-        threshold = min(threshold, RegionCalibrationConfig.PREDICTED_AGE_UNCERTAINTY_MAX_THRESHOLD)
-
+    # The model returning a numeric age is not evidence that the age is reliable, so it never lowers the bar.
     if deer_sex_normalized == "doe" and predicted_age is not None:
         threshold = max(0.12, threshold - RegionCalibrationConfig.DOE_UNCERTAINTY_THRESHOLD_OFFSET)
 
@@ -679,6 +675,8 @@ def calibrate_with_region(
     # Validated, versioned artifacts (active ones drive the score; shadow ones are only recorded)
     runtime = runtime or {}
     if artifacts:
+        # Only this scan's region artifacts (first), then global ones; never another region's curve.
+        artifacts = select_artifact(artifacts, region_key.value)
         for art in artifacts:
             entry = {"artifact_id": art.get("artifact_id"), "status": art.get("_status"), "target": art.get("target")}
             reasons = check_compatibility(art, model=runtime.get("model"), prompt_version=runtime.get("prompt_version"),
