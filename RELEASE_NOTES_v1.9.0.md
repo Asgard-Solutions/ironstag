@@ -95,6 +95,7 @@ This release is about honest answers: more photos, clear ranges, and a straight 
 
 ## Version History
 - **v1.9.0** (June 2026) - Multi-photo scans, honest age ranges, clearer confidence
+- **v1.8.0** (July 2026) - Species-specific AI aging, security hardening, Android 16 support
 - **v1.6.1** (April 15, 2026) - Bug fixes and security improvements
 - **v1.6.0** (April 15, 2026) - Boone & Crockett Scoring, Learn Section, Enhanced UI
 - **v1.2.0** (January 30, 2026) - Cloud sync, offline scanning, doe aging improvements
