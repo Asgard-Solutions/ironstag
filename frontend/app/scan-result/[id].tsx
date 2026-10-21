@@ -78,7 +78,6 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../consta
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
 const BC_DISCLAIMER =
   'Unofficial Boone & Crockett estimate. User-entered measurements only. Official Boone & Crockett scores require a certified official measurer.';
@@ -169,6 +168,12 @@ interface ScanResult {
   season_phase?: string | null;
   date_source?: string | null;
   season_phase_confidence?: string | null;
+  // Confidence breakdown from backend calibration
+  confidence_breakdown?: { age: number | null; recommendation: number | null } | null;
+  // Score audit trail (structured, versioned) — for debugging only
+  score_audit?: Record<string, unknown> | null;
+  // Age uncertainty flag from backend
+  age_uncertain?: boolean | null;
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
@@ -177,17 +182,34 @@ function isAgeUncertain(age: number | null | undefined): boolean {
   return age === null || age === undefined || age === 0;
 }
 
-function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
-  const confidence = rawConfidence || 0;
-  if (isAgeUncertain(age)) {
-    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
+/**
+ * Get the age-estimate certainty from the backend's confidence_breakdown.
+ * Returns null when the backend has no genuine age confidence value
+ * (legacy scan, or age was unavailable).
+ */
+function getAgeConfidence(scan: ScanResult): number | null {
+  if (scan.confidence_breakdown?.age !== undefined && scan.confidence_breakdown.age !== null) {
+    return scan.confidence_breakdown.age;
   }
-  return confidence;
+  // Legacy scan without breakdown — no genuine age confidence available
+  return null;
+}
+
+/**
+ * Get the recommendation certainty from the backend's confidence_breakdown,
+ * falling back to the legacy confidence field for older scans.
+ */
+function getRecommendationConfidence(scan: ScanResult): number {
+  if (scan.confidence_breakdown?.recommendation !== undefined && scan.confidence_breakdown.recommendation !== null) {
+    return scan.confidence_breakdown.recommendation;
+  }
+  // Legacy fallback
+  return scan.confidence ?? 0;
 }
 
 function getAgeDisplayText(age: number | null): string {
   if (isAgeUncertain(age)) {
-    return 'Uncertain';
+    return 'Unable to estimate age';
   }
   return `${age} years`;
 }
@@ -833,7 +855,8 @@ export default function ScanResultScreen() {
 
     // Fallback: text-based share
     try {
-      const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+      const shareAgeConf = getAgeConfidence(scan);
+      const shareRecConf = getRecommendationConfidence(scan);
       const ageText = getAgeDisplayText(scan.deer_age);
 
       const shareText = [
@@ -841,7 +864,8 @@ export default function ScanResultScreen() {
         ``,
         `RECOMMENDATION: ${scan.recommendation || 'UNKNOWN'}`,
         `Estimated Age: ${ageText}`,
-        `Confidence: ${displayConfidence}%`,
+        shareAgeConf !== null ? `Age Certainty: ${shareAgeConf}%` : null,
+        `Recommendation Certainty: ${shareRecConf}%`,
         scan.deer_type ? `Type: ${scan.deer_type}` : null,
         scan.antler_points ? `Points: ${scan.antler_points}` : null,
         ``,
@@ -893,11 +917,12 @@ export default function ScanResultScreen() {
 
   // ────────── DERIVED DATA ──────────
   const ageIsUncertain = isAgeUncertain(scan.deer_age);
-  const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+  const ageConfidence = getAgeConfidence(scan);
+  const recommendationConfidence = getRecommendationConfidence(scan);
   const ageDisplayText = getAgeDisplayText(scan.deer_age);
   const ageEstimateBlocked = scan.age_estimation_allowed === false;
   const displayRecommendation = getDisplayRecommendation(scan);
-  const confLabel = getConfidenceLabel(displayConfidence);
+  const confLabel = getConfidenceLabel(recommendationConfidence);
   const { summary: reasoningSummary, cues: reasoningCues } = parseReasoning(scan.reasoning);
   const visibleAgeCueText = scan.visible_age_cues && scan.visible_age_cues.length > 0
     ? scan.visible_age_cues.map((cue) => cue.replace(/_/g, ' ')).join(', ')
@@ -1099,17 +1124,42 @@ export default function ScanResultScreen() {
           </View>
           </Card>
 
-          {/* Confidence */}
+          {/* Confidence — Two separate values */}
           <Card style={styles.confCard}>
-            <Text style={styles.confCardLabel}>CONFIDENCE</Text>
-            <Text style={[styles.confCardValue, { color: confLabel.color }]}>
-              {displayConfidence}%
-            </Text>
+            <Text style={styles.confCardLabel}>CERTAINTY</Text>
+            
+            {/* Recommendation Certainty */}
+            <View style={styles.confRow}>
+              <Text style={styles.confRowLabel}>Recommendation</Text>
+              <Text style={[styles.confRowValue, { color: confLabel.color }]}>
+                {recommendationConfidence}%
+              </Text>
+            </View>
+            
+            {/* Age Estimate Certainty */}
+            <View style={styles.confRow}>
+              <Text style={styles.confRowLabel}>Age Estimate</Text>
+              {ageIsUncertain || ageConfidence === null ? (
+                <Text style={[styles.confRowValue, { color: colors.textMuted }]}>
+                  N/A
+                </Text>
+              ) : (
+                <Text style={[styles.confRowValue, { color: getConfidenceLabel(ageConfidence).color }]}>
+                  {ageConfidence}%
+                </Text>
+              )}
+            </View>
+
             <Text style={[styles.confCardBand, { color: confLabel.color }]}>
               {confLabel.label}
             </Text>
             <Text style={styles.confCardGuidance} numberOfLines={2}>
-              {confLabel.guidance}
+              {ageIsUncertain
+                ? 'Age could not be estimated. Recommendation is based on available visual cues.'
+                : confLabel.guidance}
+            </Text>
+            <Text style={styles.confDisclaimer}>
+              Scores reflect an estimate of certainty, not a verified probability.
             </Text>
           </Card>
 
@@ -1453,6 +1503,7 @@ export default function ScanResultScreen() {
             recommendation={scan.recommendation}
             deerAge={scan.deer_age}
             confidence={scan.confidence}
+            confidenceBreakdown={scan.confidence_breakdown}
             deerType={scan.deer_type}
             deerSex={scan.deer_sex}
             antlerPoints={scan.antler_points}
@@ -2392,6 +2443,31 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 14,
+  },
+  confRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  confRowLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  confRowValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  confDisclaimer: {
+    fontSize: 9,
+    color: colors.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    lineHeight: 13,
   },
 
   // ── Why We Think This ──

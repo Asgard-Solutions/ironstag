@@ -834,6 +834,76 @@ def calibrate_from_dict_with_region(
 
     # Update legacy confidence field to use recommendation confidence
     updated_analysis["confidence"] = calibration_result.calibrated_recommendation_confidence
+
+    # ── Build structured score_audit ──
+    pre_calibration_steps = updated_analysis.pop("_pre_calibration_audit_steps", [])
+    calibration_audit_step = {
+        "step": "calibration",
+        "strategy": calibration_result.calibration_strategy,
+        "version": calibration_result.calibration_version,
+        "region": calibration_result.region_key,
+        "adjustments": [
+            {
+                "field": "age_confidence",
+                "before": calibration_result.raw_age_confidence,
+                "after": calibration_result.calibrated_age_confidence,
+            },
+            {
+                "field": "recommendation_confidence",
+                "before": calibration_result.raw_recommendation_confidence,
+                "after": calibration_result.calibrated_recommendation_confidence,
+            },
+        ],
+    }
+    if calibration_result.calibration_fallback_reason:
+        calibration_audit_step["fallback_reason"] = calibration_result.calibration_fallback_reason
+
+    uncertainty_step = {
+        "step": "uncertainty_gate",
+        "age_uncertain": calibration_result.age_uncertain,
+    }
+
+    all_steps = pre_calibration_steps + [calibration_audit_step, uncertainty_step]
+
+    # Handle consensus audit if present
+    consensus_data = updated_analysis.get("consensus")
+    if consensus_data and isinstance(consensus_data, dict):
+        consensus_step = {
+            "step": "consensus",
+            "runs": consensus_data.get("total_runs"),
+            "agreement": consensus_data.get("age_agreement_rate"),
+        }
+        final_age_conf = consensus_data.get("final_age_confidence")
+        final_rec_conf = consensus_data.get("final_recommendation_confidence")
+        if final_age_conf is not None or final_rec_conf is not None:
+            consensus_step["adjustments"] = []
+            if final_age_conf is not None:
+                consensus_step["adjustments"].append({
+                    "field": "age_confidence",
+                    "after": final_age_conf,
+                    "reason": "consensus_override",
+                })
+            if final_rec_conf is not None:
+                consensus_step["adjustments"].append({
+                    "field": "recommendation_confidence",
+                    "after": final_rec_conf,
+                    "reason": "consensus_override",
+                })
+        all_steps.append(consensus_step)
+
+    updated_analysis["score_audit"] = {
+        "version": "1.0",
+        "model": updated_analysis.get("analysis_model"),
+        "prompt_version": updated_analysis.get("analysis_prompt_version"),
+        "calibration_strategy": calibration_result.calibration_strategy,
+        "calibration_version": calibration_result.calibration_version,
+        "steps": all_steps,
+        "final_scores": {
+            "age_confidence": calibration_result.calibrated_age_confidence,
+            "recommendation_confidence": calibration_result.calibrated_recommendation_confidence,
+            "legacy_confidence": calibration_result.calibrated_recommendation_confidence,
+        },
+    }
     
     return calibration_result, updated_analysis
 

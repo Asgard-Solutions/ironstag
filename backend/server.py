@@ -191,6 +191,8 @@ scans_table = Table(
     Column("date_taken", Date, nullable=True),        # Image capture date (YYYY-MM-DD)
     Column("date_source", String(20), nullable=True),  # client, image_metadata, unknown
     Column("season_phase", String(20), nullable=True),  # pre_rut, rut, post_rut, unknown
+    # Structured score audit trail (versioned)
+    Column("score_audit", JSON, nullable=True),  # How scores were produced
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -677,6 +679,8 @@ class DeerAnalysisResponse(BaseModel):
     age_uncertain: Optional[bool] = None
     confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
     calibration_version: Optional[str] = None
+    # Score audit trail (structured, versioned)
+    score_audit: Optional[Dict[str, Any]] = None
     # Region fields (feature-flagged in response, always persisted)
     region_key: Optional[str] = None
     calibration_strategy: Optional[str] = None
@@ -890,6 +894,8 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_estimation_allowed BOOLEAN")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS retake_reason TEXT")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS visible_age_cues JSON")
+        # Score audit trail column
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS score_audit JSON")
         
         # Create indexes for region calibration queries
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_region_key ON scans(region_key)")
@@ -2050,10 +2056,41 @@ def normalize_model_analysis(
     recommendation_confidence = clamp_confidence(normalized.get("recommendation_confidence"))
     legacy_confidence = clamp_confidence(normalized.get("confidence"))
 
+    # ── Build score audit trail ──
+    audit_steps: list = []
+    model_age_conf = age_confidence
+    model_rec_conf = recommendation_confidence
+    model_legacy_conf = legacy_confidence
+
+    audit_steps.append({
+        "step": "model_output",
+        "age_confidence": model_age_conf,
+        "recommendation_confidence": model_rec_conf,
+        "legacy_confidence": model_legacy_conf,
+    })
+
+    # Fill gaps from legacy field
     if age_confidence is None:
         age_confidence = legacy_confidence
+        if legacy_confidence is not None:
+            audit_steps.append({
+                "step": "fallback",
+                "reason": "age_confidence_missing_used_legacy",
+                "field": "age_confidence",
+                "before": None,
+                "after": legacy_confidence,
+            })
     if recommendation_confidence is None:
-        recommendation_confidence = legacy_confidence or age_confidence
+        fallback_val = legacy_confidence or age_confidence
+        recommendation_confidence = fallback_val
+        if fallback_val is not None:
+            audit_steps.append({
+                "step": "fallback",
+                "reason": "recommendation_confidence_missing_used_legacy_or_age",
+                "field": "recommendation_confidence",
+                "before": None,
+                "after": fallback_val,
+            })
 
     angle_risk = normalize_risk_level(
         normalized.get("foreshortening_risk") or normalized.get("camera_angle_risk")
@@ -2069,10 +2106,29 @@ def normalize_model_analysis(
     elif distance_risk == "medium":
         risk_penalty += 5
     if risk_penalty:
+        risk_adjustments = []
         if age_confidence is not None:
+            before_age = age_confidence
             age_confidence = max(0, age_confidence - risk_penalty)
+            risk_adjustments.append({
+                "field": "age_confidence",
+                "before": before_age,
+                "after": age_confidence,
+            })
         if recommendation_confidence is not None:
+            before_rec = recommendation_confidence
             recommendation_confidence = max(0, recommendation_confidence - risk_penalty)
+            risk_adjustments.append({
+                "field": "recommendation_confidence",
+                "before": before_rec,
+                "after": recommendation_confidence,
+            })
+        audit_steps.append({
+            "step": "risk_penalty",
+            "reason": f"angle_risk={angle_risk}, distance_risk={distance_risk}",
+            "penalty": risk_penalty,
+            "adjustments": risk_adjustments,
+        })
 
     normalized["raw_age_confidence"] = age_confidence
     normalized["raw_recommendation_confidence"] = recommendation_confidence
@@ -2107,14 +2163,24 @@ def normalize_model_analysis(
 
     # Penalize confidence if the model's alternate age meaningfully disagrees.
     if deer_age is not None and alternate_age is not None and abs(deer_age - alternate_age) > 0.5:
-        normalized["raw_age_confidence"] = max(0, int((normalized.get("raw_age_confidence") or 0) - 10))
-        normalized["raw_recommendation_confidence"] = max(
-            0,
-            int((normalized.get("raw_recommendation_confidence") or 0) - 8),
-        )
+        before_age_c = normalized.get("raw_age_confidence") or 0
+        before_rec_c = normalized.get("raw_recommendation_confidence") or 0
+        normalized["raw_age_confidence"] = max(0, int(before_age_c - 10))
+        normalized["raw_recommendation_confidence"] = max(0, int(before_rec_c - 8))
         normalized["confidence"] = normalized["raw_recommendation_confidence"] or normalized["raw_age_confidence"] or 0
+        audit_steps.append({
+            "step": "alternate_age_penalty",
+            "reason": f"deer_age={deer_age}, alternate_age={alternate_age}, diff={abs(deer_age - alternate_age):.1f}",
+            "adjustments": [
+                {"field": "age_confidence", "before": before_age_c, "after": normalized["raw_age_confidence"]},
+                {"field": "recommendation_confidence", "before": before_rec_c, "after": normalized["raw_recommendation_confidence"]},
+            ],
+        })
 
     normalized["reasoning"] = str(normalized.get("reasoning") or "").strip() or None
+
+    # Attach pre-calibration audit to normalized dict for downstream consumption
+    normalized["_pre_calibration_audit_steps"] = audit_steps
 
     return apply_age_estimation_gate(normalized)
 
@@ -2344,9 +2410,12 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     confidence_breakdown = None
     if scan.get("age_confidence") is not None or scan.get("recommendation_confidence") is not None:
         confidence_breakdown = {
-            "age": scan.get("age_confidence") or 0,
-            "recommendation": scan.get("recommendation_confidence") or scan.get("confidence") or 0
+            "age": scan.get("age_confidence") if scan.get("age_confidence") is not None else None,
+            "recommendation": scan.get("recommendation_confidence") if scan.get("recommendation_confidence") is not None else (scan.get("confidence") or 0)
         }
+    
+    # Score audit trail — return stored audit or None for legacy scans
+    score_audit = scan.get("score_audit")
     
     # Region fields (feature-flagged)
     region_key = scan.get("region_key") if config.CALIBRATION_SHOW_REGION else None
@@ -2404,6 +2473,7 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         age_uncertain=scan.get("age_uncertain"),
         confidence_breakdown=confidence_breakdown,
         calibration_version=scan.get("calibration_version"),
+        score_audit=score_audit,
         # Region fields (feature-flagged)
         region_key=region_key,
         calibration_strategy=calibration_strategy,
@@ -3762,6 +3832,17 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 # Cloud image storage (R2)
                 image_url=image_url,
             )
+            # Store score_audit separately if present
+            score_audit_data = calibrated_analysis.get("score_audit")
+            if score_audit_data:
+                try:
+                    await database.execute(
+                        scans_table.update()
+                        .where(scans_table.c.id == scan_id)
+                        .values(score_audit=score_audit_data)
+                    )
+                except Exception:
+                    logger.warning("Failed to store score_audit for scan %s", scan_id)
             await database.execute(query)
             logger.info("Scan saved to database successfully | scan_id=%s", scan_id)
         except Exception:
@@ -3811,6 +3892,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 "recommendation": calibrated_analysis.get("recommendation_confidence", 0)
             },
             calibration_version=calibrated_analysis.get("calibration_version"),
+            score_audit=calibrated_analysis.get("score_audit"),
             # Region fields (feature-flagged)
             region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
             calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
@@ -5050,6 +5132,7 @@ Provide your complete REVISED analysis in JSON format."""
                     recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                     age_uncertain=calibrated_analysis.get("age_uncertain", False),
                     calibration_version=calibrated_analysis.get("calibration_version"),
+                    score_audit=calibrated_analysis.get("score_audit"),
                     region_key=calibrated_analysis.get("region_key"),
                     region_source=calibrated_analysis.get("region_source"),
                     region_state=calibrated_analysis.get("region_state"),
