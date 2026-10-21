@@ -1,0 +1,29 @@
+{
+  "summary": "Backend light re-check (6/6 pass against preview URL) + full frontend verification of the per-hunter harvest-age-threshold feature on viewport 390x844. Verified: login as multiphoto.test@ironstag.dev -> Profile tab -> Harvest Age card (testID=harvest-age-card) with Target icon, title 'Harvest Age', subtitle 'Deer this age or older are marked HARVEST', and badge (testID=harvest-age-value) initially '3.5+'. Tapping the card opens 'Select Harvest Age' modal with subtitle 'Deer this age or older are marked HARVEST. Your saved scans update too.' and all 10 options (testIDs harvest-age-option-2.0 through harvest-age-option-6.5), where 3.5 reads '3.5 years (default)' with a visible check icon. Selecting harvest-age-option-5.5 closes the modal and the badge updates to '5.5+' immediately. Persistence confirmed via /api/auth/me (harvest_age_threshold=5.5) and via History reload. History tab after switching to 5.5 shows exactly 1 HARVEST (the 5.5y scan), 5 PASS (the 3.5y scans previously HARVEST at 3.5), 1 UNKNOWN (no age) - counts match the backend recomputation (/api/scans returns 1 HARVEST + 5 PASS + 1 None). Opening the HARVEST 5.5y scan: hero recommendation = 'HARVEST', note (testID=hero-harvest-age) = 'Your harvest age: 5.5+'. Opening a PASS 3.5y scan: hero recommendation = 'PASS' with the same note 'Your harvest age: 5.5+'. Original scan age/range values unchanged (e.g., '2.5-3.5 yrs' plausible range preserved). Threshold reset to 3.5 at the end and verified via /api/auth/me. Frontend .env EXPO_PUBLIC_API_BASE_URL was temporarily pointed at the preview URL (Railway doesn't have this feature deployed) and reverted to https://ironstag-production.up.railway.app afterwards.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_harvest_age_api.py",
+    "/app/test_reports/pytest/harvest_age_api.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "profile.tsx handleHarvestAgeSelect updates local user state via updateUser({harvest_age_threshold: age}) and calls fetchScanStats, but does NOT re-fetch the authoritative user from /auth/me, so if the backend ever normalises or rejects the value silently the UI could drift. Current backend returns the updated User on PUT /auth/profile - consider using the response body as source of truth to stay robust.",
+    "ageEstimate.ts formatHarvestAge always prints a single decimal (e.g. '5.5+'), but modal option labels switch to '6.5+ years' for the top option while others say '6.0 years'. Minor inconsistency - the badge/note contract ('<N>+') is used everywhere else; the modal label mixes '6.5+ years' with 'N.N years'. Not a bug, just worth noting."
+  ],
+  "updated_files": [
+    "/app/frontend/.env (temporarily switched EXPO_PUBLIC_API_BASE_URL to the preview URL for testing; reverted to https://ironstag-production.up.railway.app after testing)",
+    "/app/backend/tests/test_harvest_age_api.py (new pytest file with 6 tests against the preview backend)"
+  ],
+  "success_rate": {"backend": "100% (6/6 API tests pass)", "frontend": "100% (profile card, modal, 10 options, badge update, persistence, history recount, scan-result hero note - all verified)"},
+  "seed_data_creation": "None. Used the existing 7 scans on multiphoto.test@ironstag.dev. Toggled threshold 3.5 -> 5.5 -> 3.5 during testing and left it at 3.5 as instructed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The harvest-age-threshold feature is deployed only on the preview backend (https://date-persist-deploy.preview.emergentagent.com); the Railway production backend's /api/auth/me response does NOT include harvest_age_threshold yet. To exercise the UI you must temporarily point /app/frontend/.env's EXPO_PUBLIC_API_BASE_URL at the preview URL and `sudo supervisorctl restart expo`, then revert when done. Direct navigation to /scan-result/<id> loses the Expo auth state on web, so always reach scan results by clicking a history row (route from /history). The two login inputs don't carry type='email' / type='password' consistently (both render as plain text inputs on web) - use page.locator('input').nth(0)/.nth(1) rather than attribute selectors.",
+  "rca_of_issue": "N/A - feature works end-to-end. The initial Playwright attempt that used input[type=email] failed because the login screen renders both fields as plain input elements on web; switching to positional selectors fixed it. The reload-based persistence check also lost auth (known Expo web limitation documented in iteration_1); persistence was instead verified via /api/auth/me and by re-navigating from Home -> Profile."
+}

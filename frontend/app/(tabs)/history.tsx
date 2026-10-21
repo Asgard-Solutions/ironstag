@@ -26,8 +26,7 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
-import { AgeFields, describeAge } from '../../utils/ageEstimate';
+import { AgeFields, describeAge, DEFAULT_HARVEST_AGE } from '../../utils/ageEstimate';
 
 interface Scan extends AgeFields {
   id: string;
@@ -106,7 +105,7 @@ function getDisplayRecommendation(scan: Scan): 'HARVEST' | 'PASS' | null {
   if (deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
   }
-  return deerAge >= HARVEST_RECOMMENDATION_MIN_AGE ? 'HARVEST' : 'PASS';
+  return deerAge >= (scan.harvest_age_threshold ?? DEFAULT_HARVEST_AGE) ? 'HARVEST' : 'PASS';
 }
 
 // Component to handle async image loading

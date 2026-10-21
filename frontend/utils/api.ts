@@ -73,6 +73,7 @@ export const authAPI = {
     current_password?: string;
     new_password?: string;
     state?: string;
+    harvest_age_threshold?: number;
   }) => api.put('/auth/profile', data),
 
   acceptDisclaimer: (accepted: boolean) =>

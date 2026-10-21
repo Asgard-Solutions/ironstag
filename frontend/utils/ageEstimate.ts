@@ -9,6 +9,7 @@ export type AgeFields = {
   range_status?: string | null;
   range_coverage_confidence?: number | null;
   recommendation_status?: string | null;
+  harvest_age_threshold?: number | null;
 };
 
 export type AgeDescription = {
@@ -56,5 +57,11 @@ export function describeAge(s: AgeFields): AgeDescription {
   return { best, range: null, rangeLabel: null, calibrated: false, recommendationUncertain };
 }
 
-export const UNCERTAIN_RECOMMENDATION_TEXT =
-  'The plausible age range spans the 3.5-year harvest threshold, so the age-based call is uncertain.';
+export const DEFAULT_HARVEST_AGE = 3.5;
+export const HARVEST_AGE_OPTIONS = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5];
+
+export const formatHarvestAge = (age?: number | null): string =>
+  `${(age ?? DEFAULT_HARVEST_AGE).toFixed(1)}+`;
+
+export const uncertainRecommendationText = (harvestAge?: number | null): string =>
+  `The plausible age range spans your ${(harvestAge ?? DEFAULT_HARVEST_AGE).toFixed(1)}-year harvest age, so the age-based call is uncertain.`;

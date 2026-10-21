@@ -16,6 +16,7 @@ interface User {
   disclaimer_accepted_at?: string;
   created_at: string;
   state?: string;  // Two-letter state code for region calibration
+  harvest_age_threshold?: number;  // Minimum age for a HARVEST call (default 3.5)
 }
 
 interface BiometricState {
