@@ -37,6 +37,7 @@ import {
   Shield,
   Eye,
   Leaf,
+  Info,
 } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -185,6 +186,7 @@ interface ScanResult extends AgeFields {
   season_phase_confidence?: string | null;
   // Confidence breakdown from backend calibration
   confidence_breakdown?: { age: number | null; recommendation: number | null } | null;
+  confidence_reasoning?: string | null;
   // Score audit trail (structured, versioned) — for debugging only
   score_audit?: Record<string, unknown> | null;
   // Age uncertainty flag from backend
@@ -1238,6 +1240,18 @@ export default function ScanResultScreen() {
               Scores reflect an estimate of certainty, not a verified probability.
             </Text>
           </Card>
+
+        {!!scan.confidence_reasoning && (
+          <Card style={styles.reasonCard}>
+            <View style={styles.reasonHeader}>
+              <Info size={16} color={colors.primary} />
+              <Text style={styles.reasonTitle}>Why this confidence?</Text>
+            </View>
+            <Text testID="confidence-reasoning-text" style={styles.reasonText}>
+              {scan.confidence_reasoning}
+            </Text>
+          </Card>
+        )}
 
         {scan.retake_reason && (
           <Card style={styles.retakeCard}>
@@ -2441,6 +2455,26 @@ const styles = StyleSheet.create({
   summaryCard: {
     marginBottom: spacing.md,
     padding: spacing.md,
+  },
+  reasonCard: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+  },
+  reasonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  reasonTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  reasonText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
   summaryTitle: {
     fontSize: 18,

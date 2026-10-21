@@ -83,7 +83,7 @@ export function TagsEditor({ scanId, initialTags, onTagsUpdated }: TagsEditorPro
 
   const addTag = async (tagToAdd: string) => {
     const cleanTag = tagToAdd.trim();
-    if (!cleanTag || tags.includes(cleanTag)) return;
+    if (!cleanTag || tags.some(t => t.toLowerCase() === cleanTag.toLowerCase())) return;
     
     const newTags = [...tags, cleanTag];
     await saveTagsToServer(newTags);
@@ -97,9 +97,11 @@ export function TagsEditor({ scanId, initialTags, onTagsUpdated }: TagsEditorPro
   };
 
   // Combine user's tags, suggested tags, and filter out already-added
-  const availableSuggestions = [...new Set([...allUserTags, ...SUGGESTED_TAGS])]
-    .filter(t => !tags.includes(t))
-    .sort();
+  const availableSuggestions = Array.from(
+    new Map([...allUserTags, ...SUGGESTED_TAGS].map(t => [t.toLowerCase(), t] as [string, string])).values()
+  )
+    .filter(t => !tags.some(existing => existing.toLowerCase() === t.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <View style={styles.container}>

@@ -547,6 +547,7 @@ def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[
         "age_evidence": [{"feature": "chest_depth", "observation": "Mock: chest moderately deep", "impact": "older"}],
         "recommendation": "HARVEST",
         "reasoning": "Mock analysis response (ANALYSIS_MOCK_MODEL).",
+        "confidence_reasoning": "Mock: clear broadside view of chest and belly, but legs are partly hidden by grass.",
     }
     if "mock:range" in notes:
         response.update(deer_age=3.5, age_lower=3.5, age_upper=4.5,
@@ -4828,9 +4829,8 @@ async def update_tags(
         if len(tag) > 30:
             raise HTTPException(status_code=400, detail="Tag must be 30 characters or less")
     
-    # Clean tags (lowercase, trim whitespace)
-    clean_tags = [tag.strip().lower() for tag in data.tags if tag.strip()]
-    unique_tags = list(dict.fromkeys(clean_tags))  # Remove duplicates, preserve order
+    # Clean tags: keep the hunter's casing, trim whitespace, drop case-insensitive duplicates (first spelling wins)
+    unique_tags = list({tag.strip().lower(): tag.strip() for tag in reversed(data.tags) if tag.strip()}.values())[::-1]
     
     # Update tags
     update_query = scans_table.update().where(

@@ -270,11 +270,12 @@ export default function HistoryScreen() {
   };
 
   // Unique tags across all scans (case-insensitive), sorted for the tag filter row
-  const allTags = Array.from(
-    new Map(
-      scans.flatMap((scan) => scan.tags || []).map((tag) => [tag.trim().toLowerCase(), tag.trim()] as [string, string])
-    ).values()
-  ).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  const tagsByKey = new Map<string, string>();
+  scans.flatMap((scan) => scan.tags || []).forEach((tag) => {
+    const key = tag.trim().toLowerCase();
+    if (key && !tagsByKey.has(key)) tagsByKey.set(key, tag.trim()); // first spelling wins (matches backend)
+  });
+  const allTags = Array.from(tagsByKey.values()).sort((a, b) => a.localeCompare(b));
 
   const filteredScans = scans.filter((scan) => {
     const displayRecommendation = getDisplayRecommendation(scan);
@@ -349,7 +350,7 @@ export default function HistoryScreen() {
     setShowFavoritesOnly(false);
   };
 
-  const hasActiveFilters = filters.deer_sex || filters.recommendation || filters.tag || searchQuery || showFavoritesOnly;
+  const hasActiveFilters = !!(filters.deer_sex || filters.recommendation || filters.tag || searchQuery || showFavoritesOnly);
 
   const renderScanCard = ({ item }: { item: Scan }) => {
     // Calculate calibrated confidence and check age uncertainty
@@ -429,9 +430,18 @@ export default function HistoryScreen() {
               {item.tags && item.tags.length > 0 && (
                 <View style={styles.tagsRow}>
                   {item.tags.slice(0, 2).map((tag, index) => (
-                    <View key={index} style={styles.tagChipSmall}>
+                    <TouchableOpacity
+                      key={index}
+                      testID={`card-tag-${tag}`}
+                      style={styles.tagChipSmall}
+                      hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                      onPress={() => {
+                        setFilters((prev) => ({ ...prev, tag }));
+                        setShowFilters(true);
+                      }}
+                    >
                       <Text style={styles.tagChipSmallText}>{tag}</Text>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                   {item.tags.length > 2 && (
                     <Text style={styles.moreTagsText}>+{item.tags.length - 2}</Text>
@@ -574,7 +584,7 @@ export default function HistoryScreen() {
                 value={searchQuery}
                 onChangeText={setSearchQuery}
               />
-              {searchQuery && (
+              {!!searchQuery && (
                 <TouchableOpacity onPress={() => setSearchQuery('')}>
                   <X size={18} color={colors.textMuted} />
                 </TouchableOpacity>
