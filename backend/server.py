@@ -864,7 +864,7 @@ class DeerAnalysisResponse(BaseModel):
     created_at: datetime
     # Calibration fields
     age_uncertain: Optional[bool] = None
-    confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
+    confidence_breakdown: Optional[Dict[str, Optional[int]]] = None  # {"age": X|None, "recommendation": Y}
     calibration_version: Optional[str] = None
     # Score audit trail (structured, versioned)
     score_audit: Optional[Dict[str, Any]] = None
