@@ -4,16 +4,19 @@
 Iron Stag is an AI-powered deer analysis app that analyzes deer photos and provides age, species, harvest guidance, and harvested-buck record tools with regional calibration.
 
 ## Key Information
-- **AI Deer Analysis:** Upload or capture photos for analysis.
+- **AI Deer Analysis:** Upload or capture photos for analysis using species-specific aging rubrics (v1.8.0).
 - **Age Estimation:** Estimated age of the deer in years when the photo provides enough visible body cues.
+- **Species-Specific Rubrics:** Dedicated aging rubrics for Whitetail Bucks, Whitetail Does, and Mule Deer, plus fawn identification.
 - **Age Quality Gating:** The app can withhold age and show retake guidance instead of forcing a guess on weak photos.
 - **Sex Identification:** Buck or doe classification.
 - **Species Type:** Whitetail or Mule Deer identification.
 - **Antler Analysis:** Point count for left and right antlers.
 - **Body Condition Assessment:** Overall health evaluation.
 - **Harvest Recommendation:** AI-powered HARVEST or PASS recommendation.
-- **Confidence Score:** How certain the AI is about its analysis.
+- **Confidence Score:** How certain the AI is about its analysis, with confidence reasoning explaining why.
+- **Multi-Pass Consensus:** Borderline cases run multiple analysis passes with diverse perspectives for more reliable results.
 - **Regional Calibration:** Confidence adjusted for your hunting region (Home State).
+- **Season-Aware Analysis:** Rut, pre-rut, and post-rut seasonal context adjusts how body cues are interpreted.
 - **Unofficial B&C Score:** Manual scoring workflow for harvested buck records only.
 - **Scan History:** View your prior scans in the app.
 - **Local Image Storage:** Scan images are stored locally on your device.
