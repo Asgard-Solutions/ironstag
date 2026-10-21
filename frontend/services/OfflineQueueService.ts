@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { scanAPI } from '../utils/api';
+import type { ScanRequestImage } from '../utils/scanPhotos';
 
 const OFFLINE_QUEUE_KEY = 'ironstag_offline_queue';
 const QUEUE_STATUS_KEY = 'ironstag_queue_status';
@@ -8,6 +9,8 @@ const QUEUE_STATUS_KEY = 'ironstag_queue_status';
 export interface PendingScan {
   id: string;
   image_base64: string;
+  images?: ScanRequestImage[];  // Multi-photo scans (1-3)
+  submission_id?: string;       // Idempotency key: retries never double-charge
   local_image_id: string;
   notes?: string;
   state?: string;  // Hunting location state
@@ -188,7 +191,8 @@ class OfflineQueueService {
   private async submitScan(scan: PendingScan): Promise<{ success: boolean; error?: string; scanId?: string }> {
     try {
       const response = await scanAPI.analyzeDeer({
-        image_base64: scan.image_base64,
+        ...(scan.images?.length ? { images: scan.images } : { image_base64: scan.image_base64 }),
+        submission_id: scan.submission_id,
         local_image_id: scan.local_image_id,
         notes: scan.notes,
         state: scan.state,
@@ -196,10 +200,10 @@ class OfflineQueueService {
       
       return { success: true, scanId: response.data.id };
     } catch (error: any) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      const errorMessage = error.response?.data?.detail?.message || error.response?.data?.detail || error.message || 'Unknown error';
       
       // Check if it's a permanent error (don't retry)
-      if (error.response?.status === 400 || error.response?.status === 401) {
+      if ([400, 401, 403, 422].includes(error.response?.status)) {
         return { success: false, error: `Permanent error: ${errorMessage}` };
       }
       

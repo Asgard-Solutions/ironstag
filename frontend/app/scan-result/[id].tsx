@@ -44,6 +44,12 @@ import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
 import { TagsEditor } from '../../components/TagsEditor';
 import {
+  MultiPhotoEvidence,
+  MultiImageSummary,
+  ScanImageRecord,
+  ScanPhotoStrip,
+} from '../../components/scan/MultiPhotoEvidence';
+import {
   ScanSummaryCard,
   getConfidenceLabel,
   parseReasoning,
@@ -137,6 +143,8 @@ const BC_SCORE_TYPE_REFERENCE_DETAILS: Partial<
 interface ScanResult {
   id: string;
   local_image_id: string;
+  images?: ScanImageRecord[];
+  multi_image?: MultiImageSummary | null;
   deer_age: number | null;
   deer_type: string | null;
   deer_sex: string | null;
@@ -424,6 +432,22 @@ function ScorePairedMeasurementRow({
 const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
 const DEER_SEX_OPTIONS = ['Buck', 'Doe', 'Unknown'];
 
+async function readImageAsDataUrl(uri: string): Promise<string> {
+  if (uri.startsWith('data:')) return uri;
+  if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('blob:')) {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  const base64Data = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+  return `data:image/jpeg;base64,${base64Data}`;
+}
+
 export default function ScanResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -431,6 +455,9 @@ export default function ScanResultScreen() {
 
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // Multi-photo scans: one display uri per stored photo (local copy first, cloud fallback)
+  const [photoUris, setPhotoUris] = useState<(string | null)[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -485,6 +512,20 @@ export default function ScanResultScreen() {
       } else if (response.data.image_url) {
         setImageUri(response.data.image_url);
       }
+
+      const records: ScanImageRecord[] = response.data.images || [];
+      if (records.length > 1) {
+        const uris = await Promise.all(
+          records.map(async (rec) => {
+            const local = rec.local_image_id ? await getImage(rec.local_image_id) : null;
+            return local || rec.url || null;
+          })
+        );
+        setPhotoUris(uris);
+      } else {
+        setPhotoUris([]);
+      }
+      setSelectedPhoto(0);
 
       try {
         const labelResponse = await scanAPI.getLabel(id);
@@ -685,8 +726,11 @@ export default function ScanResultScreen() {
           onPress: async () => {
             try {
               await scanAPI.deleteScan(scan!.id);
-              if (scan?.local_image_id) {
-                await deleteImage(scan.local_image_id);
+              const localIds = new Set<string>(
+                [scan?.local_image_id, ...(scan?.images || []).map((i) => i.local_image_id)].filter(Boolean) as string[]
+              );
+              for (const localId of localIds) {
+                await deleteImage(localId);
               }
               router.replace('/(tabs)/history');
             } catch (error) {
@@ -758,32 +802,31 @@ export default function ScanResultScreen() {
       const pickerDateStr = `${editPickerYear}-${String(editPickerMonth).padStart(2, '0')}-${String(editPickerDay).padStart(2, '0')}`;
       editData.date_taken = pickerDateStr;
 
-      if (imageUri) {
+      const storedImages: ScanImageRecord[] = scan.images || [];
+      if (storedImages.length > 1) {
+        // Multi-photo scan: re-analysis must receive every photo (server re-applies stored crops)
+        setReanalysisStatus(`Loading ${storedImages.length} photos for re-analysis...`);
+        try {
+          editData.images = await Promise.all(
+            storedImages.map(async (rec, index) => {
+              const uri = photoUris[index];
+              if (!uri) throw new Error(`Photo ${index + 1} unavailable`);
+              return {
+                image_base64: await readImageAsDataUrl(uri),
+                image_id: rec.image_id,
+                local_image_id: rec.local_image_id || undefined,
+              };
+            })
+          );
+        } catch (imgError) {
+          console.log('Local photos unavailable, using stored cloud photos:', imgError);
+          editData.reanalyze = true;
+        }
+      } else if (imageUri) {
         setReanalysisStatus('Loading image for re-analysis...');
         try {
-          let base64Image: string;
-
-          if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
-            const response = await fetch(imageUri);
-            const blob = await response.blob();
-            const reader = new FileReader();
-            base64Image = await new Promise<string>((resolve, reject) => {
-              reader.onloadend = () => {
-                const result = reader.result as string;
-                resolve(result);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-          } else {
-            const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-              encoding: 'base64' as any,
-            });
-            base64Image = `data:image/jpeg;base64,${base64Data}`;
-          }
-
-          editData.image_base64 = base64Image;
-          console.log('Image included for re-analysis, length:', base64Image.length);
+          editData.image_base64 = await readImageAsDataUrl(imageUri);
+          console.log('Image included for re-analysis, length:', editData.image_base64.length);
         } catch (imgError) {
           console.log('Could not include image for re-analysis:', imgError);
           setReanalysisStatus(null);
@@ -795,7 +838,8 @@ export default function ScanResultScreen() {
         }
       }
 
-      if (editData.image_base64) {
+      const isReanalysis = !!(editData.image_base64 || editData.images || editData.reanalyze);
+      if (isReanalysis) {
         setReanalysisStatus('Sending to AI for re-analysis...\nThis may take 10-20 seconds');
       } else {
         setReanalysisStatus('Saving updates...');
@@ -813,7 +857,7 @@ export default function ScanResultScreen() {
       setReanalysisStatus(null);
       setShowEditModal(false);
 
-      if (editData.image_base64) {
+      if (isReanalysis) {
         Alert.alert('Re-analysis Complete', 'Your deer has been re-analyzed with the updated information.');
       } else {
         Alert.alert('Updated', 'Scan details saved successfully.');
@@ -821,8 +865,9 @@ export default function ScanResultScreen() {
     } catch (error: any) {
       console.error('Failed to update scan:', error);
       setReanalysisStatus(null);
-      const message = error.response?.data?.detail || 'Failed to update scan';
-      Alert.alert('Error', message);
+      const detail = error.response?.data?.detail;
+      const message = (typeof detail === 'string' ? detail : detail?.message) || 'Failed to update scan';
+      Alert.alert(detail?.code === 'MIXED_DEER' ? 'Different Deer?' : 'Error', message);
     } finally {
       setIsSubmittingEdit(false);
       setReanalysisStatus(null);
@@ -1005,10 +1050,10 @@ export default function ScanResultScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan Result</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerAction} onPress={openEditModal}>
+          <TouchableOpacity style={styles.headerAction} onPress={openEditModal} testID="scan-edit-button">
             <Pencil size={20} color={colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerAction} onPress={handleDelete}>
+          <TouchableOpacity style={styles.headerAction} onPress={handleDelete} testID="scan-delete-button">
             <Trash2 size={20} color={colors.error} />
           </TouchableOpacity>
         </View>
@@ -1027,14 +1072,16 @@ export default function ScanResultScreen() {
         }
       >
         {/* ────── 1. DEER IMAGE ────── */}
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+        {(photoUris[selectedPhoto] || imageUri) ? (
+          <Image source={{ uri: (photoUris[selectedPhoto] || imageUri) as string }} style={styles.image} resizeMode="cover" testID="result-main-image" />
         ) : (
           <View style={styles.imagePlaceholder}>
             <Target size={48} color={colors.textMuted} />
             <Text style={styles.placeholderText}>Image not available locally</Text>
           </View>
         )}
+        <ScanPhotoStrip uris={photoUris} selected={selectedPhoto} onSelect={setSelectedPhoto} />
+        <MultiPhotoEvidence summary={scan.multi_image} />
 
         {/* Date / Season + Share row */}
         <View style={styles.metaRow}>

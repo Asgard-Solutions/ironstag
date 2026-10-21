@@ -16,6 +16,7 @@ import openai
 import httpx
 import base64
 import json
+import re
 import random
 import string
 import msal
@@ -50,7 +51,27 @@ from calibration_jobs import (
 )
 
 # Import R2 storage for cloud image storage
-from r2_storage import upload_scan_image, delete_scan_image, R2_ENABLED
+from r2_storage import (
+    delete_scan_image,
+    R2_ENABLED,
+    put_scan_object,
+    get_scan_object,
+    delete_scan_objects,
+)
+from multi_image import (
+    MAX_SCAN_IMAGES,
+    ImageValidationError,
+    PreparedImage,
+    prepare_image,
+    decode_base64_image,
+    mark_duplicates,
+    evidence_images,
+    capture_span_hours,
+    build_multi_image_system_addendum,
+    build_multi_image_user_content,
+    apply_multi_image_guards,
+    mixed_deer_detail,
+)
 
 # Import Phase 3 adaptive calibration module
 from adaptive_calibration import (
@@ -193,6 +214,43 @@ scans_table = Table(
     Column("season_phase", String(20), nullable=True),  # pre_rut, rut, post_rut, unknown
     # Structured score audit trail (versioned)
     Column("score_audit", JSON, nullable=True),  # How scores were produced
+)
+
+# Photos attached to a scan (1-3 per scan, same deer / same encounter)
+scan_images_table = Table(
+    "scan_images",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("scan_id", String(36), nullable=False, index=True),
+    Column("user_id", String(36), nullable=False),
+    Column("image_id", String(20), nullable=False),  # Stable id used in model prompts (img_1..img_3)
+    Column("position", Integer, nullable=False),
+    Column("local_image_id", String(100), nullable=True),
+    Column("original_key", String, nullable=True),
+    Column("original_url", String, nullable=True),
+    Column("crop_key", String, nullable=True),
+    Column("crop_url", String, nullable=True),
+    Column("crop_rect", JSON, nullable=True),
+    Column("width", Integer, nullable=True),
+    Column("height", Integer, nullable=True),
+    Column("captured_at", String(40), nullable=True),
+    Column("content_type", String(30), nullable=True),
+    Column("sha256", String(64), nullable=True),
+    Column("dhash", String(16), nullable=True),
+    Column("duplicate_of", String(20), nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+)
+
+# Idempotency ledger: one row per client submission so retries never double-charge
+scan_submissions_table = Table(
+    "scan_submissions",
+    metadata,
+    Column("id", String(160), primary_key=True),  # f"{user_id}:{submission_id}"
+    Column("user_id", String(36), nullable=False),
+    Column("status", String(20), nullable=False),  # pending | completed
+    Column("scan_id", String(36), nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("updated_at", DateTime, default=datetime.utcnow),
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -428,6 +486,58 @@ def build_chat_completion_request(
     return request
 
 
+ANALYSIS_MOCK_MODEL = get_bool_env("ANALYSIS_MOCK_MODEL", False)
+
+
+def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[str, Any]) -> str:
+    """DEV/TEST ONLY (ANALYSIS_MOCK_MODEL=true): deterministic stand-in for the vision model.
+    Put 'mock:mixed' or 'mock:notdeer' in scan notes to exercise rejection paths."""
+    notes = (context.get("notes") or "").lower()
+    if "mock:notdeer" in notes:
+        return json.dumps({"is_valid_deer": False, "detected_subject": "Elk", "message": "Mock: not a deer."})
+    image_ids = []
+    for i, part in enumerate(user_content):
+        if part.get("type") == "image_url":
+            prev = user_content[i - 1].get("text", "") if i > 0 else ""
+            image_ids.append(prev.split(" ")[1] if prev.startswith("Photo img_") else f"img_{len(image_ids) + 1}")
+    cues = ["chest_depth", "belly_sag", "backline", "leg_to_body_ratio", "face_length",
+            "neck_brisket", "body_mass", "chest_vs_hindquarters", "head_blockiness"]
+    response: Dict[str, Any] = {
+        "is_valid_deer": True,
+        "age_estimation_allowed": True,
+        "visible_age_cues": cues[:6],
+        "cue_checklist": {c: ("visible" if idx < 6 else "unclear") for idx, c in enumerate(cues)},
+        "deer_age": 3.5, "alternate_age": None, "why_not_primary": None,
+        "buck_age_class": "3.5", "age_confidence": 72, "recommendation_confidence": 70, "confidence": 70,
+        "deer_type": "Whitetail", "deer_sex": "Buck", "antler_points": 8,
+        "antler_points_left": 4, "antler_points_right": 4, "body_condition": "Good",
+        "image_quality_bucket": "good", "posture_bucket": "broadside",
+        "foreshortening_risk": "low", "distance_risk": "low",
+        "quality_factors": {"body_visibility": "high", "head_visibility": "high", "lighting": "good",
+                            "occlusion": "low", "distance_estimate": "medium", "blur": "low"},
+        "age_evidence": [{"feature": "chest_depth", "observation": "Mock: chest moderately deep", "impact": "older"}],
+        "recommendation": "HARVEST",
+        "reasoning": "Mock analysis response (ANALYSIS_MOCK_MODEL).",
+    }
+    if len(image_ids) > 1:
+        mixed = "mock:mixed" in notes
+        # Deliberately report an overall confidence above every per-photo value so the
+        # no-photo-count-bonus guard is exercised.
+        response["age_confidence"] = 90
+        response["per_image_observations"] = [
+            {"image_id": iid, "usable": True, "view": "broadside", "visible_age_cues": cues[:4],
+             "observations": f"Mock cues for {iid}", "suggested_age": 3.5, "age_confidence": 70 - idx * 5}
+            for idx, iid in enumerate(image_ids)
+        ]
+        response["same_deer_assessment"] = {
+            "verdict": "different" if mixed else "same",
+            "reason": "Mock: antler configuration differs" if mixed else "Mock: consistent features",
+            "conflicting_image_ids": image_ids[-1:] if mixed else [],
+        }
+        response["contradictions"] = ["Mock: antler frame differs between photos"] if mixed else []
+    return json.dumps(response)
+
+
 def run_model_analysis_pass(
     *,
     model: str,
@@ -438,24 +548,27 @@ def run_model_analysis_pass(
     context: Dict[str, Any],
     post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
-    response = openai_client.chat.completions.create(
-        **build_chat_completion_request(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_content,
-                },
-            ],
-            max_output_tokens=max_output_tokens,
-            temperature=0,
+    if ANALYSIS_MOCK_MODEL:
+        response_text = build_mock_model_response(user_content, context)
+    else:
+        response = openai_client.chat.completions.create(
+            **build_chat_completion_request(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_content,
+                    },
+                ],
+                max_output_tokens=max_output_tokens,
+                temperature=0,
+            )
         )
-    )
-    response_text = response.choices[0].message.content or ""
+        response_text = response.choices[0].message.content or ""
     try:
         parsed_analysis = parse_json_response(response_text)
     except (json.JSONDecodeError, ValueError):
@@ -639,8 +752,19 @@ class SubscriptionStatus(BaseModel):
 class CheckoutRequest(BaseModel):
     plan: str = "monthly"
 
-class DeerAnalysisRequest(BaseModel):
+class ScanImageInput(BaseModel):
     image_base64: str
+    image_id: Optional[str] = None          # Stable id; defaults to img_<position>
+    local_image_id: Optional[str] = None    # On-device copy id
+    captured_at: Optional[str] = None       # Client-reported capture time (EXIF if available)
+    crop_rect: Optional[Dict[str, float]] = None  # Normalized {x, y, width, height}; original retained
+
+class DeerAnalysisRequest(BaseModel):
+    # Legacy single-photo field (still supported). Use `images` for 1-3 photos.
+    image_base64: Optional[str] = None
+    images: Optional[List[ScanImageInput]] = None
+    # Client-generated id; retries with the same id never create a second scan or charge.
+    submission_id: Optional[str] = Field(None, max_length=100)
     local_image_id: str
     notes: Optional[str] = None
     # Optional state for region-specific calibration (two-letter code)
@@ -702,6 +826,9 @@ class DeerAnalysisResponse(BaseModel):
     season_phase_reason: Optional[str] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
+    # Multi-photo scans
+    images: Optional[List[Dict[str, Any]]] = None
+    multi_image: Optional[Dict[str, Any]] = None
     # Favorites and Tags
     is_favorite: Optional[bool] = False
     tags: Optional[List[str]] = None
@@ -728,7 +855,11 @@ class ScanEditRequest(BaseModel):
     deer_type: Optional[str] = None
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
-    image_base64: Optional[str] = None  # Required if re-analyzing with LLM
+    image_base64: Optional[str] = None  # Legacy single-photo re-analysis
+    # Multi-photo re-analysis: client-supplied copies of the scan's photos (same ids/crops)
+    images: Optional[List[ScanImageInput]] = None
+    # Re-analyze using the photos stored server-side for this scan
+    reanalyze: Optional[bool] = None
     date_taken: Optional[str] = None    # ISO date YYYY-MM-DD
 
 
@@ -2397,7 +2528,7 @@ Critical rules:
 - Use `foreshortening_risk` and `distance_risk` to reflect perspective uncertainty.
 - Set confidence equal to recommendation_confidence for backward compatibility."""
 
-def build_scan_response(scan: dict) -> DeerAnalysisResponse:
+def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = None) -> DeerAnalysisResponse:
     """
     Helper to build DeerAnalysisResponse with calibration and region fields.
     Handles both new scans (with calibration data) and legacy scans (without).
@@ -2487,6 +2618,8 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         retake_reason=scan.get("retake_reason"),
         visible_age_cues=scan.get("visible_age_cues") or [],
         consensus=(scan.get("raw_response") or {}).get("consensus"),
+        multi_image=(scan.get("raw_response") or {}).get("multi_image"),
+        images=images,
         # Cloud image storage (R2) - for cross-device image access
         image_url=scan.get("image_url"),
         # Favorites and Tags
@@ -2835,7 +2968,12 @@ async def delete_account(user: dict = Depends(get_current_user)):
     user_email = user["email"]
     
     try:
-        # Delete all user's scans first
+        # Delete all user's scans first (including stored photos)
+        user_scan_rows = await database.fetch_all(
+            sqlalchemy.select(scans_table.c.id).where(scans_table.c.user_id == user_id)
+        )
+        await purge_scan_assets([r["id"] for r in user_scan_rows])
+        await database.execute(scan_submissions_table.delete().where(scan_submissions_table.c.user_id == user_id))
         delete_scans_query = scans_table.delete().where(scans_table.c.user_id == user_id)
         await database.execute(delete_scans_query)
         logger.info(f"Deleted all scans for user {user_id}")
@@ -3603,148 +3741,393 @@ async def sync_revenuecat_subscription(data: RevenueCatSyncRequest, user: dict =
 
 # ============ DEER ANALYSIS ============
 
+# ============ MULTI-PHOTO SCAN HELPERS ============
+
+SUBMISSION_STALE_AFTER = timedelta(minutes=5)
+MULTI_IMAGE_PROMPT_SUFFIX = "+multi-v1"
+IMAGE_ID_PATTERN = re.compile(r"^img_[1-9]$")
+
+
+def image_validation_http(exc: ImageValidationError) -> HTTPException:
+    return HTTPException(status_code=400, detail=exc.to_detail())
+
+
+def resolve_request_images(images: Optional[List[ScanImageInput]], image_base64: Optional[str], local_image_id: Optional[str]) -> List[ScanImageInput]:
+    if images:
+        return images
+    if image_base64:
+        return [ScanImageInput(image_base64=image_base64, local_image_id=local_image_id)]
+    raise ImageValidationError("NO_IMAGES", "Add at least one photo of the deer.")
+
+
+def prepare_request_images(
+    inputs: List[ScanImageInput],
+    stored_crops: Optional[Dict[str, Any]] = None,
+) -> List[PreparedImage]:
+    if len(inputs) > MAX_SCAN_IMAGES:
+        raise ImageValidationError("TOO_MANY_IMAGES", f"Use at most {MAX_SCAN_IMAGES} photos per scan.")
+    prepared: List[PreparedImage] = []
+    seen_ids = set()
+    for index, item in enumerate(inputs, start=1):
+        image_id = item.image_id or f"img_{index}"
+        if not IMAGE_ID_PATTERN.match(image_id) or image_id in seen_ids:
+            raise ImageValidationError("INVALID_IMAGE_ID", "Each photo needs a unique id like img_1.", image_id)
+        seen_ids.add(image_id)
+        crop_rect = item.crop_rect
+        if crop_rect is None and stored_crops:
+            crop_rect = stored_crops.get(image_id)
+        prepared.append(prepare_image(
+            image_bytes=decode_base64_image(item.image_base64),
+            position=index,
+            image_id=image_id,
+            captured_at=item.captured_at,
+            crop_rect=crop_rect,
+            local_image_id=item.local_image_id,
+        ))
+    return prepared
+
+
+def build_image_user_content(intro_text: str, evidence: List[PreparedImage]) -> List[Dict[str, Any]]:
+    if len(evidence) == 1:
+        return [
+            {"type": "text", "text": intro_text},
+            {"type": "image_url", "image_url": {"url": evidence[0].model_data_url, "detail": "high"}},
+        ]
+    return build_multi_image_user_content(
+        intro_text
+        + f"\n\n{len(evidence)} photos of the same deer from one encounter follow. "
+        "Assess each photo separately, then reconcile into one estimate.",
+        evidence,
+    )
+
+
+def scan_image_public_record(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "image_id": row.get("image_id"),
+        "position": row.get("position"),
+        "url": row.get("crop_url") or row.get("original_url"),
+        "original_url": row.get("original_url"),
+        "crop_url": row.get("crop_url"),
+        "crop_rect": row.get("crop_rect"),
+        "is_cropped": row.get("crop_rect") is not None,
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "captured_at": row.get("captured_at"),
+        "local_image_id": row.get("local_image_id"),
+        "duplicate_of": row.get("duplicate_of"),
+    }
+
+
+async def fetch_scan_image_rows(scan_id: str) -> List[Dict[str, Any]]:
+    rows = await database.fetch_all(
+        scan_images_table.select()
+        .where(scan_images_table.c.scan_id == scan_id)
+        .order_by(scan_images_table.c.position)
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_scan_images(scan_id: str) -> List[Dict[str, Any]]:
+    return [scan_image_public_record(r) for r in await fetch_scan_image_rows(scan_id)]
+
+
+def upload_scan_photos(scan_id: str, user_id: str, images: List[PreparedImage]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Upload originals (+ crops) to R2. Returns DB rows and uploaded keys (for cleanup)."""
+    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+    rows: List[Dict[str, Any]] = []
+    uploaded: List[str] = []
+    now = datetime.utcnow()
+    for img in images:
+        original_key = crop_key = original_url = crop_url = None
+        if R2_ENABLED:
+            key = f"scans/{scan_id}/{img.image_id}_original.{ext_map.get(img.original_content_type, 'jpg')}"
+            original_url = put_scan_object(key, img.original_bytes, img.original_content_type)
+            if original_url:
+                original_key = key
+                uploaded.append(key)
+            if img.crop_jpeg is not None:
+                key = f"scans/{scan_id}/{img.image_id}_crop.jpg"
+                crop_url = put_scan_object(key, img.crop_jpeg, "image/jpeg")
+                if crop_url:
+                    crop_key = key
+                    uploaded.append(key)
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "scan_id": scan_id,
+            "user_id": user_id,
+            "image_id": img.image_id,
+            "position": img.position,
+            "local_image_id": img.local_image_id,
+            "original_key": original_key,
+            "original_url": original_url,
+            "crop_key": crop_key,
+            "crop_url": crop_url,
+            "crop_rect": img.crop_rect,
+            "width": img.width,
+            "height": img.height,
+            "captured_at": img.captured_at,
+            "content_type": img.original_content_type,
+            "sha256": img.sha256,
+            "dhash": img.dhash,
+            "duplicate_of": img.duplicate_of,
+            "created_at": now,
+        })
+    return rows, uploaded
+
+
+async def purge_scan_assets(scan_ids: List[str]) -> None:
+    """Delete every stored photo (legacy single + multi-photo) and ledger rows for scans."""
+    if not scan_ids:
+        return
+    rows = await database.fetch_all(
+        scan_images_table.select().where(scan_images_table.c.scan_id.in_(scan_ids))
+    )
+    if R2_ENABLED:
+        keys = [k for r in rows for k in (r["original_key"], r["crop_key"]) if k]
+        try:
+            delete_scan_objects(keys)
+        except Exception as e:
+            logger.warning(f"Failed to delete R2 photos: {e}")
+        for sid in scan_ids:
+            try:
+                delete_scan_image(sid)  # legacy scans/{id}.jpg
+            except Exception as e:
+                logger.warning(f"Failed to delete legacy R2 image for scan {sid}: {e}")
+    await database.execute(scan_images_table.delete().where(scan_images_table.c.scan_id.in_(scan_ids)))
+    await database.execute(scan_submissions_table.delete().where(scan_submissions_table.c.scan_id.in_(scan_ids)))
+
+
+def is_unique_violation(exc: Exception) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "unique" in text or "duplicate key" in text
+
+
+async def claim_submission(user_id: str, submission_id: str) -> Optional[Dict[str, Any]]:
+    """Reserve a submission id. Returns the already-saved scan if this is a retry of a completed submission."""
+    key = f"{user_id}:{submission_id}"
+    now = datetime.utcnow()
+    try:
+        await database.execute(scan_submissions_table.insert().values(
+            id=key, user_id=user_id, status="pending", created_at=now, updated_at=now,
+        ))
+        return None
+    except Exception as exc:
+        if not is_unique_violation(exc):
+            raise
+    row = await database.fetch_one(scan_submissions_table.select().where(scan_submissions_table.c.id == key))
+    if row is None:
+        raise HTTPException(status_code=409, detail={"code": "SUBMISSION_IN_PROGRESS", "message": "This scan is already being processed. Please wait."})
+    if row["status"] == "completed" and row["scan_id"]:
+        scan = await database.fetch_one(scans_table.select().where(
+            (scans_table.c.id == row["scan_id"]) & (scans_table.c.user_id == user_id)
+        ))
+        if scan:
+            return dict(scan)
+    elif row["updated_at"] and row["updated_at"] > now - SUBMISSION_STALE_AFTER:
+        raise HTTPException(status_code=409, detail={"code": "SUBMISSION_IN_PROGRESS", "message": "This scan is already being processed. Please wait."})
+    # Stale pending claim, or completed but scan was deleted: take it over.
+    await database.execute(
+        scan_submissions_table.update().where(scan_submissions_table.c.id == key)
+        .values(status="pending", scan_id=None, updated_at=now)
+    )
+    return None
+
+
+async def release_submission(user_id: str, submission_id: str) -> None:
+    try:
+        await database.execute(scan_submissions_table.delete().where(
+            (scan_submissions_table.c.id == f"{user_id}:{submission_id}")
+            & (scan_submissions_table.c.status == "pending")
+        ))
+    except Exception:
+        logger.warning("Failed to release submission %s", submission_id, exc_info=True)
+
+
+async def charge_scan_credit(user: dict) -> bool:
+    """Atomically consume one scan credit. Returns False if none remain (free tier)."""
+    if user.get("subscription_tier") == "master_stag":
+        await database.execute(
+            users_table.update().where(users_table.c.id == user["id"])
+            .values(total_scans_used=users_table.c.total_scans_used + 1)
+        )
+        return True
+    row = await database.fetch_one(
+        users_table.update()
+        .where((users_table.c.id == user["id"]) & (users_table.c.scans_remaining > 0))
+        .values(
+            scans_remaining=users_table.c.scans_remaining - 1,
+            total_scans_used=users_table.c.total_scans_used + 1,
+        )
+        .returning(users_table.c.scans_remaining)
+    )
+    return row is not None
+
+
+def run_analysis_with_consensus(
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: List[Dict[str, Any]],
+    max_output_tokens: int,
+    prompt_version: str,
+    context: Dict[str, Any],
+    post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    def one_pass():
+        return run_model_analysis_pass(
+            model=model,
+            system_prompt=system_prompt,
+            user_content=user_content,
+            max_output_tokens=max_output_tokens,
+            prompt_version=prompt_version,
+            context=context,
+            post_parse=post_parse,
+        )
+
+    initial = one_pass()
+    if initial is None:
+        return None
+    return maybe_apply_selective_consensus(
+        initial_analysis=initial,
+        total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
+        pass_builder=one_pass,
+    )
+
+
+def apply_photo_set_guards(
+    analysis: Dict[str, Any],
+    all_images: List[PreparedImage],
+    evidence: List[PreparedImage],
+    duplicates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Attach multi-photo metadata/guards; raise 422 on suspected mixed-deer submissions."""
+    if len(all_images) < 2:
+        return analysis
+    apply_multi_image_guards(analysis, evidence, duplicates, capture_span_hours(evidence))
+    mixed = mixed_deer_detail(analysis)
+    if mixed:
+        raise HTTPException(status_code=422, detail=mixed)
+    return analysis
+
+
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
 async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_current_user)):
     logger.info(
-        "Starting analyze_deer | user_id=%s local_image_id=%s state=%s date_taken=%s",
+        "Starting analyze_deer | user_id=%s local_image_id=%s state=%s date_taken=%s photos=%s submission=%s",
         user.get("id"), data.local_image_id, data.state, data.date_taken,
+        len(data.images) if data.images else (1 if data.image_base64 else 0), data.submission_id,
     )
 
-    eligibility = await check_scan_eligibility(user)
-    if not eligibility["allowed"]:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "FREE_LIMIT_REACHED",
-                "message": eligibility["message"],
-                "scans_remaining": 0,
-                "upgrade_required": True
-            }
-        )
-    
+    # ── Step 0: Idempotency — a retry of a completed submission returns the saved scan, no new charge ──
+    submission_id = (data.submission_id or "").strip() or str(uuid.uuid4())
+    existing_scan = await claim_submission(user["id"], submission_id)
+    if existing_scan:
+        logger.info("Duplicate submission %s -> returning scan %s (no charge)", submission_id, existing_scan["id"])
+        return build_scan_response(existing_scan, images=await fetch_scan_images(existing_scan["id"]))
+
+    uploaded_keys: List[str] = []
     try:
-        # ── Step 1: Decode image ──
-        logger.info("Step 1: Decoding image data")
-        image_data = data.image_base64
-        if not image_data.startswith("data:"):
-            image_data = f"data:image/jpeg;base64,{image_data}"
+        # ── Step 1: Validate + prepare photos (type, size, count, orientation, crop, dedupe) ──
+        try:
+            all_images = prepare_request_images(
+                resolve_request_images(data.images, data.image_base64, data.local_image_id)
+            )
+        except ImageValidationError as exc:
+            raise image_validation_http(exc)
+        duplicates = mark_duplicates(all_images)
+        evidence = evidence_images(all_images)
+        is_multi = len(evidence) > 1
+        prompt_version = ANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else "")
+
+        eligibility = await check_scan_eligibility(user)
+        if not eligibility["allowed"]:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "FREE_LIMIT_REACHED",
+                    "message": eligibility["message"],
+                    "scans_remaining": 0,
+                    "upgrade_required": True
+                }
+            )
+
         scan_created_at = datetime.utcnow()
 
         # ── Step 2: Select model ──
-        logger.info("Step 2: Selecting analysis model")
         selected_model, model_variant = select_analysis_model(
             user_id=user["id"],
             local_image_id=data.local_image_id,
         )
         user_profile_state = user.get("state")
 
-        # ── Step 3: Extract raw image bytes for EXIF ──
-        logger.info("Step 3: Extracting raw image bytes for EXIF")
-        raw_image_bytes = None
-        try:
-            b64_part = image_data.split(",", 1)[-1] if "," in image_data else image_data
-            import base64 as b64_mod
-            raw_image_bytes = b64_mod.b64decode(b64_part)
-            logger.info("Image decoded successfully, size=%d bytes", len(raw_image_bytes) if raw_image_bytes else 0)
-        except Exception:
-            logger.warning("Base64 decode failed for EXIF extraction", exc_info=True)
-
-        # ── Step 4: Build scan context (season, region) ──
-        logger.info("Step 4: Building scan context")
+        # ── Step 3/4: Build scan context (season, region); EXIF from the first photo ──
+        date_taken = data.date_taken
+        if not date_taken:
+            capture_dates = sorted(img.captured_at for img in evidence if img.captured_at)
+            date_taken = capture_dates[0][:10] if capture_dates else None
         try:
             scan_context = build_scan_context(
                 scan_state=data.state,
                 user_profile_state=user_profile_state,
                 scan_datetime=scan_created_at,
                 notes=data.notes,
-                date_taken=data.date_taken,
-                image_bytes=raw_image_bytes,
+                date_taken=date_taken,
+                image_bytes=all_images[0].original_bytes,
             )
             context_text = format_scan_context_for_prompt(scan_context)
         except Exception:
             logger.exception(
                 "Scan context build failed | user_id=%s state=%s date_taken=%s",
-                user.get("id"), data.state, data.date_taken,
+                user.get("id"), data.state, date_taken,
             )
             raise
 
         logger.info(
-            "Using analysis model %s for user %s local_image_id %s (variant=%s) | season=%s date=%s",
-            selected_model, user["id"], data.local_image_id, model_variant,
-            scan_context.get("season_phase"), scan_context.get("date_taken"),
+            "Using analysis model %s for user %s (variant=%s) | evidence_photos=%d duplicates=%d season=%s",
+            selected_model, user["id"], model_variant, len(evidence), len(duplicates),
+            scan_context.get("season_phase"),
         )
 
-        # ── Step 5: Call OpenAI model ──
-        logger.info("Step 5: Calling OpenAI model %s", selected_model)
-        user_content = [
-            {
-                "type": "text",
-                "text": (
-                    "Analyze this image and return JSON only.\n\n"
-                    f"{context_text}\n\n"
-                    "Use region and season as supporting context only. "
-                    "Visible body anatomy must dominate the age estimate."
-                ),
-            },
-            {"type": "image_url", "image_url": {"url": image_data}},
-        ]
+        # ── Step 5: One model request containing every evidence photo ──
+        intro = (
+            ("Analyze these photos and return JSON only.\n\n" if is_multi else "Analyze this image and return JSON only.\n\n")
+            + f"{context_text}\n\n"
+            "Use region and season as supporting context only. "
+            "Visible body anatomy must dominate the age estimate."
+        )
+        user_content = build_image_user_content(intro, evidence)
+        system_prompt = build_analysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else "")
+        max_tokens = 1400 + (400 * (len(evidence) - 1))
 
         try:
-            initial_analysis = run_model_analysis_pass(
+            analysis = run_analysis_with_consensus(
                 model=selected_model,
-                system_prompt=build_analysis_system_prompt(),
+                system_prompt=system_prompt,
                 user_content=user_content,
-                max_output_tokens=1400,
-                prompt_version=ANALYSIS_PROMPT_VERSION,
+                max_output_tokens=max_tokens,
+                prompt_version=prompt_version,
                 context=scan_context,
             )
         except openai.OpenAIError as e:
-            logger.exception(
-                "OpenAI API error during analyze_deer | user_id=%s model=%s",
-                user.get("id"), selected_model,
-            )
+            logger.exception("OpenAI API error during analyze_deer | user_id=%s model=%s", user.get("id"), selected_model)
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "code": "OPENAI_FAILURE",
-                    "message": f"AI analysis failed: {str(e)}"
-                }
+                detail={"code": "OPENAI_FAILURE", "message": f"AI analysis failed: {str(e)}"}
             )
 
         # ── Step 6: Process response ──
-        logger.info("Step 6: Processing AI response")
-        if initial_analysis is None:
+        if analysis is None:
             analysis = {
                 "is_valid_deer": False,
                 "detected_subject": "Unknown",
                 "message": "Could not analyze the image. Please try again with a clearer photo.",
             }
-        else:
-            analysis = maybe_apply_selective_consensus(
-                initial_analysis=initial_analysis,
-                total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
-                pass_builder=lambda: run_model_analysis_pass(
-                    model=selected_model,
-                    system_prompt=build_analysis_system_prompt(),
-                    user_content=user_content,
-                    max_output_tokens=1400,
-                    prompt_version=ANALYSIS_PROMPT_VERSION,
-                    context=scan_context,
-                ),
-            )
-            if analysis.get("consensus"):
-                logger.info(
-                    "Selective consensus applied for scan local_image_id %s: %s",
-                    data.local_image_id,
-                    analysis.get("consensus"),
-                )
+        elif analysis.get("consensus"):
+            logger.info("Selective consensus applied: %s", analysis.get("consensus"))
 
-        # Check if this is a valid deer image
         if not analysis.get("is_valid_deer", False):
             detected = analysis.get("detected_subject", "Unknown")
             message = analysis.get("message", f"This image appears to contain {detected}, not a deer.")
-
-            # Return rejection without saving or using a scan
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -3755,8 +4138,9 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 }
             )
 
+        analysis = apply_photo_set_guards(analysis, all_images, evidence, duplicates)
+
         # ── Step 7: Calibrate confidence ──
-        logger.info("Step 7: Applying calibration")
         active_curves = await get_live_active_curves()
         calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
             analysis=analysis,
@@ -3767,21 +4151,14 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
 
         scan_id = str(uuid.uuid4())
 
-        # ── Step 8: Upload to R2 ──
-        image_url = None
-        if R2_ENABLED:
-            try:
-                logger.info("Step 8: Uploading image to R2")
-                image_url = upload_scan_image(scan_id, image_data)
-                if image_url:
-                    logger.info(f"Image uploaded to R2 for scan {scan_id}")
-            except Exception as e:
-                logger.warning(f"Failed to upload image to R2: {e}")
+        # ── Step 8: Upload originals (+ crops) to R2 ──
+        image_rows, uploaded_keys = upload_scan_photos(scan_id, user["id"], all_images)
+        primary = image_rows[0]
+        image_url = primary["crop_url"] or primary["original_url"]
 
-        # ── Step 9: Save to database ──
-        logger.info("Step 9: Saving scan to database | scan_id=%s", scan_id)
-        try:
-            query = scans_table.insert().values(
+        # ── Step 9: Save scan + photos + charge one credit atomically ──
+        async with database.transaction():
+            await database.execute(scans_table.insert().values(
                 id=scan_id,
                 user_id=user["id"],
                 local_image_id=data.local_image_id,
@@ -3802,7 +4179,6 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 notes=data.notes,
                 raw_response=analysis,
                 created_at=scan_created_at,
-                # Calibration fields
                 raw_confidence=calibrated_analysis.get("raw_confidence"),
                 raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
                 raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
@@ -3810,15 +4186,14 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                 age_uncertain=calibrated_analysis.get("age_uncertain", False),
                 calibration_version=calibrated_analysis.get("calibration_version"),
-                # Region fields
+                score_audit=calibrated_analysis.get("score_audit"),
                 region_key=calibrated_analysis.get("region_key"),
                 region_source=calibrated_analysis.get("region_source"),
                 region_state=calibrated_analysis.get("region_state"),
                 calibration_strategy=calibrated_analysis.get("calibration_strategy"),
                 calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
                 season_bucket=scan_context.get("season_bucket"),
-                analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
-                # Seasonal context fields
+                analysis_prompt_version=prompt_version,
                 date_taken=scan_context.get("date_taken"),
                 date_source=scan_context.get("date_source"),
                 season_phase=scan_context.get("season_phase"),
@@ -3829,35 +4204,30 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
                 quality_factors=calibrated_analysis.get("quality_factors"),
                 posture_bucket=calibrated_analysis.get("posture_bucket"),
-                # Cloud image storage (R2)
                 image_url=image_url,
+            ))
+            for row in image_rows:
+                await database.execute(scan_images_table.insert().values(**row))
+            if not await charge_scan_credit(user):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "FREE_LIMIT_REACHED",
+                        "message": "You've used all your free scans. Upgrade to Master Stag for unlimited scans.",
+                        "scans_remaining": 0,
+                        "upgrade_required": True,
+                    },
+                )
+            await database.execute(
+                scan_submissions_table.update()
+                .where(scan_submissions_table.c.id == f"{user['id']}:{submission_id}")
+                .values(status="completed", scan_id=scan_id, updated_at=datetime.utcnow())
             )
-            # Store score_audit separately if present
-            score_audit_data = calibrated_analysis.get("score_audit")
-            if score_audit_data:
-                try:
-                    await database.execute(
-                        scans_table.update()
-                        .where(scans_table.c.id == scan_id)
-                        .values(score_audit=score_audit_data)
-                    )
-                except Exception:
-                    logger.warning("Failed to store score_audit for scan %s", scan_id)
-            await database.execute(query)
-            logger.info("Scan saved to database successfully | scan_id=%s", scan_id)
-        except Exception:
-            logger.exception(
-                "Database insert failed | scan_id=%s user_id=%s",
-                scan_id, user.get("id"),
-            )
-            raise
-
-        await use_scan(user)
+        uploaded_keys = []  # Committed; nothing to clean up
+        logger.info("Scan saved | scan_id=%s photos=%d", scan_id, len(image_rows))
 
         # ── Step 10: Build response ──
-        logger.info("Step 10: Building response | scan_id=%s", scan_id)
         config = RegionCalibrationConfig
-
         return DeerAnalysisResponse(
             id=scan_id,
             user_id=user["id"],
@@ -3885,7 +4255,6 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
             created_at=scan_created_at,
-            # Calibration fields
             age_uncertain=calibrated_analysis.get("age_uncertain"),
             confidence_breakdown={
                 "age": calibrated_analysis.get("age_confidence", 0),
@@ -3893,48 +4262,40 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             },
             calibration_version=calibrated_analysis.get("calibration_version"),
             score_audit=calibrated_analysis.get("score_audit"),
-            # Region fields (feature-flagged)
             region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
             calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
             calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None,
             image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
             quality_factors=calibrated_analysis.get("quality_factors") or {},
             posture_bucket=calibrated_analysis.get("posture_bucket"),
-            analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+            analysis_prompt_version=prompt_version,
             analysis_model=selected_model,
             age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
             retake_reason=calibrated_analysis.get("retake_reason"),
             visible_age_cues=calibrated_analysis.get("visible_age_cues") or [],
             consensus=calibrated_analysis.get("consensus"),
-            # Cloud image storage (R2)
+            multi_image=analysis.get("multi_image"),
+            images=[scan_image_public_record(r) for r in image_rows],
             image_url=image_url,
-            # Seasonal context
             date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
             season_phase=scan_context.get("season_phase"),
             date_source=scan_context.get("date_source"),
             season_phase_confidence=scan_context.get("season_confidence"),
             season_phase_reason=scan_context.get("season_reason"),
         )
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions as-is (eligibility, not-a-deer, etc.)
         raise
     except openai.OpenAIError as e:
         logger.exception("OpenAI error during analyze_deer | user_id=%s", user.get("id"))
         raise HTTPException(
             status_code=500,
-            detail={
-                "code": "OPENAI_FAILURE",
-                "message": f"AI analysis failed: {str(e)}"
-            }
+            detail={"code": "OPENAI_FAILURE", "message": f"AI analysis failed: {str(e)}"}
         )
-    except Exception as e:
+    except Exception:
         logger.exception(
-            "Unhandled analyze_deer failure | user_id=%s local_image_id=%s state=%s date_taken=%s",
-            user.get("id"),
-            getattr(data, "local_image_id", None),
-            getattr(data, "state", None),
-            getattr(data, "date_taken", None),
+            "Unhandled analyze_deer failure | user_id=%s local_image_id=%s",
+            user.get("id"), getattr(data, "local_image_id", None),
         )
         raise HTTPException(
             status_code=500,
@@ -3943,6 +4304,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 "message": "Server failed while analyzing the image. Please try again."
             }
         )
+    finally:
+        # Any path that did not commit: remove uploaded photos and free the submission id for retry.
+        if uploaded_keys:
+            delete_scan_objects(uploaded_keys)
+        await release_submission(user["id"], submission_id)
 
 # ============ SCANS ROUTES ============
 
@@ -3983,7 +4349,7 @@ async def get_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    return build_scan_response(dict(scan))
+    return build_scan_response(dict(scan), images=await fetch_scan_images(scan_id))
 
 @api_router.put("/scans/{scan_id}", response_model=DeerAnalysisResponse)
 async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_current_user)):
@@ -4960,15 +5326,53 @@ async def edit_scan_with_reanalysis(
         right = data.antler_points_right or 0
         total_points = left + right
     
-    # If image is provided, re-analyze with LLM
-    if data.image_base64:
+    # If photos are provided (or stored photos requested), re-analyze with LLM.
+    # Re-analysis never charges a scan credit and always uses every photo of the scan.
+    if data.image_base64 or data.images or data.reanalyze:
+        stored_rows = await fetch_scan_image_rows(scan_id)
         try:
-            logger.info(f"Re-analyzing scan {scan_id} with user corrections")
+            if data.images:
+                stored_crops = {r["image_id"]: r["crop_rect"] for r in stored_rows}
+                all_images = prepare_request_images(data.images, stored_crops=stored_crops)
+            elif data.reanalyze and stored_rows:
+                inputs = []
+                for r in stored_rows:
+                    raw = get_scan_object(r["original_key"]) if r.get("original_key") else None
+                    if raw is None:
+                        raise HTTPException(status_code=409, detail={
+                            "code": "STORED_IMAGES_UNAVAILABLE",
+                            "message": "Stored photos for this scan could not be loaded. Re-analysis needs the photos from this device.",
+                        })
+                    inputs.append(ScanImageInput(
+                        image_base64=base64.b64encode(raw).decode("ascii"),
+                        image_id=r["image_id"],
+                        local_image_id=r.get("local_image_id"),
+                        captured_at=r.get("captured_at"),
+                        crop_rect=r.get("crop_rect"),
+                    ))
+                all_images = prepare_request_images(inputs)
+            elif data.image_base64:
+                stored_crops = {r["image_id"]: r["crop_rect"] for r in stored_rows}
+                all_images = prepare_request_images([ScanImageInput(image_base64=data.image_base64)], stored_crops=stored_crops)
+            else:
+                raise HTTPException(status_code=409, detail={
+                    "code": "STORED_IMAGES_UNAVAILABLE",
+                    "message": "No stored photos found for this scan.",
+                })
+        except ImageValidationError as exc:
+            raise image_validation_http(exc)
+        if stored_rows and len(all_images) != len(stored_rows):
+            raise HTTPException(status_code=400, detail={
+                "code": "REANALYSIS_PHOTO_MISMATCH",
+                "message": f"This scan has {len(stored_rows)} photo(s); re-analysis must include all of them.",
+            })
+        duplicates = mark_duplicates(all_images)
+        evidence = evidence_images(all_images)
+        is_multi = len(evidence) > 1
+        reanalysis_prompt_version = REANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else "")
+        try:
+            logger.info(f"Re-analyzing scan {scan_id} with user corrections ({len(evidence)} evidence photo(s))")
             selected_model, model_variant = resolve_reanalysis_model(dict(scan), user["id"])
-            
-            image_data = data.image_base64
-            if not image_data.startswith("data:"):
-                image_data = f"data:image/jpeg;base64,{image_data}"
 
             existing_region_state = scan.get("region_state")
             user_profile_state = user.get("state")
@@ -5058,45 +5462,22 @@ Provide your complete REVISED analysis in JSON format."""
                 parsed_analysis["is_valid_deer"] = True
                 return parsed_analysis
 
-            user_content = [
-                {"type": "text", "text": user_message},
-                {"type": "image_url", "image_url": {"url": image_data}},
-            ]
+            user_content = build_image_user_content(user_message, evidence)
 
-            initial_analysis = run_model_analysis_pass(
+            analysis = run_analysis_with_consensus(
                 model=selected_model,
-                system_prompt=build_reanalysis_system_prompt(),
+                system_prompt=build_reanalysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else ""),
                 user_content=user_content,
-                max_output_tokens=1500,
-                prompt_version=REANALYSIS_PROMPT_VERSION,
+                max_output_tokens=1500 + (400 * (len(evidence) - 1)),
+                prompt_version=reanalysis_prompt_version,
                 context=reanalysis_context,
                 post_parse=apply_reanalysis_overrides,
             )
-
-            if initial_analysis is None:
-                analysis = None
-            else:
-                analysis = maybe_apply_selective_consensus(
-                    initial_analysis=initial_analysis,
-                    total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
-                    pass_builder=lambda: run_model_analysis_pass(
-                        model=selected_model,
-                        system_prompt=build_reanalysis_system_prompt(),
-                        user_content=user_content,
-                        max_output_tokens=1500,
-                        prompt_version=REANALYSIS_PROMPT_VERSION,
-                        context=reanalysis_context,
-                        post_parse=apply_reanalysis_overrides,
-                    ),
-                )
-                if analysis.get("consensus"):
-                    logger.info(
-                        "Selective consensus applied for reanalysis scan %s: %s",
-                        scan_id,
-                        analysis.get("consensus"),
-                    )
+            if analysis and analysis.get("consensus"):
+                logger.info("Selective consensus applied for reanalysis scan %s: %s", scan_id, analysis.get("consensus"))
 
             if analysis:
+                analysis = apply_photo_set_guards(analysis, all_images, evidence, duplicates)
                 # Apply region-aware confidence calibration to re-analysis
                 active_curves = await get_live_active_curves()
                 calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
@@ -5142,7 +5523,7 @@ Provide your complete REVISED analysis in JSON format."""
                     date_taken=reanalysis_context.get("date_taken"),
                     season_phase=reanalysis_context.get("season_phase"),
                     date_source=reanalysis_context.get("date_source"),
-                    analysis_prompt_version=REANALYSIS_PROMPT_VERSION,
+                    analysis_prompt_version=reanalysis_prompt_version,
                     analysis_model=selected_model,
                     age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
                     retake_reason=calibrated_analysis.get("retake_reason"),
@@ -5152,6 +5533,8 @@ Provide your complete REVISED analysis in JSON format."""
                     posture_bucket=calibrated_analysis.get("posture_bucket"),
                 )
                 await database.execute(update_query)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Re-analysis failed: {e}")
             # Fall through to simple update
@@ -5202,7 +5585,7 @@ Provide your complete REVISED analysis in JSON format."""
     query = scans_table.select().where(scans_table.c.id == scan_id)
     updated_scan = await database.fetch_one(query)
     
-    return build_scan_response(dict(updated_scan))
+    return build_scan_response(dict(updated_scan), images=await fetch_scan_images(scan_id))
 
 @api_router.delete("/scans/{scan_id}")
 async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
@@ -5214,13 +5597,8 @@ async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    # Delete image from R2 cloud storage
-    if R2_ENABLED:
-        try:
-            delete_scan_image(scan_id)
-        except Exception as e:
-            logger.warning(f"Failed to delete R2 image for scan {scan_id}: {e}")
-            # Continue with DB deletion even if R2 fails
+    # Delete every photo (R2 + scan_images rows) and ledger rows
+    await purge_scan_assets([scan_id])
     
     query = scans_table.delete().where(scans_table.c.id == scan_id)
     await database.execute(query)
@@ -5252,13 +5630,7 @@ async def delete_scans_by_local_image_ids(
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No matching scans found"}
     
-    # Delete images from R2 cloud storage
-    if R2_ENABLED:
-        for scan in scans_to_delete:
-            try:
-                delete_scan_image(scan["id"])
-            except Exception as e:
-                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    await purge_scan_assets([scan["id"] for scan in scans_to_delete])
     
     # Delete all matching scans
     delete_query = scans_table.delete().where(
@@ -5285,13 +5657,7 @@ async def delete_all_scans(user: dict = Depends(get_current_user)):
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No scans to delete"}
     
-    # Delete images from R2 cloud storage
-    if R2_ENABLED:
-        for scan in scans_to_delete:
-            try:
-                delete_scan_image(scan["id"])
-            except Exception as e:
-                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    await purge_scan_assets([scan["id"] for scan in scans_to_delete])
     
     # Delete all scans for this user
     delete_query = scans_table.delete().where(scans_table.c.user_id == user["id"])

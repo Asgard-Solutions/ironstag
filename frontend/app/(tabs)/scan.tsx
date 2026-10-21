@@ -10,6 +10,7 @@ import {
   Image,
   ScrollView,
   Platform,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +32,7 @@ import {
   MapPin,
   RotateCcw,
   Calendar,
+  Crop,
 } from 'lucide-react-native';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
@@ -45,6 +47,17 @@ import { StatePicker, getStateName } from '../../components/StatePicker';
 import { Picker } from '@react-native-picker/picker';
 import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format } from 'date-fns';
+import { PhotoTray } from '../../components/scan/PhotoTray';
+import { CropModal } from '../../components/scan/CropModal';
+import {
+  CropRect,
+  MAX_SCAN_PHOTOS,
+  ScanPhoto,
+  ScanRequestImage,
+  newId,
+  normalizePhoto,
+  toRequestImages,
+} from '../../utils/scanPhotos';
 
 type ScanStep = 'main' | 'camera' | 'preview' | 'analyzing';
 
@@ -67,7 +80,11 @@ export default function ScanScreen() {
   
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraReady, setCameraReady] = useState(false);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<ScanPhoto[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [cropIndex, setCropIndex] = useState<number | null>(null);
+  const [preparingPhotos, setPreparingPhotos] = useState(false);
+  const submissionIdRef = useRef<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [scansRemaining, setScansRemaining] = useState(user?.scans_remaining || 3);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
@@ -158,17 +175,53 @@ export default function ScanScreen() {
     }
   };
 
+  const resetSubmission = () => {
+    submissionIdRef.current = null;
+  };
+
+  const updatePhotos = (updater: (prev: ScanPhoto[]) => ScanPhoto[]) => {
+    setPhotos(updater);
+    resetSubmission(); // Any change to the photo set is a new submission
+  };
+
+  const addPhotos = async (incoming: { uri: string; width?: number; height?: number; exif?: Record<string, any> | null }[]) => {
+    const room = MAX_SCAN_PHOTOS - photos.length;
+    if (room <= 0) {
+      Alert.alert('Photo Limit', `You can add up to ${MAX_SCAN_PHOTOS} photos per scan.`);
+      return;
+    }
+    if (incoming.length > room) {
+      Alert.alert('Photo Limit', `Only ${room} more photo${room === 1 ? '' : 's'} can be added (max ${MAX_SCAN_PHOTOS}).`);
+    }
+    setPreparingPhotos(true);
+    try {
+      const normalized: ScanPhoto[] = [];
+      for (const item of incoming.slice(0, room)) {
+        normalized.push(await normalizePhoto(item.uri, item.width, item.height, item.exif));
+      }
+      if (normalized.length) {
+        updatePhotos((prev) => [...prev, ...normalized].slice(0, MAX_SCAN_PHOTOS));
+        setSelectedIndex(photos.length + normalized.length - 1);
+        setScanStep('preview');
+      }
+    } catch (error) {
+      console.error('Failed to prepare photo:', error);
+      Alert.alert('Error', 'That photo could not be loaded. Please try a different one.');
+    } finally {
+      setPreparingPhotos(false);
+    }
+  };
+
   const takePicture = async () => {
     if (!cameraRef.current || !cameraReady) return;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        base64: true,
-        quality: 0.8,
+        quality: 0.9,
+        exif: true,
       });
-      if (photo?.base64) {
-        setCapturedImage(`data:image/jpeg;base64,${photo.base64}`);
-        setScanStep('preview');
+      if (photo?.uri) {
+        await addPhotos([{ uri: photo.uri, width: photo.width, height: photo.height, exif: photo.exif }]);
       }
     } catch (error) {
       console.error('Failed to take picture:', error);
@@ -177,40 +230,74 @@ export default function ScanScreen() {
   };
 
   const pickImage = async () => {
+    const room = MAX_SCAN_PHOTOS - photos.length;
+    if (room <= 0) return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-      base64: true,
+      mediaTypes: ['images'],
+      allowsMultipleSelection: room > 1,
+      selectionLimit: room,
+      quality: 0.9,
+      exif: true,
     });
 
-    if (!result.canceled && result.assets[0].base64) {
-      setCapturedImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
-      setScanStep('preview');
+    if (!result.canceled && result.assets.length) {
+      await addPhotos(result.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height, exif: a.exif })));
     }
+  };
+
+  const promptAddPhoto = () => {
+    if (Platform.OS === 'web') {
+      pickImage();
+      return;
+    }
+    Alert.alert('Add Photo', 'Use photos of the same deer from the same encounter.', [
+      { text: 'Take Photo', onPress: openCamera },
+      { text: 'Choose from Library', onPress: pickImage },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const removePhoto = (index: number) => {
+    updatePhotos((prev) => prev.filter((_, i) => i !== index));
+    setSelectedIndex((cur) => Math.max(0, cur >= index ? cur - 1 : cur));
+    if (photos.length <= 1) setScanStep('main');
+  };
+
+  const movePhoto = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= photos.length) return;
+    updatePhotos((prev) => {
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+    setSelectedIndex(target);
+  };
+
+  const applyCrop = (crop: CropRect | null) => {
+    if (cropIndex === null) return;
+    updatePhotos((prev) => prev.map((p, i) => (i === cropIndex ? { ...p, crop } : p)));
+    setCropIndex(null);
   };
 
   // Offline queue hook
   const { isOnline, pendingCount } = useOfflineQueue();
 
+  const clearPhotos = () => {
+    setPhotos([]);
+    setSelectedIndex(0);
+    resetSubmission();
+  };
+
   const analyzeDeer = async () => {
-    console.log('analyzeDeer called', { capturedImage: !!capturedImage, isAuthenticated, isOnline });
-    
-    if (!capturedImage || !isAuthenticated) {
-      console.log('Early return - no image or not authenticated');
-      return;
-    }
+    if (!photos.length || !isAuthenticated) return;
 
     // Check eligibility before starting analysis (only if online)
     if (isOnline) {
-      console.log('Checking scan eligibility...');
       const canScan = await checkScanEligibility();
-      console.log('Eligibility result:', canScan);
-      
       if (!canScan) {
         setScanStep('main');
-        setCapturedImage(null);
+        clearPhotos();
         return;
       }
     }
@@ -218,138 +305,117 @@ export default function ScanScreen() {
     setScanStep('analyzing');
     setAnalyzing(true);
 
-    try {
-      // Save image to local storage first
-      console.log('Saving image to local storage...');
-      const localImageId = await saveImageFromBase64(capturedImage);
-      console.log('Image saved with ID:', localImageId);
+    // One id per photo set: retries (network drop, offline queue) never double-charge.
+    if (!submissionIdRef.current) submissionIdRef.current = newId();
+    const submissionId = submissionIdRef.current;
+    const stateToSend = huntingLocation || user?.state || undefined;
+    let requestImages: ScanRequestImage[] = [];
+    let primaryLocalId = '';
 
-      // Determine state to send (per-scan override or user profile default)
-      const stateToSend = huntingLocation || user?.state || undefined;
-      
-      // If offline, add to queue instead of calling API
+    const queueOffline = async (title: string, message: string) => {
+      await offlineQueue.addToQueue({
+        image_base64: requestImages[0].image_base64,
+        images: requestImages,
+        submission_id: submissionId,
+        local_image_id: primaryLocalId,
+        notes: undefined,
+        state: stateToSend,
+      });
+      Alert.alert(title, message, [{ text: 'OK', style: 'default' }]);
+      setHuntingLocation(null);
+      setScanStep('main');
+      clearPhotos();
+    };
+
+    try {
+      // Save every photo to local storage first (order preserved)
+      const localIds: string[] = [];
+      for (const photo of photos) {
+        localIds.push(await saveImageFromBase64(photo.uri));
+      }
+      primaryLocalId = localIds[0];
+      requestImages = toRequestImages(photos, localIds);
+
       if (!isOnline) {
-        console.log('[Offline] Adding scan to queue...');
-        
-        await offlineQueue.addToQueue({
-          image_base64: capturedImage,
-          local_image_id: localImageId,
-          notes: undefined,
-          state: stateToSend,
-        });
-        
-        // Show success message for queued scan
-        Alert.alert(
+        await queueOffline(
           '📶 Scan Saved Offline',
           'Your scan has been saved and will be automatically uploaded when you\'re back online.\n\nYou can view your pending scans in the History tab.',
-          [{ text: 'OK', style: 'default' }]
         );
-        
-        // Reset state
-        setHuntingLocation(null);
-        setScanStep('main');
-        setCapturedImage(null);
-        setAnalyzing(false);
         return;
       }
-      
-      console.log('Sending to analyze-deer API with state:', stateToSend);
-      
+
       const response = await scanAPI.analyzeDeer({
-        image_base64: capturedImage,
-        local_image_id: localImageId,
+        images: requestImages,
+        submission_id: submissionId,
+        local_image_id: primaryLocalId,
         state: stateToSend,
         date_taken: dateTaken ? format(dateTaken, 'yyyy-MM-dd') : undefined,
       });
-      console.log('API response:', response.data);
 
-      // Update local state after successful scan
-      if (!isPremium) {
-        const newRemaining = Math.max(0, scansRemaining - 1);
-        setScansRemaining(newRemaining);
-        updateUser({ 
-          scans_remaining: newRemaining,
-          total_scans_used: (user?.total_scans_used || 0) + 1
-        });
-      }
-      
-      // Reset per-scan overrides after successful scan
+      // Server is the source of truth for credits (retries are never double-charged)
+      checkSubscription();
+
       setHuntingLocation(null);
       setDateTaken(null);
-
-      // Use replace instead of push to prevent the Android back button
-      // from returning to the "analyzing" state
+      clearPhotos();
       router.push(`/scan-result/${response.data.id}`);
     } catch (error: any) {
-      console.error('Analyze deer error:', error);
-      console.error('Error response:', error.response?.data);
-      
-      // Check if this is a network error - add to queue if offline
-      if (!error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network') || !isOnline)) {
-        console.log('[Network Error] Adding scan to offline queue...');
-        
-        // Get the local image ID we saved earlier
-        const localImageId = await saveImageFromBase64(capturedImage);
-        const stateToSend = huntingLocation || user?.state || undefined;
-        
-        await offlineQueue.addToQueue({
-          image_base64: capturedImage,
-          local_image_id: localImageId,
-          notes: undefined,
-          state: stateToSend,
-        });
-        
-        Alert.alert(
+      console.error('Analyze deer error:', error?.response?.data || error);
+
+      if (requestImages.length && !error.response && (error.code === 'ECONNABORTED' || error.message?.includes('Network') || !isOnline)) {
+        await queueOffline(
           '📶 Connection Lost',
           'Your scan has been saved and will be uploaded automatically when you\'re back online.',
-          [{ text: 'OK', style: 'default' }]
         );
-        
-        setHuntingLocation(null);
-        setScanStep('main');
-        setCapturedImage(null);
-        setAnalyzing(false);
         return;
       }
-      
-      // Check if this is a "free limit reached" error
-      if (error.response?.status === 403) {
-        const detail = error.response?.data?.detail;
-        if (detail?.code === 'FREE_LIMIT_REACHED') {
-          setShowUpgradeModal(true);
-          setScanStep('main');
-          setCapturedImage(null);
-          return;
-        }
+
+      const status = error.response?.status;
+      const detail = error.response?.data?.detail;
+
+      if (status === 403 && detail?.code === 'FREE_LIMIT_REACHED') {
+        setShowUpgradeModal(true);
+        setScanStep('main');
+        clearPhotos();
+        return;
       }
-      
-      // Check if this is a "not a deer" rejection
-      if (error.response?.status === 400) {
-        const detail = error.response?.data?.detail;
-        if (detail?.code === 'NOT_A_DEER') {
-          const detected = detail?.detected_subject || 'something other than a deer';
-          Alert.alert(
-            '🦌 Not a Deer',
-            `We detected "${detected}" in your image.\n\nThis app is designed specifically for analyzing Whitetail and Mule Deer. Please try again with a deer image.\n\nNo scan was used.`,
-            [{ text: 'OK', style: 'default' }]
-          );
-          setScanStep('main');
-          setCapturedImage(null);
-          return;
-        }
+
+      if (status === 400 && detail?.code === 'NOT_A_DEER') {
+        const detected = detail?.detected_subject || 'something other than a deer';
+        Alert.alert(
+          '🦌 Not a Deer',
+          `We detected "${detected}" in your image.\n\nThis app is designed specifically for analyzing Whitetail and Mule Deer. Please try again with a deer image.\n\nNo scan was used.`,
+          [{ text: 'OK', style: 'default' }]
+        );
+        setScanStep('main');
+        clearPhotos();
+        return;
       }
-      
-      const message = error.response?.data?.detail?.message || error.response?.data?.detail || 'Analysis failed. Please try again.';
+
+      // Correctable problems: keep the photos so the user can fix them
+      if (status === 422 && detail?.code === 'MIXED_DEER') {
+        const ids: string[] = detail.conflicting_image_ids || [];
+        if (ids.length) setSelectedIndex(Math.max(0, Number(ids[0].split('_')[1]) - 1));
+        Alert.alert('Different Deer?', detail.message, [{ text: 'Review Photos', style: 'default' }]);
+        setScanStep('preview');
+        return;
+      }
+      if (status === 400 && detail?.code) {
+        Alert.alert('Check Your Photos', `${detail.message}\n\nNo scan was used.`);
+        setScanStep('preview');
+        return;
+      }
+
+      const message = detail?.message || detail || 'Analysis failed. Please try again.';
       Alert.alert('Error', typeof message === 'string' ? message : 'Analysis failed. Please try again.');
-      setScanStep('main');
+      setScanStep('preview');
     } finally {
       setAnalyzing(false);
-      setCapturedImage(null);
     }
   };
 
   const resetCapture = () => {
-    setCapturedImage(null);
+    clearPhotos();
     setScanStep('main');
   };
 
@@ -374,7 +440,15 @@ export default function ScanScreen() {
       const result = await requestPermission();
       console.log('Permission result:', result);
       if (!result.granted) {
-        Alert.alert('Permission Required', 'Camera access is needed to scan deer.');
+        if (!result.canAskAgain) {
+          Alert.alert('Camera Access Off', 'Turn on camera access in Settings to photograph deer, or choose photos from your library.', [
+            { text: 'Choose from Library', onPress: pickImage },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+        } else {
+          Alert.alert('Permission Required', 'Camera access is needed to scan deer. You can also choose photos from your library.');
+        }
         return;
       }
     }
@@ -431,7 +505,7 @@ export default function ScanScreen() {
         </CameraView>
 
         <View style={[styles.cameraControls, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <TouchableOpacity style={styles.controlButton} onPress={() => setScanStep('main')}>
+          <TouchableOpacity style={styles.controlButton} onPress={() => setScanStep(photos.length ? 'preview' : 'main')}>
             <X size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <TouchableOpacity
@@ -450,32 +524,66 @@ export default function ScanScreen() {
   }
 
   // Preview view
-  if (scanStep === 'preview' && capturedImage) {
+  if (scanStep === 'preview' && photos.length > 0) {
+    const current = photos[Math.min(selectedIndex, photos.length - 1)];
     return (
       <View style={styles.container}>
         <View style={styles.previewContainer}>
-          <Image source={{ uri: capturedImage }} style={styles.preview} resizeMode="contain" />
+          <Image source={{ uri: current.uri }} style={styles.preview} resizeMode="contain" testID="photo-preview-main" />
+          {current.crop && (
+            <View style={[styles.croppedPill, { top: insets.top + spacing.md }]}>
+              <Crop size={12} color={colors.textOnPrimary} />
+              <Text style={styles.croppedPillText}>Cropped for analysis</Text>
+            </View>
+          )}
           <TouchableOpacity
             style={[styles.closeButton, { top: insets.top + spacing.md }]}
             onPress={resetCapture}
+            testID="preview-close"
           >
             <X size={24} color={colors.textPrimary} />
           </TouchableOpacity>
+          {preparingPhotos && (
+            <View style={styles.preparingOverlay}>
+              <ActivityIndicator color={colors.primary} />
+            </View>
+          )}
         </View>
 
         <View style={[styles.previewControls, { paddingBottom: insets.bottom + spacing.lg }]}>
+          <PhotoTray
+            photos={photos}
+            selectedIndex={selectedIndex}
+            onSelect={setSelectedIndex}
+            onRemove={removePhoto}
+            onMove={movePhoto}
+            onAdd={promptAddPhoto}
+          />
+          <View style={styles.photoGuideRow}>
+            <Text style={styles.photoGuideText} testID="photo-guidance">
+              Use photos of the same deer from the same encounter. Include a clear side view with the full body visible.
+            </Text>
+            <TouchableOpacity
+              style={styles.cropButton}
+              onPress={() => setCropIndex(Math.min(selectedIndex, photos.length - 1))}
+              testID="photo-crop-button"
+            >
+              <Crop size={16} color={colors.primary} />
+              <Text style={styles.cropButtonText}>{current.crop ? 'Edit crop' : 'Crop'}</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.previewButtonRow}>
             <Button
-              title="Retake"
+              title="Start Over"
               onPress={resetCapture}
               variant="outline"
               style={styles.previewButton}
             />
             <Button
-              title="Analyze Deer"
+              title={photos.length > 1 ? `Analyze ${photos.length} Photos` : 'Analyze Deer'}
               onPress={analyzeDeer}
               style={styles.previewButton}
-              disabled={!isPremium && scansRemaining === 0}
+              disabled={(!isPremium && scansRemaining === 0) || preparingPhotos}
             />
           </View>
           <View style={styles.locationInlineRow}>
@@ -549,6 +657,12 @@ export default function ScanScreen() {
             </View>
           </View>
         </View>
+
+        <CropModal
+          photo={cropIndex !== null ? photos[cropIndex] ?? null : null}
+          onCancel={() => setCropIndex(null)}
+          onApply={applyCrop}
+        />
 
         {/* State Picker Modal */}
         <StatePicker
@@ -730,6 +844,9 @@ export default function ScanScreen() {
           </View>
           <Text style={styles.scanTipText}>
             Use a full-body side view when possible. Keep the deer centered and in focus, with the head, chest, belly, and legs visible. Avoid long-distance shots, heavy shadows, and photos with multiple deer.
+          </Text>
+          <Text style={[styles.scanTipText, { marginTop: spacing.xs }]}>
+            You can add up to {MAX_SCAN_PHOTOS} photos of the same deer. One scan credit covers all of them.
           </Text>
         </View>
 
@@ -1406,6 +1523,37 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     backgroundColor: colors.backgroundCard,
   },
+  croppedPill: {
+    position: 'absolute',
+    left: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primary,
+  },
+  croppedPillText: { color: colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
+  preparingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoGuideRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  photoGuideText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  cropButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  cropButtonText: { color: colors.primary, fontWeight: '600', fontSize: 13 },
   previewButtonRow: {
     flexDirection: 'row',
     gap: spacing.md,
