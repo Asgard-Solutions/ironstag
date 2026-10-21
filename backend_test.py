@@ -15,9 +15,8 @@ import json
 import time
 from typing import Dict, Any, Optional
 
-# Backend URL
-BASE_URL = "http://localhost:8001/api"
-ADMIN_SECRET = "dev-admin-secret-change-me"
+# API Configuration
+API_BASE_URL = "https://iap-typed-v3.preview.emergentagent.com/api"
 
 # Test credentials - newly registered user for testing
 TEST_EMAIL = "confidence_test@test.com"

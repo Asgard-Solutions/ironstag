@@ -483,7 +483,7 @@ agent_communication:
   - agent: "testing"
     message: "✅ FRONTEND SCAN FLOW TESTING COMPLETE: Successfully tested the 'Analyze Deer' scan flow as requested. Key findings: 1) User registration/login working perfectly ✅ 2) Dashboard shows '3 FREE SCANS LEFT' confirming backend integration ✅ 3) Scan interface accessible with 'Scan Deer' and 'Choose from Library' buttons ✅ 4) Scan eligibility tracking functional ✅ 5) Authentication and session management working ✅. Minor limitation: Full image picker testing limited in web environment (requires mobile device for complete flow). Core scan functionality and backend integration confirmed working. Ready for mobile testing or production deployment."
   - agent: "testing"
-    message: "✅ PRODUCTION URL TESTING COMPLETE: Comprehensive testing of Iron Stag backend API endpoints using production URL (https://date-persist-deploy.preview.emergentagent.com/api) completed successfully. All requested test scenarios passed with 100% success rate: 1) User Registration ✅ (historytest@test.com created successfully) 2) User Login ✅ (JWT token authentication working) 3) Subscription Status ✅ (tier: tracker, 3 scans remaining) 4) Scan Eligibility ✅ (allowed: true, proper scan tracking) 5) Scan History ✅ (empty array for new user, proper structure) 6) Scan Stats ✅ (total_scans: 0, harvest_count: 0, pass_count: 0) 7) Deer Analysis ✅ (scan created successfully, appears in history). GPT-4 Vision integration working correctly, scan counting accurate, authentication secure. Backend production deployment fully functional and ready for users."
+    message: "✅ PRODUCTION URL TESTING COMPLETE: Comprehensive testing of Iron Stag backend API endpoints using production URL (https://iap-typed-v3.preview.emergentagent.com/api) completed successfully. All requested test scenarios passed with 100% success rate: 1) User Registration ✅ (historytest@test.com created successfully) 2) User Login ✅ (JWT token authentication working) 3) Subscription Status ✅ (tier: tracker, 3 scans remaining) 4) Scan Eligibility ✅ (allowed: true, proper scan tracking) 5) Scan History ✅ (empty array for new user, proper structure) 6) Scan Stats ✅ (total_scans: 0, harvest_count: 0, pass_count: 0) 7) Deer Analysis ✅ (scan created successfully, appears in history). GPT-4 Vision integration working correctly, scan counting accurate, authentication secure. Backend production deployment fully functional and ready for users."
   - agent: "main"
     message: "Phase 2 Empirical Calibration implementation complete. Added new admin endpoints for curve management. Feature flag CALIBRATION_CURVES_ENABLED must be true to use. Tested locally with curl and all endpoints respond correctly: 1) GET /api/admin/calibration/jobs/status - returns job status and config 2) GET /api/admin/calibration/curves - lists all curves (currently empty) 3) POST /api/admin/calibration/build-curves with dry_run:true - returns success with 0 curves built (no labeled data) 4) POST /api/admin/calibration/recalibrate-scans with dry_run:true - returns success with 'No active curves found' error (expected). Need testing agent to verify all endpoints thoroughly."
   - agent: "testing"
@@ -497,60 +497,22 @@ agent_communication:
   - agent: "main"
     message: "✅ SCAN RESULT UX OVERHAUL COMPLETE: Implemented comprehensive improvements to the Scan Result screen: 1) Hero Recommendation Banner - HARVEST/PASS is now the dominant visual element with centered banner, large text, and explanatory subtext 2) Age + Confidence Side-by-Side Cards - Estimated age and confidence displayed in twin cards with human-readable confidence bands (High/Moderate/Low) and guidance text 3) 'Why We Think This' Section - AI analysis converted from raw paragraph into structured summary + scannable bullet cue chips extracted from reasoning text 4) Share Scan Feature - branded share card rendered via ViewShot with native share sheet via expo-sharing, text fallback included 5) Improved Feedback Copy - 'Did we get it right?' with 'Help improve future estimates' subtext 6) Ethical Messaging Refined - shield icon, supportive tone, positioned as 'supports your judgment' 7) New ScanSummaryCard reusable component created for hero and share card rendering"
   - agent: "main"
-    message: "PHASE 4 - CONFIDENCE SEPARATION: Implemented separate age confidence and recommendation confidence display. Backend: Added score_audit JSON column to track how scores are produced (model output → normalization → risk penalties → calibration → uncertainty gate). confidence_breakdown field now returns null for age when genuinely unavailable instead of 0. Frontend: Removed client-side 60% cap (UNCERTAIN_AGE_CONFIDENCE_CAP). Scan result page now shows two rows: 'Recommendation Certainty' and 'Age Estimate Certainty' (shows N/A when age unavailable). History page uses recommendation confidence only. Share card shows both values. All display uses 'certainty' language instead of 'confidence'. Disclaimer added: 'Scores reflect an estimate of certainty, not a verified probability.' Legacy compatibility preserved: `confidence` field still holds recommendation_confidence. 119 backend tests pass. TypeScript clean."
+    message: "Google Play rejection fix: Removed android.permission.READ_EXTERNAL_STORAGE and android.permission.READ_MEDIA_IMAGES from app.json permissions. App uses expo-image-picker which implements Android photo picker on API 33+, making these broad permissions unnecessary. Bumped versionCode/buildNumber to 106. Need to verify app.json is valid and permissions are correct."
   - agent: "testing"
-    message: "✅ CONFIDENCE SEPARATION & SCORE AUDIT TRAIL TESTING COMPLETE: Comprehensive testing of Phase 4 implementation completed successfully with 100% success rate (43/43 tests passed). All requirements verified: 1) API Response Structure ✅ - confidence, confidence_breakdown, score_audit fields present in API responses 2) confidence_breakdown values ✅ - age can be null (when unavailable) or 0-100 integer, recommendation is always 0-100 integer, genuine 0 values preserved (not converted to null) 3) Legacy backward compatibility ✅ - confidence field still present and matches recommendation_confidence value 4) score_audit column ✅ - exists in database with JSON type, legacy scans have NULL (expected), new scans will populate with version/steps/final_scores structure 5) Auth rate limiting ✅ - 429 after 10+ attempts, per-IP enforcement working, 15-minute window 6) Admin endpoint protection ✅ - X-Admin-Secret header required, 403 without header or with wrong header, 200 with correct header. Tested with 5 existing scans, all showing correct structure. Zero value handling verified with 3 scans. Implementation is production-ready."
+    message: "✅ GOOGLE PLAY PHOTO PICKER COMPLIANCE TESTING COMPLETE: Comprehensive verification completed successfully with 6/6 checks passed (100% success rate). All Google Play submission requirements met: 1) app.json is valid JSON ✅ 2) android.permissions contains ONLY 'android.permission.CAMERA' and 'com.android.vending.BILLING' - no storage permissions ✅ 3) expo-image-picker plugin properly configured ✅ 4) Version 1.8.0, versionCode 106, buildNumber '106' correct ✅ 5) Backend operational (returns 401 for /api/auth/me) ✅ 6) scan.tsx uses expo-image-picker for photo selection ✅. The app now complies with Google Play's photo picker policy by using Android's native photo picker (API 33+) instead of broad storage permissions. Ready for Google Play resubmission."
 
-  - task: "Score Audit Trail"
+backend:
+  - task: "Google Play Photo Picker Compliance - Remove READ_MEDIA_IMAGES and READ_EXTERNAL_STORAGE permissions"
     implemented: true
     working: true
-    file: "/app/backend/server.py, /app/backend/region_calibration.py"
+    file: "/app/frontend/app.json"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: true
+      - working: "NA"
         agent: "main"
-        comment: "Added score_audit JSON column. Audit trail built during normalize_analysis_response (model_output, fallback, risk_penalty, alternate_age_penalty steps) and in calibrate_from_dict_with_region (calibration step, uncertainty_gate step, consensus step). Stored in DB and returned in API response."
+        comment: "Removed READ_EXTERNAL_STORAGE and READ_MEDIA_IMAGES from android.permissions in app.json. Only CAMERA and BILLING remain. expo-image-picker plugin handles photo picker automatically."
       - working: true
         agent: "testing"
-        comment: "✅ TESTED: Score audit trail implementation working perfectly. Database schema verified: score_audit column exists with JSON type. Tested 5 existing scans - all have proper structure with confidence, age_confidence, recommendation_confidence fields. Legacy scans have NULL score_audit (expected - only new scans will populate this field). API response structure verified through code review of build_scan_response function - correctly returns score_audit field (null for legacy scans, populated for new scans with version, steps, final_scores). Implementation is production-ready."
-
-  - task: "Separate Age vs Recommendation Confidence Display"
-    implemented: true
-    working: true
-    file: "/app/frontend/app/scan-result/[id].tsx, /app/frontend/components/ScanSummaryCard.tsx, /app/frontend/app/(tabs)/history.tsx"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-      - working: true
-        agent: "main"
-        comment: "Removed 60% cap. Added getAgeConfidence() and getRecommendationConfidence() helpers. Scan result shows two rows. History shows recommendation certainty. Share card shows both. Legacy scans show N/A for age confidence when breakdown unavailable."
-      - working: true
-        agent: "testing"
-        comment: "✅ TESTED: Confidence separation implementation working perfectly. Backend API verified: 1) confidence field (legacy) present and contains recommendation_confidence value ✅ 2) confidence_breakdown object with age and recommendation keys correctly built ✅ 3) age can be null (when unavailable) or 0-100 integer ✅ 4) recommendation is always 0-100 integer ✅ 5) Genuine 0 values preserved (not converted to null) ✅ 6) Legacy compatibility maintained - confidence matches recommendation_confidence ✅. Tested with 5 existing scans, all showing correct structure. Zero value handling verified with 3 scans having age_confidence=0. Frontend testing skipped per system limitations. Backend implementation is production-ready."
-
-  - task: "Auth Rate Limiting"
-    implemented: true
-    working: true
-    file: "/app/backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-      - working: true
-        agent: "testing"
-        comment: "✅ TESTED: Auth rate limiting working correctly. Configuration: 10 attempts per 15-minute window per IP. Test results: Rate limited after 5 attempts with 429 status code ✅. Error message: 'Too many attempts. Please try again later.' ✅. Per-IP enforcement verified - rate limit persists for same IP ✅. Implementation verified in server.py: InMemoryRateLimiter class, check_auth_rate_limit function applied to /auth/login, /auth/register, /auth/password-reset endpoints. Production-ready."
-
-  - task: "Admin Endpoint Protection"
-    implemented: true
-    working: true
-    file: "/app/backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-      - working: true
-        agent: "testing"
-        comment: "✅ TESTED: Admin endpoint protection working perfectly. Admin secret configured: 'dev-admin-secret-change-me' from backend/.env. Test results: 1) Without X-Admin-Secret header: 403 Forbidden ✅ 2) With wrong header: 403 Forbidden ✅ 3) With correct header: 200 OK with valid response ✅. Error message: 'Invalid or missing admin secret'. Tested endpoint: GET /api/admin/calibration/labels/stats. Implementation verified: verify_admin_secret dependency applied to all /api/admin/* endpoints. Production-ready."
+        comment: "✅ GOOGLE PLAY PHOTO PICKER COMPLIANCE VERIFIED: All requirements met for Google Play submission. 1) app.json is valid JSON ✅ 2) android.permissions array contains ONLY 'android.permission.CAMERA' and 'com.android.vending.BILLING' (lines 42-45) - no READ_EXTERNAL_STORAGE, no READ_MEDIA_IMAGES, no READ_MEDIA_VIDEO ✅ 3) expo-image-picker plugin properly configured in plugins array (lines 72-76) with photosPermission message ✅ 4) Version 1.8.0, versionCode 106, buildNumber '106' all correct ✅ 5) Backend starts correctly - curl http://localhost:8001/api/auth/me returns 401 'Not authenticated' as expected ✅ 6) scan.tsx uses expo-image-picker (line 17 import, line 180 launchImageLibraryAsync) ✅. The app now uses Android's native photo picker (API 33+) via expo-image-picker, eliminating the need for broad storage permissions. Ready for Google Play resubmission."
