@@ -5,8 +5,9 @@ Minimum device and OS requirements for running Iron Stag on iOS and Android.
 
 ## Key Information
 - **iOS:** iOS 15.1 or later; iPhone 8 or newer recommended.
-- **Android:** Android 7.0 (API 24) or later; 4GB RAM recommended.
+- **Android:** Android 7.0 (API 24) or later; targets Android 16 (API 36). 4GB RAM recommended.
 - Camera access is required; internet is required for analysis (offline scans are queued).
+- **App Version:** 1.8.0 (Build 105)
 
 ## Step-by-Step
 1. Verify your device meets the OS requirements above.
