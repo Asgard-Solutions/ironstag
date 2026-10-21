@@ -36,6 +36,11 @@ CONTRADICTION_AGE_CONFIDENCE_PENALTY = 10
 SAME_DEER_VERDICTS = {"same", "likely_same", "uncertain", "different"}
 
 
+def preprocessing_version() -> str:
+    """Identifies the image preprocessing feeding the model (used for calibration compatibility)."""
+    return f"img-prep-v1-edge{MODEL_MAX_EDGE}-q{MODEL_JPEG_QUALITY}-dedup{NEAR_DUPLICATE_MAX_HAMMING}"
+
+
 class ImageValidationError(ValueError):
     def __init__(self, code: str, message: str, image_id: Optional[str] = None):
         super().__init__(message)

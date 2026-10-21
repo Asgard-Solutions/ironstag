@@ -120,3 +120,78 @@ Most exports are tier C/D, so they are **not** ground truth until someone verifi
 - Enough animals per subgroup: at least 30 per species, sex, age group, and region to draw conclusions; ideally hundreds of deer in the test split.
 - Mule-deer and doe coverage. In-app feedback is mostly whitetail bucks with hunter- or tooth-wear-based ages.
 - An agreed run budget, plus a valid OpenAI key in the evaluation environment (the dev key currently returns 401).
+
+## 7. Validated confidence calibration (artifacts)
+In production, age confidence still comes from the **v2 heuristic**. Every scan's `score_audit.displayed_score` labels it `heuristic_reliability_score`: a rule-based score, not a probability. Nothing changes until an artifact passes validation.
+
+**Targets.** Each artifact declares exactly one target:
+- `exact_age_class`
+- `within_one_year`
+- `age_range_coverage`
+
+Only one target may be active across all scopes, so a displayed percentage never mixes meanings.
+
+**Fit and evaluate.**
+1. Run the benchmark on the calibration split and on the test split, using the same config.
+2. Then run:
+```
+python -m evaluation calibrate --fit-run runs/<calibration_run> --eval-run runs/<test_run> --config-name baseline --target exact_age_class
+```
+The fit uses only the calibration split, and evaluation uses only the held-out test split; overlapping cases are refused.
+
+The command:
+- fits three global candidates: binning (sparse bins are unsupported, monotonic), isotonic (each block has at least 20 samples), and Platt
+- fits a regional isotonic artifact only when the region has at least 200 fit cases and at least 30 evaluation cases; otherwise the region is listed as "insufficient representative data"
+- judges each candidate by ECE, Brier score, log loss and a reliability table, compared against the heuristic and the raw model confidence on the same cases
+
+**Compatibility.** Each artifact pins:
+- model
+- prompt version
+- preprocessing version (`multi_image.preprocessing_version()`)
+- input field (`raw_age_confidence`)
+- target
+
+An incompatible artifact is never applied; the reason is recorded and the heuristic is used.
+
+**Fallbacks.** Every fallback reason is recorded in the audit:
+- sparse bins
+- input outside the fitted range
+- invalid output
+- incompatible artifact
+
+Sparse data never produces a score: it falls back to the heuristic.
+
+**Admin workflow** (`X-Admin-Secret` header):
+- `POST /api/admin/calibration/artifacts` `{artifact}`: validates the artifact and registers it in **shadow** mode. It is computed on every live scan and stored in `score_audit.shadow_calibration`, but never displayed.
+- `GET /api/admin/calibration/artifacts/{id}/monitor`: shadow coverage, fallback reasons, and the shift between shadow and displayed scores.
+- `POST .../{id}/activate`: allowed only if every gate passes:
+  - the artifact is valid
+  - it is compatible with the production model, prompt and preprocessing
+  - it was fitted on the calibration split and evaluated on the test split of the same dataset
+  - the data is real (not synthetic or mock)
+  - fit maturity: at least `GLOBAL_CURVE_MIN_SAMPLES` (500) global or `REGION_CURVE_MIN_SAMPLES` (200) per region
+  - at least 100 evaluation cases
+  - fallback rate of 50% or less
+  - ECE below the heuristic's, and Brier score no worse
+  - a single target across active artifacts
+- `POST .../{id}/rollback` restores the previously active artifact, or the heuristic. `POST .../{id}/retire` retires an artifact.
+- Legacy Phase 2 curves have no target or compatibility metadata, so `activate-curve` now refuses them (409) and they are never applied.
+
+**Historical scans** keep their stored scores. Artifacts apply only to new scans and reanalyses. Changing old records requires the explicit `/admin/calibration/recalibrate-scans` job.
+
+**Heuristic review.** Candidates are opt-in and the production defaults are unchanged:
+- `CALIBRATION_HEURISTIC_VERSION=v3`:
+  - The quality bucket, blur, occlusion, body/head visibility and posture all describe one piece of evidence (whether the age cues can be seen), so only the strongest of those penalties applies instead of multiplying all of them.
+  - The blanket missing-antler penalty is removed.
+  - Angle/distance risk, alternate-age disagreement, consensus spread and multi-photo conflicts are already deducted before calibration, so v3 does not repeat them.
+  - No bonuses are added.
+- `REGION_MAPPING_VERSION=v2`: a state-level `TX` maps to `unknown` instead of `south_texas`, preserving location uncertainty.
+
+Benchmark both (`"calibration": "heuristic_v3"`) before switching.
+
+**Reduction-only rule vs. calibration.** The heuristic only reduces scores (×0.75 base, penalties, 0.85 cap). A validated artifact may score above the heuristic, because measured reliability supports it. That is the purpose of calibration, but it is limited by:
+- the 0.85 cap, which stays in place
+- minimum samples per bin
+- the held-out evaluation gates above
+
+Tradeoff: keeping the cap can under-state reliability for very strong photos; dropping it would need its own validation.

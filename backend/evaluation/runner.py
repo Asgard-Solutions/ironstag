@@ -34,7 +34,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "use_crops": False,
     "max_edge": multi_image.MODEL_MAX_EDGE,
     "consensus": {"enabled": server.SELECTIVE_CONSENSUS_ENABLED, "total_passes": server.SELECTIVE_CONSENSUS_TOTAL_PASSES},
-    "calibration": "heuristic",  # "heuristic" (production code, no live DB curves) | "none" (raw model confidence)
+    "calibration": "heuristic",  # "heuristic" (production v2) | "heuristic_v3" (de-duplicated candidate) | "none" | "artifact:<path.json>"
     "pricing_usd_per_1m_tokens": {"input": None, "output": None},  # fill in to get cost estimates
 }
 # Keys that define the experimental factors (used for one-factor-at-a-time checks)
@@ -135,6 +135,8 @@ def run_case(record: Dict[str, Any], cfg: Dict[str, Any], dataset_dir: str) -> D
         "age_confidence": None, "raw_age_confidence": None, "recommendation": None,
         "abstain_reason": None, "error": None,
     }
+    saved_edge = multi_image.MODEL_MAX_EDGE
+    multi_image.MODEL_MAX_EDGE = int(cfg["max_edge"])  # preprocessing must honour the config too
     try:
         images = record["images"][:3] if cfg["multi_photo"] else record["images"][:1]
         prepared = []
@@ -160,6 +162,7 @@ def run_case(record: Dict[str, Any], cfg: Dict[str, Any], dataset_dir: str) -> D
             "crops_applied": sum(1 for p in prepared if p.crop_rect), "max_edge": cfg["max_edge"],
         }
         row["prompt_version"] = prompt_version
+        row["preprocessing_version"] = multi_image.preprocessing_version()
         with pipeline_settings(cfg, cfg.get("_mock", False), calls.append):
             analysis = server.run_analysis_with_consensus(
                 model=cfg["model"], system_prompt=_system_prompt(cfg, parts["system_prompt"]),
@@ -182,11 +185,25 @@ def run_case(record: Dict[str, Any], cfg: Dict[str, Any], dataset_dir: str) -> D
                     calibrated["age_confidence"] = analysis.get("raw_age_confidence")
                     calibrated["calibration_version"] = "none"
                 else:
-                    _, calibrated = server.calibrate_from_dict_with_region(
-                        analysis=analysis, state=record.get("region_state"), user_profile_state=None, active_curves=None,
-                    )
+                    artifacts = None
+                    if str(cfg["calibration"]).startswith("artifact:"):
+                        with open(cfg["calibration"].split(":", 1)[1]) as fh:
+                            artifacts = [dict(json.load(fh), _status="active")]
+                    heur = server.RegionCalibrationConfig.HEURISTIC_VERSION
+                    if cfg["calibration"] == "heuristic_v3":
+                        server.RegionCalibrationConfig.HEURISTIC_VERSION = "v3"
+                    try:
+                        _, calibrated = server.calibrate_from_dict_with_region(
+                            analysis=analysis, state=record.get("region_state"), user_profile_state=None, active_curves=None,
+                            artifacts=artifacts, preprocessing_version=row["preprocessing_version"],
+                        )
+                    finally:
+                        server.RegionCalibrationConfig.HEURISTIC_VERSION = heur
                 age = calibrated.get("deer_age")
                 row.update({
+                    "age_confidence_target": calibrated.get("age_confidence_target", "raw_model_confidence"),
+                    "calibration_strategy": calibrated.get("calibration_strategy"),
+                    "calibration_fallback_reason": calibrated.get("calibration_fallback_reason"),
                     "status": "answered" if age is not None and calibrated.get("age_estimation_allowed") is not False else "abstained",
                     "predicted_age": age,
                     "predicted_range": calibrated.get("age_range"),
@@ -205,6 +222,7 @@ def run_case(record: Dict[str, Any], cfg: Dict[str, Any], dataset_dir: str) -> D
         row["status"], row["error"] = "failed_input", f"{exc.code}: {exc.message}"
     except Exception as exc:  # recorded, never hidden
         row["status"], row["error"] = "failed_error", f"{type(exc).__name__}: {exc}"[:500]
+    multi_image.MODEL_MAX_EDGE = saved_edge
     row["latency_s"] = round(time.perf_counter() - started, 3)
     row["model_calls"] = len(calls)
     row["mock_model"] = any(c.get("mock") for c in calls) or cfg.get("_mock", False)

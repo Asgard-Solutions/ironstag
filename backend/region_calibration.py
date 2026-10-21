@@ -37,6 +37,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
 
+from confidence_calibration import (
+    HEURISTIC_TARGET,
+    HEURISTIC_TARGET_DEFINITION,
+    TARGETS,
+    apply_artifact,
+    check_compatibility,
+)
+
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -57,7 +65,10 @@ class RegionCalibrationConfig:
     
     # Calibration version tracking
     CALIBRATION_VERSION: str = os.environ.get('CALIBRATION_VERSION', 'v2-region-heuristic')
-    REGION_MAPPING_VERSION: str = "v1"
+    REGION_MAPPING_VERSION: str = os.environ.get('REGION_MAPPING_VERSION', 'v1')
+    # Heuristic fallback version. v2 = production default (unchanged). v3 = de-duplicated candidate
+    # (no antler penalty, one strongest visual penalty instead of stacked ones); shadow/benchmark it before switching.
+    HEURISTIC_VERSION: str = os.environ.get('CALIBRATION_HEURISTIC_VERSION', 'v2')
     
     # Maturity gates for empirical calibration (Phase 2)
     GLOBAL_CURVE_MIN_SAMPLES: int = int(os.environ.get('GLOBAL_CURVE_MIN_SAMPLES', '500'))
@@ -111,6 +122,7 @@ class CalibrationStrategy(str, Enum):
     HEURISTIC_REGION = "heuristic_region"
     CURVE_GLOBAL = "curve_global"
     CURVE_REGION = "curve_region"
+    ARTIFACT = "validated_artifact"
 
 
 # State → Region Mapping (v1)
@@ -300,6 +312,10 @@ class RegionCalibrationOutput:
     # Raw values preserved for analysis
     raw_age_confidence: Optional[int] = None
     raw_recommendation_confidence: Optional[int] = None
+    # What the displayed age_confidence means (traceability)
+    age_confidence_target: str = "heuristic_reliability_score"
+    age_confidence_method: str = "heuristic"
+    shadow: Optional[List[Dict[str, Any]]] = None
 
 
 # ============================================================================
@@ -320,6 +336,10 @@ def get_region_from_state(state: Optional[str]) -> RegionKey:
         return RegionKey.UNKNOWN
     
     state_upper = state.upper().strip()
+    # Mapping v2 (opt-in via REGION_MAPPING_VERSION=v2): a state-level "TX" is too coarse to imply the
+    # South Texas phenotype, so it stays UNKNOWN (uncertainty preserved) instead of being forced to south_texas.
+    if state_upper == "TX" and RegionCalibrationConfig.REGION_MAPPING_VERSION == "v2":
+        return RegionKey.UNKNOWN
     return STATE_TO_REGION_V1.get(state_upper, RegionKey.UNKNOWN)
 
 
@@ -376,6 +396,33 @@ def determine_region(
 # HEURISTIC CALIBRATION FUNCTIONS
 # ============================================================================
 
+def _heuristic_v3(scaled, predicted_age, deer_sex, region_key, quality_bucket, posture, qf) -> float:
+    """De-duplicated candidate heuristic (opt-in). Each piece of evidence is counted once:
+    - The pre-calibration stage already deducts for camera-angle/distance risk, alternate-age disagreement,
+      consensus spread and multi-photo conflicts, so none of those are repeated here.
+    - Image quality bucket, blur, occlusion, body/head visibility and posture all describe the same
+      "can the age cues be seen" evidence: only the single strongest of those penalties applies.
+    - No blanket missing-antler penalty: antlers are a weak secondary cue by design.
+    - No bonuses are added.
+    """
+    config = RegionCalibrationConfig
+    sex = (deer_sex or "").strip().lower()
+    if predicted_age is None or predicted_age == 0:
+        scaled *= (1 - config.NULL_AGE_PENALTY)
+    if not sex or sex == "unknown":
+        scaled *= (1 - config.UNKNOWN_SEX_PENALTY)
+    visual = [1.0,
+              {"fair": 0.95, "poor": 0.80}.get(quality_bucket, 1.0),
+              {"head_down": 0.90, "frontal": 0.88, "rear": 0.88, "unknown": 0.88}.get(posture, 1.0),
+              {"low": 0.86, "medium": 0.96}.get(qf.get("body_visibility"), 1.0),
+              {"low": 0.92, "medium": 0.98}.get(qf.get("head_visibility"), 1.0),
+              {"high": 0.82, "medium": 0.94}.get(qf.get("occlusion"), 1.0),
+              {"high": 0.86, "medium": 0.95}.get(qf.get("blur"), 1.0)]
+    scaled *= min(visual)
+    scaled *= REGION_DIFFICULTY_MULTIPLIERS.get(region_key, 0.88)
+    return max(0.0, min(scaled, config.MAX_AGE_CONFIDENCE))
+
+
 def compute_age_confidence_with_region(
     raw_confidence: float,
     predicted_age: Optional[float],
@@ -403,6 +450,10 @@ def compute_age_confidence_with_region(
     
     # Apply base scaling
     scaled_confidence = base_confidence * config.AGE_CONFIDENCE_BASE_SCALE
+
+    if config.HEURISTIC_VERSION == "v3":
+        return _heuristic_v3(scaled_confidence, predicted_age, deer_sex, region_key,
+                             image_quality_bucket, posture_bucket, quality_factors or {})
     
     # Penalty: No age predicted
     if predicted_age is None or predicted_age == 0:
@@ -552,7 +603,12 @@ def apply_uncertainty_gate(
 # MAIN CALIBRATION FUNCTION
 # ============================================================================
 
-def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Optional[Dict] = None) -> RegionCalibrationOutput:
+def calibrate_with_region(
+    input_data: RegionCalibrationInput,
+    active_curves: Optional[Dict] = None,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> RegionCalibrationOutput:
     """
     Main entry point for region-aware confidence calibration.
     
@@ -610,42 +666,39 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
         else input_data.raw_confidence
     )
     
-    # Phase 2: Check for curve-based calibration
+    # Phase 2 legacy curves: they carry no prediction target and no model/prompt/preprocessing
+    # compatibility, so they are never applied (an unversioned curve cannot give a percentage a meaning).
     if config.CALIBRATION_CURVES_ENABLED and active_curves:
-        # Try region-specific age curve first
-        region_age_key = ("region_age", region_key.value)
-        global_age_key = ("global_age", None)
-        
-        region_rec_key = ("region_recommendation", region_key.value)
-        global_rec_key = ("global_recommendation", None)
-        
-        # Age calibration via curves
-        if region_age_key in active_curves:
-            curve = active_curves[region_age_key]
-            age_confidence = _apply_curve(age_raw_confidence, curve)
-            calibration_strategy = CalibrationStrategy.CURVE_REGION
-            calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
-            logger.info(f"Using region age curve for {region_key.value}")
-        elif global_age_key in active_curves:
-            curve = active_curves[global_age_key]
-            age_confidence = _apply_curve(age_raw_confidence, curve)
-            calibration_strategy = CalibrationStrategy.CURVE_GLOBAL
-            calibration_version = curve.get("calibration_version", config.CALIBRATION_VERSION)
-            fallback_reason = "region_curve_missing"
-            logger.info(f"Using global age curve (region {region_key.value} not available)")
-        
-        # Recommendation calibration via curves
-        if region_rec_key in active_curves:
-            curve = active_curves[region_rec_key]
-            recommendation_confidence = _apply_curve(recommendation_raw_confidence, curve)
-        elif global_rec_key in active_curves:
-            curve = active_curves[global_rec_key]
-            recommendation_confidence = _apply_curve(recommendation_raw_confidence, curve)
-    
+        fallback_reason = "legacy_curves_unversioned_ignored"
+    age_target = HEURISTIC_TARGET
+    age_method = f"heuristic_{config.HEURISTIC_VERSION}"
+    shadow_results: List[Dict[str, Any]] = []
+
+    # Validated, versioned artifacts (active ones drive the score; shadow ones are only recorded)
+    runtime = runtime or {}
+    if artifacts:
+        for art in artifacts:
+            entry = {"artifact_id": art.get("artifact_id"), "status": art.get("_status"), "target": art.get("target")}
+            reasons = check_compatibility(art, model=runtime.get("model"), prompt_version=runtime.get("prompt_version"),
+                                          preprocessing_version=runtime.get("preprocessing_version"))
+            if reasons:
+                entry.update(value=None, fallback_reason="incompatible:" + ";".join(reasons))
+            else:
+                value, reason = apply_artifact(art, age_raw_confidence)
+                entry.update(value=round(value * 100) if value is not None else None, fallback_reason=reason)
+            if art.get("_status") == "shadow":
+                shadow_results.append(entry)
+            elif age_confidence is None and entry["value"] is not None:
+                age_confidence = entry["value"] / 100.0
+                calibration_strategy = CalibrationStrategy.ARTIFACT
+                calibration_version = art["artifact_id"]
+                age_target, age_method = art["target"], art["method"]
+            elif age_confidence is None:
+                fallback_reason = f"active_artifact_unusable:{entry['fallback_reason']}"
     # Fall back to heuristic if no curve calibration was applied
     if age_confidence is None:
-        if config.CALIBRATION_CURVES_ENABLED:
-            fallback_reason = fallback_reason or "no_active_curves"
+        if artifacts is not None:
+            fallback_reason = fallback_reason or "no_active_artifact"
         
         # Compute calibrated age confidence with heuristics
         if config.CALIBRATION_REGION_ENABLED:
@@ -726,41 +779,11 @@ def calibrate_with_region(input_data: RegionCalibrationInput, active_curves: Opt
             int(input_data.raw_recommendation_confidence)
             if input_data.raw_recommendation_confidence is not None
             else None
-        )
+        ),
+        age_confidence_target=age_target,
+        age_confidence_method=age_method,
+        shadow=shadow_results or None,
     )
-
-
-def _apply_curve(raw_confidence: float, curve: Dict[str, Any]) -> float:
-    """
-    Apply curve-based calibration to a raw confidence value.
-    
-    Args:
-        raw_confidence: Raw confidence (0-100 scale)
-        curve: Curve data dict with bins
-        
-    Returns:
-        Calibrated confidence as 0-1 float
-    """
-    bins = curve.get("bins", [])
-    if not bins:
-        # No bins, fall back to scaled raw
-        return (raw_confidence or 0) / 100.0
-    
-    # Find the appropriate bin
-    conf = raw_confidence or 0
-    bin_idx = min(int(conf // 10), 9)  # 0-9
-    
-    if bin_idx < len(bins):
-        bin_data = bins[bin_idx]
-        sample_count = bin_data.get("sample_count", 0)
-        
-        # Use calibrated value if bin has enough samples
-        min_bin_samples = int(os.environ.get('BIN_MIN_SAMPLES', '20'))
-        if sample_count >= min_bin_samples:
-            return bin_data.get("calibrated_confidence", conf / 100.0)
-    
-    # Fallback: return raw confidence scaled
-    return conf / 100.0
 
 
 def calibrate_from_dict_with_region(
@@ -768,6 +791,8 @@ def calibrate_from_dict_with_region(
     state: Optional[str] = None,
     user_profile_state: Optional[str] = None,
     active_curves: Optional[Dict[Tuple[str, Optional[str]], Dict[str, Any]]] = None,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+    preprocessing_version: Optional[str] = None,
 ) -> Tuple[RegionCalibrationOutput, Dict[str, Any]]:
     """
     Convenience function to calibrate from a raw analysis dictionary.
@@ -799,7 +824,14 @@ def calibrate_from_dict_with_region(
         raw_recommendation_confidence=analysis.get("raw_recommendation_confidence"),
     )
     
-    calibration_result = calibrate_with_region(input_data, active_curves=active_curves)
+    runtime = {
+        "model": analysis.get("analysis_model"),
+        "prompt_version": analysis.get("analysis_prompt_version"),
+        "preprocessing_version": preprocessing_version,
+    }
+    calibration_result = calibrate_with_region(
+        input_data, active_curves=active_curves, artifacts=artifacts, runtime=runtime,
+    )
     
     # Create updated analysis dict with calibrated values
     updated_analysis = analysis.copy()
@@ -891,8 +923,22 @@ def calibrate_from_dict_with_region(
                 })
         all_steps.append(consensus_step)
 
+    displayed_score = {
+        "field": "age_confidence",
+        "value": calibration_result.calibrated_age_confidence,
+        "method": calibration_result.age_confidence_method,
+        "method_version": calibration_result.calibration_version,
+        "target": calibration_result.age_confidence_target,
+        "target_definition": TARGETS.get(calibration_result.age_confidence_target, HEURISTIC_TARGET_DEFINITION),
+        "fallback_reason": calibration_result.calibration_fallback_reason,
+        "region_mapping_version": RegionCalibrationConfig.REGION_MAPPING_VERSION,
+    }
+    updated_analysis["age_confidence_target"] = calibration_result.age_confidence_target
     updated_analysis["score_audit"] = {
-        "version": "1.0",
+        "version": "1.1",
+        "displayed_score": displayed_score,
+        "shadow_calibration": calibration_result.shadow,
+        "preprocessing_version": preprocessing_version,
         "model": updated_analysis.get("analysis_model"),
         "prompt_version": updated_analysis.get("analysis_prompt_version"),
         "calibration_strategy": calibration_result.calibration_strategy,

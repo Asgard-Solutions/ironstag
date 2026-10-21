@@ -42,3 +42,12 @@ Expo (React Native) + FastAPI + Postgres (Neon) deer-aging app. Users photograph
 - Metrics: exact class, within 1 yr, MAE, coverage/abstention/failures, range coverage, calibration vs declared target, breakdowns with CIs, n<30 inconclusive, paired comparisons (same cases, bootstrap CI, McNemar)
 - CLI: `python -m evaluation validate|splits|plan|run|report|export-labels`; tests in tests/test_evaluation_benchmark.py (synthetic only)
 - Missing: real tier A/B known-age photo data, run budget, valid OpenAI key
+
+## Done – Validated confidence calibration
+- `confidence_calibration.py`: targets (exact_age_class / within_one_year / age_range_coverage); binning (monotone), isotonic and Platt fits; validation; compatibility checks; sparse-bin and outside-support fallbacks; reliability metrics
+- `calibration_activation.py`: activation gates. `calibration_artifacts` table + admin upload (shadow), activate, rollback, retire and monitor endpoints
+- Scan audit: `displayed_score` (method, version, target, fallback reason) and `shadow_calibration`
+- Legacy unversioned curves are no longer applied or activatable (they also had a sparse-bin inflation bug)
+- Opt-in candidates: heuristic v3 (de-duplicated penalties, no antler penalty) and region mapping v2 (TX → unknown). Production defaults unchanged
+- `python -m evaluation calibrate` fits on the calibration split and evaluates on the test split; tests in tests/test_confidence_calibration.py
+- Activation blocked until: real tier A/B data (≥500 calibration cases, ≥100 test cases), valid OpenAI key, run budget

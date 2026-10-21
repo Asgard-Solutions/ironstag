@@ -184,3 +184,26 @@ def test_paid_run_requires_agreed_budget(tmp_path):
     priced = load_config({"name": "b", "pricing_usd_per_1m_tokens": {"input": 2.5, "output": 10}})
     with pytest.raises(PermissionError):
         run_evaluation(configs=[priced], budget_usd=0.001, max_calls=1, **kwargs)
+
+
+def test_calibrate_workflow_on_mock_runs_cannot_activate(tmp_path):
+    from evaluation.runner import load_config, run_evaluation
+    from evaluation.calibrate import fit_and_evaluate
+    recs = []
+    for i in range(6):
+        _img(str(tmp_path / f"p{i}.jpg"), 60 + i)
+        recs.append(_rec(f"e{i}", f"d{i}", [f"p{i}.jpg"], split="calibration" if i < 3 else "test"))
+    path = _write(tmp_path, recs)
+    result = ds.validate_dataset(path)
+    cfg = [load_config({"name": "baseline"})]
+    runs = {}
+    for split in ("calibration", "test"):
+        cases, excluded = ds.eligible_cases(result, split)
+        runs[split] = run_evaluation(cases=cases, excluded=excluded, configs=cfg, dataset_path=path,
+                                     dataset_sha256=result.dataset_sha256, synthetic_dataset=True, split=split, mock=True,
+                                     budget_usd=None, max_calls=None, output_dir=str(tmp_path / split))["output_dir"]
+    rep = fit_and_evaluate(runs["calibration"], runs["test"], "baseline", "exact_age_class", str(tmp_path / "cal"))
+    assert rep["not_evidence"] is True and rep["candidates"]
+    assert not any(c["eligible_for_activation"] for c in rep["candidates"])
+    blocked = {b["check"] for c in rep["candidates"] for b in c["blocking_checks"]}
+    assert {"real_data_not_synthetic_or_mock", "fit_sample_maturity"} <= blocked

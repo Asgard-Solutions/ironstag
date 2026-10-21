@@ -59,6 +59,8 @@ from r2_storage import (
     get_scan_object,
     delete_scan_objects,
 )
+from confidence_calibration import validate_artifact, check_compatibility
+import calibration_activation
 from multi_image import (
     MAX_SCAN_IMAGES,
     ImageValidationError,
@@ -72,6 +74,7 @@ from multi_image import (
     build_multi_image_user_content,
     apply_multi_image_guards,
     mixed_deer_detail,
+    preprocessing_version,
 )
 
 # Import Phase 3 adaptive calibration module
@@ -299,6 +302,22 @@ calibration_curves_table = Table(
     Column("is_active", Boolean, default=False),
     Column("created_at", DateTime, default=datetime.utcnow),
     Column("updated_at", DateTime, default=datetime.utcnow),
+)
+
+# Validated calibration artifacts (target + compatibility versioned). status: shadow | active | retired
+calibration_artifacts_table = Table(
+    "calibration_artifacts",
+    metadata,
+    Column("id", String(40), primary_key=True),  # artifact_id
+    Column("status", String(20), nullable=False, default="shadow"),
+    Column("target", String(40), nullable=False),
+    Column("scope_key", String(60), nullable=False),  # "global" or "region:<key>"
+    Column("method", String(30), nullable=False),
+    Column("artifact", JSON, nullable=False),
+    Column("activation_checks", JSON, nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("activated_at", DateTime, nullable=True),
+    Column("retired_at", DateTime, nullable=True),
 )
 
 # Phase 3: Calibration drift events table
@@ -4171,6 +4190,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             state=data.state,
             user_profile_state=user_profile_state,
             active_curves=active_curves,
+            artifacts=await get_live_calibration_artifacts(),
+            preprocessing_version=preprocessing_version(),
         )
 
         scan_id = str(uuid.uuid4())
@@ -5509,6 +5530,8 @@ Provide your complete REVISED analysis in JSON format."""
                     state=existing_region_state,  # Preserve original region
                     user_profile_state=user_profile_state,
                     active_curves=active_curves,
+                    artifacts=await get_live_calibration_artifacts(),
+                    preprocessing_version=preprocessing_version(),
                 )
 
                 # Update the scan with new calibrated analysis
@@ -5991,41 +6014,182 @@ async def build_calibration_curves(data: BuildCurvesRequest, _admin_ok: bool = D
 
 @api_router.post("/admin/calibration/activate-curve")
 async def activate_calibration_curve(data: ActivateCurveRequest, _admin_ok: bool = Depends(verify_admin_secret)):
-    """
-    Activate a calibration curve.
-    
-    This makes the curve available for use in the calibration fallback chain.
-    
-    Safety features:
-    - Only mature curves can be activated
-    - Optionally deactivates other curves of the same type/region
-    """
-    # Check feature flag
-    if not CalibrationJobConfig.CALIBRATION_CURVES_ENABLED:
-        raise HTTPException(
-            status_code=400,
-            detail="Empirical calibration curves are not enabled. Set CALIBRATION_CURVES_ENABLED=true to enable."
-        )
-    
-    try:
-        result = await activate_curve(
-            database=database,
-            calibration_curves_table=calibration_curves_table,
-            curve_id=data.curve_id,
-            deactivate_others=data.deactivate_others
-        )
-        
-        if not result["success"]:
-            raise HTTPException(status_code=400, detail=result.get("error", "Activation failed"))
+    """Legacy Phase 2 curves have no prediction target and no model/prompt/preprocessing compatibility,
+    so they can no longer be activated. Use /admin/calibration/artifacts (validated, versioned)."""
+    raise HTTPException(status_code=409, detail={
+        "code": "LEGACY_CURVE_UNVERSIONED",
+        "message": "Legacy curves cannot be activated: no target or compatibility metadata. Upload a validated calibration artifact instead.",
+    })
 
-        await get_live_active_curves(force_refresh=True)
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error activating curve: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+# ============ VALIDATED CALIBRATION ARTIFACTS (shadow / active / retired) ============
+
+live_artifact_cache: List[Dict[str, Any]] = []
+live_artifact_cache_loaded_at: Optional[datetime] = None
+
+
+async def get_live_calibration_artifacts(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Active + shadow artifacts (cached). Active ones drive scores; shadow ones are only recorded."""
+    global live_artifact_cache, live_artifact_cache_loaded_at
+    now = datetime.utcnow()
+    if (not force_refresh and live_artifact_cache_loaded_at is not None
+            and (now - live_artifact_cache_loaded_at).total_seconds() < LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS):
+        return live_artifact_cache
+    try:
+        rows = await database.fetch_all(
+            calibration_artifacts_table.select().where(calibration_artifacts_table.c.status.in_(["active", "shadow"]))
+        )
+        loaded = []
+        for r in rows:
+            art = dict(r["artifact"])
+            if validate_artifact(art):  # malformed artifacts are never applied
+                continue
+            art["_status"] = r["status"]
+            loaded.append(art)
+        loaded.sort(key=lambda a: 0 if a["_status"] == "active" else 1)
+        live_artifact_cache, live_artifact_cache_loaded_at = loaded, now
+    except Exception:
+        logger.warning("Failed to load calibration artifacts; using heuristic fallback", exc_info=True)
+        live_artifact_cache, live_artifact_cache_loaded_at = [], now
+    return live_artifact_cache
+
+
+def production_runtime() -> Dict[str, Any]:
+    return {"model": OPENAI_ANALYSIS_MODEL, "prompt_version": ANALYSIS_PROMPT_VERSION,
+            "preprocessing_version": preprocessing_version()}
+
+
+async def _artifact_activation_checks(art: Dict[str, Any]) -> Dict[str, Any]:
+    active = await database.fetch_all(
+        calibration_artifacts_table.select().where(calibration_artifacts_table.c.status == "active")
+    )
+    return calibration_activation.activation_checks(
+        art, runtime=production_runtime(),
+        active_targets=[r["target"] for r in active if r["scope_key"] != calibration_activation.scope_key(art)],
+        global_min=RegionCalibrationConfig.GLOBAL_CURVE_MIN_SAMPLES,
+        region_min=RegionCalibrationConfig.REGION_CURVE_MIN_SAMPLES,
+    )
+
+
+class ArtifactUpload(BaseModel):
+    artifact: Dict[str, Any]
+
+
+@api_router.post("/admin/calibration/artifacts")
+async def upload_calibration_artifact(data: ArtifactUpload, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Register an artifact in SHADOW mode (recorded on live scans, never displayed)."""
+    art = data.artifact
+    errors = validate_artifact(art)
+    if errors:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARTIFACT", "errors": errors})
+    existing = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == art["artifact_id"]))
+    if existing:
+        raise HTTPException(status_code=409, detail={"code": "ARTIFACT_EXISTS", "status": existing["status"]})
+    checks = await _artifact_activation_checks(art)
+    await database.execute(calibration_artifacts_table.insert().values(
+        id=art["artifact_id"], status="shadow", target=art["target"], scope_key=calibration_activation.scope_key(art),
+        method=art["method"], artifact=art, activation_checks=checks, created_at=datetime.utcnow(),
+    ))
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"artifact_id": art["artifact_id"], "status": "shadow", "activation_checks": checks}
+
+
+@api_router.get("/admin/calibration/artifacts")
+async def list_calibration_artifacts(_admin_ok: bool = Depends(verify_admin_secret)):
+    rows = await database.fetch_all(calibration_artifacts_table.select().order_by(calibration_artifacts_table.c.created_at.desc()))
+    return [{k: r[k] for k in ("id", "status", "target", "scope_key", "method", "activation_checks",
+                               "created_at", "activated_at", "retired_at")} for r in rows]
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/activate")
+async def activate_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    row = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == artifact_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    art = dict(row["artifact"])
+    checks = await _artifact_activation_checks(art)
+    await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                           .values(activation_checks=checks))
+    if not checks["passed"]:
+        raise HTTPException(status_code=409, detail={"code": "ACTIVATION_BLOCKED",
+                                                     "failed": [c for c in checks["checks"] if not c["passed"]]})
+    now = datetime.utcnow()
+    async with database.transaction():
+        await database.execute(calibration_artifacts_table.update().where(
+            (calibration_artifacts_table.c.status == "active") & (calibration_artifacts_table.c.scope_key == row["scope_key"])
+        ).values(status="retired", retired_at=now))
+        await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                               .values(status="active", activated_at=now, retired_at=None))
+    await get_live_calibration_artifacts(force_refresh=True)
+    logger.info("Activated calibration artifact %s (%s, %s)", artifact_id, row["target"], row["scope_key"])
+    return {"artifact_id": artifact_id, "status": "active", "activation_checks": checks}
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/rollback")
+async def rollback_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Retire an active artifact and restore the previously active one for that scope (or the heuristic)."""
+    row = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == artifact_id))
+    if not row or row["status"] != "active":
+        raise HTTPException(status_code=409, detail="Only an active artifact can be rolled back")
+    previous = await database.fetch_one(
+        calibration_artifacts_table.select().where(
+            (calibration_artifacts_table.c.scope_key == row["scope_key"]) & (calibration_artifacts_table.c.status == "retired")
+            & (calibration_artifacts_table.c.activated_at.isnot(None)) & (calibration_artifacts_table.c.id != artifact_id)
+        ).order_by(calibration_artifacts_table.c.activated_at.desc())
+    )
+    now = datetime.utcnow()
+    restored = None
+    async with database.transaction():
+        await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                               .values(status="retired", retired_at=now))
+        if previous and calibration_activation.activation_checks(
+            dict(previous["artifact"]), runtime=production_runtime(), active_targets=[],
+            global_min=RegionCalibrationConfig.GLOBAL_CURVE_MIN_SAMPLES, region_min=RegionCalibrationConfig.REGION_CURVE_MIN_SAMPLES,
+        )["passed"]:
+            await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == previous["id"])
+                                   .values(status="active", activated_at=now, retired_at=None))
+            restored = previous["id"]
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"retired": artifact_id, "restored": restored, "fallback": None if restored else "heuristic"}
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/retire")
+async def retire_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                           .values(status="retired", retired_at=datetime.utcnow()))
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"artifact_id": artifact_id, "status": "retired"}
+
+
+@api_router.get("/admin/calibration/artifacts/{artifact_id}/monitor")
+async def monitor_calibration_artifact(artifact_id: str, days: int = 14, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Shadow/active monitoring from recent scans' score_audit (no labels needed; reliability needs the benchmark)."""
+    rows = await database.fetch_all(
+        sqlalchemy.select(scans_table.c.score_audit).where(scans_table.c.created_at >= datetime.utcnow() - timedelta(days=days))
+        .order_by(scans_table.c.created_at.desc()).limit(5000)
+    )
+    n = applied = 0
+    fallbacks: Dict[str, int] = {}
+    diffs = []
+    for r in rows:
+        audit = r["score_audit"] or {}
+        shown = (audit.get("displayed_score") or {})
+        entries = [e for e in (audit.get("shadow_calibration") or []) if e.get("artifact_id") == artifact_id]
+        if shown.get("method_version") == artifact_id:
+            n += 1; applied += 1
+            continue
+        for e in entries:
+            n += 1
+            if e.get("value") is None:
+                fallbacks[e.get("fallback_reason") or "unknown"] = fallbacks.get(e.get("fallback_reason") or "unknown", 0) + 1
+            else:
+                applied += 1
+                if shown.get("value") is not None:
+                    diffs.append(e["value"] - shown["value"])
+    return {"artifact_id": artifact_id, "days": days, "scans_seen": n, "applied": applied, "fallbacks": fallbacks,
+            "mean_shadow_minus_displayed": round(sum(diffs) / len(diffs), 2) if diffs else None,
+            "note": "Distribution monitoring only. Reliability must be judged on labelled benchmark data."}
+
 
 @api_router.post("/admin/calibration/deactivate-curve/{curve_id}")
 async def deactivate_calibration_curve(curve_id: str, _admin_ok: bool = Depends(verify_admin_secret)):

@@ -7,6 +7,7 @@ Command-line workflow for the known-age benchmark.
   python -m evaluation run       DATASET.jsonl --split test --config A.json --config B.json \
                                  (--mock | --budget-usd 25 --max-calls 600) [--allow-test-split]
   python -m evaluation report    RUN_DIR [--calibration-target exact|within_one_year]
+  python -m evaluation calibrate --fit-run RUN(calibration) --eval-run RUN(test) --target exact_age_class
   python -m evaluation export-labels --out exported.jsonl   (read-only DB export of feedback labels)
 
 Run from /app/backend. See evaluation/README.md.
@@ -15,6 +16,7 @@ Run from /app/backend. See evaluation/README.md.
 import argparse
 import asyncio
 import json
+import os
 import sys
 
 from evaluation import dataset as ds
@@ -129,6 +131,15 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_calibrate(args) -> int:
+    from evaluation.calibrate import fit_and_evaluate
+    out = args.out or os.path.join(args.eval_run, f"calibration_{args.target}")
+    rep = fit_and_evaluate(args.fit_run, args.eval_run, args.config_name, args.target, out)
+    print(json.dumps({"out": out, "candidates": [{k: c[k] for k in ("artifact_id", "method", "scope", "eligible_for_activation")}
+                                                 for c in rep["candidates"]], "skipped": rep["skipped"]}, indent=2, default=str))
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m evaluation", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -150,6 +161,11 @@ def main(argv=None) -> int:
             r.add_argument("--calibration-target", choices=["exact", "within_one_year"], default="exact")
     rp = sub.add_parser("report"); rp.add_argument("run_dir")
     rp.add_argument("--calibration-target", choices=["exact", "within_one_year"], default="exact"); rp.set_defaults(fn=cmd_report)
+    c = sub.add_parser("calibrate")
+    c.add_argument("--fit-run", required=True); c.add_argument("--eval-run", required=True)
+    c.add_argument("--config-name", default="baseline")
+    c.add_argument("--target", choices=["exact_age_class", "within_one_year", "age_range_coverage"], required=True)
+    c.add_argument("--out"); c.set_defaults(fn=cmd_calibrate)
     e = sub.add_parser("export-labels"); e.add_argument("--out", required=True); e.set_defaults(fn=cmd_export)
     args = p.parse_args(argv)
     return args.fn(args)
