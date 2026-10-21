@@ -1,7 +1,7 @@
 from server import apply_age_estimation_gate
 
 
-def test_single_quality_issue_does_not_block_age_when_cues_exist():
+def test_single_quality_issue_does_not_block_age_when_enough_critical_cues():
     result = apply_age_estimation_gate(
         {
             "deer_age": 2.5,
@@ -15,7 +15,7 @@ def test_single_quality_issue_does_not_block_age_when_cues_exist():
             "image_quality_bucket": "poor",
             "posture_bucket": "angled",
             "quality_factors": {"body_visibility": "medium", "occlusion": "low", "blur": "low"},
-            "visible_age_cues": ["backline", "body_mass"],
+            "visible_age_cues": ["backline", "body_mass", "chest_depth"],
             "cue_checklist": {},
             "age_evidence": [],
         }
@@ -51,7 +51,7 @@ def test_compound_visibility_failures_still_block_age():
     assert result["retake_reason"] is not None
 
 
-def test_missing_checklist_does_not_block_when_structured_age_exists():
+def test_model_supplied_age_does_not_lower_evidence_threshold():
     result = apply_age_estimation_gate(
         {
             "deer_age": 3.5,
@@ -71,8 +71,10 @@ def test_missing_checklist_does_not_block_when_structured_age_exists():
         }
     )
 
-    assert result["age_estimation_allowed"] is True
-    assert result["deer_age"] == 3.5
+    # Two critical cues are below MIN_VISIBLE_CRITICAL_AGE_CUES; a model-supplied age no longer bypasses that.
+    assert result["age_estimation_allowed"] is False
+    assert result["deer_age"] is None
+    assert "side" in result["retake_reason"].lower() or "body" in result["retake_reason"].lower()
 
 
 def test_no_age_and_no_visible_cues_still_block():

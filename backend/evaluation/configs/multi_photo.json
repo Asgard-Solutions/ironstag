@@ -1,0 +1,1 @@
+{"name": "multi_photo", "model": null, "prompt": {"label": "production"}, "multi_photo": true, "use_crops": false, "calibration": "heuristic", "pricing_usd_per_1m_tokens": {"input": null, "output": null}}

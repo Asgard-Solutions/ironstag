@@ -1,0 +1,32 @@
+{
+  "summary": "Frontend-only testing of the multi-photo Iron Stag scan flow against the local backend (ANALYSIS_MOCK_MODEL=true). Verified: login + onboarding + Scan tab, hint 'You can add up to 3 photos...', file-chooser based photo add on web, PhotoTray with testIDs photo-tray/photo-thumb-N/photo-add/photo-guidance/photo-crop-button/photo-preview-main, add tile disappears at MAX=3, 'Analyze 3 Photos' button, reorder (photo-move-right-1), remove (photo-remove-3), re-add via photo-add, CropModal (crop-modal + crop-handle-br + crop-apply/reset/cancel), multi-photo analyze -> navigates to /scan-result/<id>, result-main-image + result-photo-strip + result-photo-1..3 + multi-photo-evidence with text '3 photos analyzed together', scans_remaining dropped exactly 1 (88->87, verified via API), single-photo scan returns a result with NO photo strip and NO evidence card. Mock model returns 3.5y Buck as expected. Backend was pointed at the local preview URL (EXPO_PUBLIC_API_BASE_URL temporarily switched for testing, then reverted to the production railway URL).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CropModal", "issue": "Dragging crop-handle-br with Playwright mouse (down/move/up on the handle's bounding box) did not resize the crop frame — the 'Cropped for analysis' pill did not appear after Apply. Likely a Playwright-vs-PanResponder interaction limitation on web (RN's PanResponder may not translate synthetic mouse events into dx/dy as expected). Crop modal otherwise opens, Reset/Cancel/Apply all work, and all testIDs (crop-modal, crop-frame, crop-handle-tl/tr/bl/br, crop-apply, crop-cancel, crop-reset) are present. Needs manual verification on real touch device or an alternative drag path (e.g., touch events).", "testID": "crop-handle-br", "priority": "LOW"},
+      {"component": "scan-result header actions", "issue": "The pencil (edit) and trash (delete) icons in the Scan Result header do not have testIDs. This made it impossible to reliably click them from Playwright and so the 'Re-analysis Complete' (via the edit modal on a 3-photo scan) and 'Delete the scan from the result screen' flows were not UI-verified. Both icons are visually present in the header. Please add testIDs such as scan-edit-button and scan-delete-button.", "testID": "N/A (missing)", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/tmp/testimg/photo1.jpg..photo4.jpg (generated 500x400 JPEGs)"],
+  "action_items": [
+    "Add testID to the pencil/edit button and trash/delete button in /app/frontend/app/scan-result/[id].tsx header (e.g., scan-edit-button and scan-delete-button) so the edit modal + delete flows can be exercised deterministically.",
+    "Manually verify crop drag + 'Cropped for analysis' pill on a real device (or with touch events) — the mouse-driven drag through PanResponder could not be exercised reliably from Playwright on web, but the handles/modal/apply all render and the crop state wiring (CropRect in CropModal.apply) looks correct.",
+    "(Nice-to-have) Give the bottom tab bar links a testID (e.g., tab-scan) — the current <a href=\"/scan\"> is found but has element-not-visible issues under Playwright, so tests have to click via JS."
+  ],
+  "critical_code_review_comments": [
+    "scan.tsx addPhotos: setSelectedIndex uses `photos.length + normalized.length - 1` but `photos` is the stale state inside the closure. In practice this still works because photos is captured at call time, but using the functional updater's new array length (prev.length + normalized.length - 1) would be more robust when multiple adds overlap.",
+    "scan.tsx removePhoto: the `if (photos.length <= 1) setScanStep('main')` check reads `photos.length` from the stale closure (pre-removal). It still produces the correct final behavior but is confusing — prefer computing newLen inside the updater."
+  ],
+  "updated_files": [
+    "/app/frontend/.env (temporarily pointed EXPO_PUBLIC_API_BASE_URL at the preview URL for testing against the local mock backend; reverted to https://ironstag-production.up.railway.app after testing)"
+  ],
+  "success_rate": {"backend": "N/A (not retested per instructions)", "frontend": "~90% (multi-photo add/reorder/remove/crop-open/analyze/result/single-photo result all pass; crop pill + edit/delete icons not UI-verified due to PanResponder/testID issues)"},
+  "seed_data_creation": "Generated 4 random 500x400 JPEGs in /tmp/testimg/. Created real scans in the local DB for the multiphoto.test@ironstag.dev account via the UI (scans_remaining went 88 -> 87 after the 3-photo analyze; the follow-up 1-photo analyze decremented it again).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The frontend uses EXPO_PUBLIC_API_BASE_URL (currently pointed back at the production Railway URL). To exercise the mocked model again, temporarily set EXPO_PUBLIC_API_BASE_URL=https://date-persist-deploy.preview.emergentagent.com in /app/frontend/.env and `sudo supervisorctl restart expo`. The multiphoto.test@ironstag.dev user exists on both the local and the Railway backends. Login path is /login, onboarding is Continue -> Accept & Continue, and the Scan tab must be reached by clicking the in-app bottom-tab anchor (direct goto /scan loses the auth state in the current Expo build on web). Always install `page.on('dialog', lambda d: d.accept())` because Alert.alert maps to window.alert/confirm on web.",
+  "rca_of_issue": "N/A — the multi-photo feature works end-to-end. The only two gaps are tooling (missing testIDs on edit/delete, PanResponder vs. Playwright mouse)."
+}

@@ -43,6 +43,13 @@ import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
 import { TagsEditor } from '../../components/TagsEditor';
+import { AgeFields, describeAge, UNCERTAIN_RECOMMENDATION_TEXT } from '../../utils/ageEstimate';
+import {
+  MultiPhotoEvidence,
+  MultiImageSummary,
+  ScanImageRecord,
+  ScanPhotoStrip,
+} from '../../components/scan/MultiPhotoEvidence';
 import {
   ScanSummaryCard,
   getConfidenceLabel,
@@ -78,7 +85,6 @@ import { colors, spacing, borderRadius, typography, shadows } from '../../consta
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
 const BC_DISCLAIMER =
   'Unofficial Boone & Crockett estimate. User-entered measurements only. Official Boone & Crockett scores require a certified official measurer.';
@@ -135,9 +141,12 @@ const BC_SCORE_TYPE_REFERENCE_DETAILS: Partial<
   },
 };
 
-interface ScanResult {
+interface ScanResult extends AgeFields {
   id: string;
+  range_reasoning?: string | null;
   local_image_id: string;
+  images?: ScanImageRecord[];
+  multi_image?: MultiImageSummary | null;
   deer_age: number | null;
   deer_type: string | null;
   deer_sex: string | null;
@@ -169,6 +178,12 @@ interface ScanResult {
   season_phase?: string | null;
   date_source?: string | null;
   season_phase_confidence?: string | null;
+  // Confidence breakdown from backend calibration
+  confidence_breakdown?: { age: number | null; recommendation: number | null } | null;
+  // Score audit trail (structured, versioned) — for debugging only
+  score_audit?: Record<string, unknown> | null;
+  // Age uncertainty flag from backend
+  age_uncertain?: boolean | null;
 }
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
@@ -177,17 +192,34 @@ function isAgeUncertain(age: number | null | undefined): boolean {
   return age === null || age === undefined || age === 0;
 }
 
-function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
-  const confidence = rawConfidence || 0;
-  if (isAgeUncertain(age)) {
-    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
+/**
+ * Get the age-estimate certainty from the backend's confidence_breakdown.
+ * Returns null when the backend has no genuine age confidence value
+ * (legacy scan, or age was unavailable).
+ */
+function getAgeConfidence(scan: ScanResult): number | null {
+  if (scan.confidence_breakdown?.age !== undefined && scan.confidence_breakdown.age !== null) {
+    return scan.confidence_breakdown.age;
   }
-  return confidence;
+  // Legacy scan without breakdown — no genuine age confidence available
+  return null;
+}
+
+/**
+ * Get the recommendation certainty from the backend's confidence_breakdown,
+ * falling back to the legacy confidence field for older scans.
+ */
+function getRecommendationConfidence(scan: ScanResult): number {
+  if (scan.confidence_breakdown?.recommendation !== undefined && scan.confidence_breakdown.recommendation !== null) {
+    return scan.confidence_breakdown.recommendation;
+  }
+  // Legacy fallback
+  return scan.confidence ?? 0;
 }
 
 function getAgeDisplayText(age: number | null): string {
   if (isAgeUncertain(age)) {
-    return 'Uncertain';
+    return 'Unable to estimate age';
   }
   return `${age} years`;
 }
@@ -209,6 +241,10 @@ function getDisplayRecommendation(scan: ScanResult): 'HARVEST' | 'PASS' | null {
   const deerAge = scan.deer_age;
   if (recommendation === 'HARVEST' || recommendation === 'PASS') {
     return recommendation;
+  }
+  // Range spans the harvest threshold: never force a call from the midpoint
+  if (scan.recommendation_status === 'uncertain_range_crosses_threshold') {
+    return null;
   }
   if (scan.age_estimation_allowed === false || deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
@@ -402,6 +438,22 @@ function ScorePairedMeasurementRow({
 const DEER_TYPES = ['Whitetail', 'Mule Deer', 'Red Deer', 'Fallow Deer', 'Axis Deer', 'Unknown'];
 const DEER_SEX_OPTIONS = ['Buck', 'Doe', 'Unknown'];
 
+async function readImageAsDataUrl(uri: string): Promise<string> {
+  if (uri.startsWith('data:')) return uri;
+  if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('blob:')) {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+  const base64Data = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+  return `data:image/jpeg;base64,${base64Data}`;
+}
+
 export default function ScanResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -409,6 +461,9 @@ export default function ScanResultScreen() {
 
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  // Multi-photo scans: one display uri per stored photo (local copy first, cloud fallback)
+  const [photoUris, setPhotoUris] = useState<(string | null)[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
@@ -463,6 +518,20 @@ export default function ScanResultScreen() {
       } else if (response.data.image_url) {
         setImageUri(response.data.image_url);
       }
+
+      const records: ScanImageRecord[] = response.data.images || [];
+      if (records.length > 1) {
+        const uris = await Promise.all(
+          records.map(async (rec) => {
+            const local = rec.local_image_id ? await getImage(rec.local_image_id) : null;
+            return local || rec.url || null;
+          })
+        );
+        setPhotoUris(uris);
+      } else {
+        setPhotoUris([]);
+      }
+      setSelectedPhoto(0);
 
       try {
         const labelResponse = await scanAPI.getLabel(id);
@@ -663,8 +732,11 @@ export default function ScanResultScreen() {
           onPress: async () => {
             try {
               await scanAPI.deleteScan(scan!.id);
-              if (scan?.local_image_id) {
-                await deleteImage(scan.local_image_id);
+              const localIds = new Set<string>(
+                [scan?.local_image_id, ...(scan?.images || []).map((i) => i.local_image_id)].filter(Boolean) as string[]
+              );
+              for (const localId of localIds) {
+                await deleteImage(localId);
               }
               router.replace('/(tabs)/history');
             } catch (error) {
@@ -736,32 +808,31 @@ export default function ScanResultScreen() {
       const pickerDateStr = `${editPickerYear}-${String(editPickerMonth).padStart(2, '0')}-${String(editPickerDay).padStart(2, '0')}`;
       editData.date_taken = pickerDateStr;
 
-      if (imageUri) {
+      const storedImages: ScanImageRecord[] = scan.images || [];
+      if (storedImages.length > 1) {
+        // Multi-photo scan: re-analysis must receive every photo (server re-applies stored crops)
+        setReanalysisStatus(`Loading ${storedImages.length} photos for re-analysis...`);
+        try {
+          editData.images = await Promise.all(
+            storedImages.map(async (rec, index) => {
+              const uri = photoUris[index];
+              if (!uri) throw new Error(`Photo ${index + 1} unavailable`);
+              return {
+                image_base64: await readImageAsDataUrl(uri),
+                image_id: rec.image_id,
+                local_image_id: rec.local_image_id || undefined,
+              };
+            })
+          );
+        } catch (imgError) {
+          console.log('Local photos unavailable, using stored cloud photos:', imgError);
+          editData.reanalyze = true;
+        }
+      } else if (imageUri) {
         setReanalysisStatus('Loading image for re-analysis...');
         try {
-          let base64Image: string;
-
-          if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
-            const response = await fetch(imageUri);
-            const blob = await response.blob();
-            const reader = new FileReader();
-            base64Image = await new Promise<string>((resolve, reject) => {
-              reader.onloadend = () => {
-                const result = reader.result as string;
-                resolve(result);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-            });
-          } else {
-            const base64Data = await FileSystem.readAsStringAsync(imageUri, {
-              encoding: 'base64' as any,
-            });
-            base64Image = `data:image/jpeg;base64,${base64Data}`;
-          }
-
-          editData.image_base64 = base64Image;
-          console.log('Image included for re-analysis, length:', base64Image.length);
+          editData.image_base64 = await readImageAsDataUrl(imageUri);
+          console.log('Image included for re-analysis, length:', editData.image_base64.length);
         } catch (imgError) {
           console.log('Could not include image for re-analysis:', imgError);
           setReanalysisStatus(null);
@@ -773,7 +844,8 @@ export default function ScanResultScreen() {
         }
       }
 
-      if (editData.image_base64) {
+      const isReanalysis = !!(editData.image_base64 || editData.images || editData.reanalyze);
+      if (isReanalysis) {
         setReanalysisStatus('Sending to AI for re-analysis...\nThis may take 10-20 seconds');
       } else {
         setReanalysisStatus('Saving updates...');
@@ -791,7 +863,7 @@ export default function ScanResultScreen() {
       setReanalysisStatus(null);
       setShowEditModal(false);
 
-      if (editData.image_base64) {
+      if (isReanalysis) {
         Alert.alert('Re-analysis Complete', 'Your deer has been re-analyzed with the updated information.');
       } else {
         Alert.alert('Updated', 'Scan details saved successfully.');
@@ -799,8 +871,9 @@ export default function ScanResultScreen() {
     } catch (error: any) {
       console.error('Failed to update scan:', error);
       setReanalysisStatus(null);
-      const message = error.response?.data?.detail || 'Failed to update scan';
-      Alert.alert('Error', message);
+      const detail = error.response?.data?.detail;
+      const message = (typeof detail === 'string' ? detail : detail?.message) || 'Failed to update scan';
+      Alert.alert(detail?.code === 'MIXED_DEER' ? 'Different Deer?' : 'Error', message);
     } finally {
       setIsSubmittingEdit(false);
       setReanalysisStatus(null);
@@ -833,15 +906,19 @@ export default function ScanResultScreen() {
 
     // Fallback: text-based share
     try {
-      const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+      const shareAgeConf = getAgeConfidence(scan);
+      const shareRecConf = getRecommendationConfidence(scan);
       const ageText = getAgeDisplayText(scan.deer_age);
+      const shareAge = describeAge(scan);
 
       const shareText = [
         `Iron Stag Result`,
         ``,
-        `RECOMMENDATION: ${scan.recommendation || 'UNKNOWN'}`,
+        `RECOMMENDATION: ${scan.recommendation || (shareAge.recommendationUncertain ? 'UNCERTAIN (age range spans 3.5 yrs)' : 'UNKNOWN')}`,
         `Estimated Age: ${ageText}`,
-        `Confidence: ${displayConfidence}%`,
+        shareAge.range ? `Plausible Range: ${shareAge.range} (${shareAge.calibrated ? 'validated' : 'uncalibrated'})` : null,
+        shareAgeConf !== null ? `Age Certainty: ${shareAgeConf}%` : null,
+        `Recommendation Certainty: ${shareRecConf}%`,
         scan.deer_type ? `Type: ${scan.deer_type}` : null,
         scan.antler_points ? `Points: ${scan.antler_points}` : null,
         ``,
@@ -893,11 +970,13 @@ export default function ScanResultScreen() {
 
   // ────────── DERIVED DATA ──────────
   const ageIsUncertain = isAgeUncertain(scan.deer_age);
-  const displayConfidence = getCalibratedConfidence(scan.confidence, scan.deer_age);
+  const ageConfidence = getAgeConfidence(scan);
+  const recommendationConfidence = getRecommendationConfidence(scan);
   const ageDisplayText = getAgeDisplayText(scan.deer_age);
   const ageEstimateBlocked = scan.age_estimation_allowed === false;
   const displayRecommendation = getDisplayRecommendation(scan);
-  const confLabel = getConfidenceLabel(displayConfidence);
+  const ageInfo = describeAge(scan);
+  const confLabel = getConfidenceLabel(recommendationConfidence);
   const { summary: reasoningSummary, cues: reasoningCues } = parseReasoning(scan.reasoning);
   const visibleAgeCueText = scan.visible_age_cues && scan.visible_age_cues.length > 0
     ? scan.visible_age_cues.map((cue) => cue.replace(/_/g, ' ')).join(', ')
@@ -980,10 +1059,10 @@ export default function ScanResultScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Scan Result</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerAction} onPress={openEditModal}>
+          <TouchableOpacity style={styles.headerAction} onPress={openEditModal} testID="scan-edit-button">
             <Pencil size={20} color={colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerAction} onPress={handleDelete}>
+          <TouchableOpacity style={styles.headerAction} onPress={handleDelete} testID="scan-delete-button">
             <Trash2 size={20} color={colors.error} />
           </TouchableOpacity>
         </View>
@@ -1002,14 +1081,16 @@ export default function ScanResultScreen() {
         }
       >
         {/* ────── 1. DEER IMAGE ────── */}
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
+        {(photoUris[selectedPhoto] || imageUri) ? (
+          <Image source={{ uri: (photoUris[selectedPhoto] || imageUri) as string }} style={styles.image} resizeMode="cover" testID="result-main-image" />
         ) : (
           <View style={styles.imagePlaceholder}>
             <Target size={48} color={colors.textMuted} />
             <Text style={styles.placeholderText}>Image not available locally</Text>
           </View>
         )}
+        <ScanPhotoStrip uris={photoUris} selected={selectedPhoto} onSelect={setSelectedPhoto} />
+        <MultiPhotoEvidence summary={scan.multi_image} />
 
         {/* Date / Season + Share row */}
         <View style={styles.metaRow}>
@@ -1064,6 +1145,7 @@ export default function ScanResultScreen() {
         >
           <Text style={styles.heroLabel}>RECOMMENDATION</Text>
           <Text
+            testID="hero-recommendation"
             style={[
               styles.heroValue,
               recommendationVariant === 'harvest'
@@ -1073,14 +1155,16 @@ export default function ScanResultScreen() {
                   : styles.unknownText,
             ]}
           >
-            {displayRecommendation || 'UNKNOWN'}
+            {displayRecommendation || (ageInfo.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
           </Text>
           <Text style={styles.heroSubtext}>
             {recommendationVariant === 'harvest'
               ? 'Based on maturity and visible body indicators'
               : recommendationVariant === 'pass'
                 ? 'Based on age estimate and development indicators'
-                : 'Unable to determine a clear recommendation'}
+                : ageInfo.recommendationUncertain
+                  ? UNCERTAIN_RECOMMENDATION_TEXT
+                  : 'Unable to determine a clear recommendation'}
           </Text>
         </View>
 
@@ -1090,26 +1174,60 @@ export default function ScanResultScreen() {
             {scan.deer_type || 'Unknown Deer'} • {scan.deer_sex || 'Unknown'}
           </Text>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summarySubtitle, ageIsUncertain && styles.summarySubtitleUncertain]}>
-              {ageEstimateBlocked ? 'Best estimate unavailable' : `Est. Age: ${ageDisplayText}`}
+            <Text style={[styles.summarySubtitle, ageIsUncertain && styles.summarySubtitleUncertain]} testID="age-best">
+              {ageEstimateBlocked ? 'No age estimate from these photos' : `Best estimate: ${ageDisplayText}`}
             </Text>
             {ageIsUncertain && (
               <AlertCircle size={14} color={colors.textMuted} style={styles.uncertainIconSmall} />
             )}
           </View>
+          {ageInfo.range && (
+            <View testID="age-range">
+              <Text style={styles.summarySubtitle}>Plausible range: {ageInfo.range}</Text>
+              <Text style={styles.confDisclaimer}>{ageInfo.rangeLabel}</Text>
+              {scan.range_reasoning ? (
+                <Text style={styles.confDisclaimer}>Why: {scan.range_reasoning}</Text>
+              ) : null}
+            </View>
+          )}
           </Card>
 
-          {/* Confidence */}
+          {/* Confidence — Two separate values */}
           <Card style={styles.confCard}>
-            <Text style={styles.confCardLabel}>CONFIDENCE</Text>
-            <Text style={[styles.confCardValue, { color: confLabel.color }]}>
-              {displayConfidence}%
-            </Text>
+            <Text style={styles.confCardLabel}>CERTAINTY</Text>
+            
+            {/* Recommendation Certainty */}
+            <View style={styles.confRow}>
+              <Text style={styles.confRowLabel}>Recommendation</Text>
+              <Text style={[styles.confRowValue, { color: confLabel.color }]}>
+                {recommendationConfidence}%
+              </Text>
+            </View>
+            
+            {/* Age Estimate Certainty */}
+            <View style={styles.confRow}>
+              <Text style={styles.confRowLabel}>Age Estimate</Text>
+              {ageIsUncertain || ageConfidence === null ? (
+                <Text style={[styles.confRowValue, { color: colors.textMuted }]}>
+                  N/A
+                </Text>
+              ) : (
+                <Text style={[styles.confRowValue, { color: getConfidenceLabel(ageConfidence).color }]}>
+                  {ageConfidence}%
+                </Text>
+              )}
+            </View>
+
             <Text style={[styles.confCardBand, { color: confLabel.color }]}>
               {confLabel.label}
             </Text>
             <Text style={styles.confCardGuidance} numberOfLines={2}>
-              {confLabel.guidance}
+              {ageIsUncertain
+                ? 'Age could not be estimated. Recommendation is based on available visual cues.'
+                : confLabel.guidance}
+            </Text>
+            <Text style={styles.confDisclaimer}>
+              Scores reflect an estimate of certainty, not a verified probability.
             </Text>
           </Card>
 
@@ -1452,7 +1570,9 @@ export default function ScanResultScreen() {
             imageUri={imageUri}
             recommendation={scan.recommendation}
             deerAge={scan.deer_age}
+            ageRange={describeAge(scan)}
             confidence={scan.confidence}
+            confidenceBreakdown={scan.confidence_breakdown}
             deerType={scan.deer_type}
             deerSex={scan.deer_sex}
             antlerPoints={scan.antler_points}
@@ -2392,6 +2512,31 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     lineHeight: 14,
+  },
+  confRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  confRowLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  confRowValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  confDisclaimer: {
+    fontSize: 9,
+    color: colors.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    lineHeight: 13,
   },
 
   // ── Why We Think This ──

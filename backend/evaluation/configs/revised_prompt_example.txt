@@ -1,0 +1,2 @@
+Additional rule (example revision — replace with the prompt change under test):
+- Before deciding age, explicitly compare chest depth against hindquarter depth and state which is larger.

@@ -26,11 +26,10 @@ import { colors, spacing, borderRadius } from '../../constants/theme';
 import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
-// Cap confidence at this value when age is uncertain/unknown
-const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
+import { AgeFields, describeAge } from '../../utils/ageEstimate';
 
-interface Scan {
+interface Scan extends AgeFields {
   id: string;
   local_image_id: string;
   deer_age: number | null;
@@ -52,6 +51,8 @@ interface Scan {
   // Favorites and Tags
   is_favorite?: boolean;
   tags?: string[];
+  // Confidence breakdown from backend calibration
+  confidence_breakdown?: { age: number | null; recommendation: number | null } | null;
 }
 
 // Season phase display helpers
@@ -68,30 +69,18 @@ function getSeasonLabel(phase: string | null | undefined): string | null {
 
 // ============ CONFIDENCE & AGE UNCERTAINTY HELPERS ============
 
-/**
- * Check if the age is uncertain/unknown
- * Age is considered uncertain if:
- * - It's null or undefined
- * - It's 0 (invalid age)
- * - It's a very low value that indicates estimation failure
- */
 function isAgeUncertain(age: number | null | undefined): boolean {
   return age === null || age === undefined || age === 0;
 }
 
 /**
- * Get display-calibrated confidence value
- * If age is uncertain, cap confidence at UNCERTAIN_AGE_CONFIDENCE_CAP
- * This is a UI-level guardrail - does not modify backend data
+ * Get the recommendation certainty from confidence_breakdown, falling back to legacy.
  */
-function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
-  const confidence = rawConfidence || 0;
-  
-  if (isAgeUncertain(age)) {
-    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
+function getRecommendationConfidence(scan: Scan): number {
+  if (scan.confidence_breakdown?.recommendation !== undefined && scan.confidence_breakdown.recommendation !== null) {
+    return scan.confidence_breakdown.recommendation;
   }
-  
-  return confidence;
+  return scan.confidence ?? 0;
 }
 
 /**
@@ -110,6 +99,9 @@ function getDisplayRecommendation(scan: Scan): 'HARVEST' | 'PASS' | null {
   const deerAge = scan.deer_age;
   if (recommendation === 'HARVEST' || recommendation === 'PASS') {
     return recommendation;
+  }
+  if (scan.recommendation_status === 'uncertain_range_crosses_threshold') {
+    return null;
   }
   if (deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
@@ -350,10 +342,10 @@ export default function HistoryScreen() {
   const renderScanCard = ({ item }: { item: Scan }) => {
     // Calculate calibrated confidence and check age uncertainty
     const ageIsUncertain = isAgeUncertain(item.deer_age);
-    const displayConfidence = getCalibratedConfidence(item.confidence, item.deer_age);
+    const displayConfidence = getRecommendationConfidence(item);
     const ageDisplayText = getAgeDisplayText(item.deer_age);
     const displayRecommendation = getDisplayRecommendation(item);
-    
+    const ageInfo = describeAge(item);
     // Check if scan is eligible for feedback (>7 days old and not labeled)
     const daysSinceScan = differenceInDays(new Date(), new Date(item.created_at));
     const isEligibleForFeedback = daysSinceScan >= 7 && !labeledScanIds.has(item.id);
@@ -391,12 +383,12 @@ export default function HistoryScreen() {
                   styles.statusText,
                   displayRecommendation === 'HARVEST' ? styles.harvestStatus : styles.passStatus
                 ]}>
-                  {displayRecommendation || 'UNKNOWN'}
+                  {displayRecommendation || (ageInfo.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
                 </Text>
               </View>
               <View style={styles.ageRow}>
                 <Text style={[styles.ageText, ageIsUncertain && styles.ageTextUncertain]}>
-                  Age: {ageDisplayText}
+                  Age: {ageInfo.range ? `${ageDisplayText} (range ${ageInfo.range.replace(' yrs', '')})` : ageDisplayText}
                 </Text>
                 {ageIsUncertain && (
                   <AlertCircle size={12} color={colors.textMuted} style={styles.uncertainIcon} />
@@ -443,7 +435,7 @@ export default function HistoryScreen() {
                   {displayConfidence}%
                 </Text>
                 <Text style={[styles.confidenceLabel, ageIsUncertain && styles.confidenceLabelUncertain]}>
-                  Model confidence
+                  Rec. certainty
                 </Text>
               </View>
               
@@ -500,7 +492,7 @@ export default function HistoryScreen() {
           {/* Right Confidence */}
           <View style={styles.exampleConfidence}>
             <Text style={styles.exampleConfidenceValue}>87%</Text>
-            <Text style={styles.exampleConfidenceLabel}>Model confidence</Text>
+            <Text style={styles.exampleConfidenceLabel}>Rec. certainty</Text>
           </View>
         </View>
       </View>

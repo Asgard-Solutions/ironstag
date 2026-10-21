@@ -269,6 +269,48 @@ def delete_scan_image(scan_id: str) -> bool:
         return False
 
 
+def _public_url(object_key: str) -> str:
+    if R2_PUBLIC_URL:
+        return f"{R2_PUBLIC_URL}/{object_key}"
+    return f"{R2_ENDPOINT_URL}/{R2_BUCKET_NAME}/{object_key}"
+
+
+def put_scan_object(object_key: str, body: bytes, content_type: str) -> Optional[str]:
+    """Upload raw bytes (no recompression) and return the public URL, or None on failure."""
+    if not R2_ENABLED:
+        return None
+    try:
+        get_r2_client().put_object(Bucket=R2_BUCKET_NAME, Key=object_key, Body=body, ContentType=content_type)
+        return _public_url(object_key)
+    except Exception as e:
+        logger.error(f"Failed to upload {object_key} to R2: {e}")
+        return None
+
+
+def get_scan_object(object_key: str) -> Optional[bytes]:
+    if not R2_ENABLED:
+        return None
+    try:
+        return get_r2_client().get_object(Bucket=R2_BUCKET_NAME, Key=object_key)["Body"].read()
+    except Exception as e:
+        logger.error(f"Failed to read {object_key} from R2: {e}")
+        return None
+
+
+def delete_scan_objects(object_keys) -> None:
+    """Best-effort deletion of explicit object keys (multi-photo scans)."""
+    if not R2_ENABLED:
+        return
+    client = get_r2_client()
+    for key in object_keys:
+        if not key:
+            continue
+        try:
+            client.delete_object(Bucket=R2_BUCKET_NAME, Key=key)
+        except Exception as e:
+            logger.warning(f"Failed to delete {key} from R2: {e}")
+
+
 def get_image_url(scan_id: str, ext: str = "jpg") -> Optional[str]:
     """
     Get the public URL for a scan image.

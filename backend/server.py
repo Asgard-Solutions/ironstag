@@ -16,6 +16,8 @@ import openai
 import httpx
 import base64
 import json
+import re
+import time
 import random
 import string
 import msal
@@ -50,7 +52,30 @@ from calibration_jobs import (
 )
 
 # Import R2 storage for cloud image storage
-from r2_storage import upload_scan_image, delete_scan_image, R2_ENABLED
+from r2_storage import (
+    delete_scan_image,
+    R2_ENABLED,
+    put_scan_object,
+    get_scan_object,
+    delete_scan_objects,
+)
+from confidence_calibration import validate_artifact, check_compatibility
+import calibration_activation
+from multi_image import (
+    MAX_SCAN_IMAGES,
+    ImageValidationError,
+    PreparedImage,
+    prepare_image,
+    decode_base64_image,
+    mark_duplicates,
+    evidence_images,
+    capture_span_hours,
+    build_multi_image_system_addendum,
+    build_multi_image_user_content,
+    apply_multi_image_guards,
+    mixed_deer_detail,
+    preprocessing_version,
+)
 
 # Import Phase 3 adaptive calibration module
 from adaptive_calibration import (
@@ -136,6 +161,11 @@ scans_table = Table(
     Column("deer_age", Float),
     Column("age_bucket", String(50), nullable=True),
     Column("age_range", String(50), nullable=True),
+    Column("age_lower", Float, nullable=True),
+    Column("age_upper", Float, nullable=True),
+    Column("age_upper_open", Boolean, nullable=True),
+    Column("range_status", String(40), nullable=True),  # plausible_uncalibrated | calibrated | (null = legacy)
+    Column("recommendation_status", String(50), nullable=True),
     Column("buck_age_class", String(10), nullable=True),
     Column("age_evidence", JSON, nullable=True),
     Column("deer_type", String(100)),
@@ -191,6 +221,45 @@ scans_table = Table(
     Column("date_taken", Date, nullable=True),        # Image capture date (YYYY-MM-DD)
     Column("date_source", String(20), nullable=True),  # client, image_metadata, unknown
     Column("season_phase", String(20), nullable=True),  # pre_rut, rut, post_rut, unknown
+    # Structured score audit trail (versioned)
+    Column("score_audit", JSON, nullable=True),  # How scores were produced
+)
+
+# Photos attached to a scan (1-3 per scan, same deer / same encounter)
+scan_images_table = Table(
+    "scan_images",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("scan_id", String(36), nullable=False, index=True),
+    Column("user_id", String(36), nullable=False),
+    Column("image_id", String(20), nullable=False),  # Stable id used in model prompts (img_1..img_3)
+    Column("position", Integer, nullable=False),
+    Column("local_image_id", String(100), nullable=True),
+    Column("original_key", String, nullable=True),
+    Column("original_url", String, nullable=True),
+    Column("crop_key", String, nullable=True),
+    Column("crop_url", String, nullable=True),
+    Column("crop_rect", JSON, nullable=True),
+    Column("width", Integer, nullable=True),
+    Column("height", Integer, nullable=True),
+    Column("captured_at", String(40), nullable=True),
+    Column("content_type", String(30), nullable=True),
+    Column("sha256", String(64), nullable=True),
+    Column("dhash", String(16), nullable=True),
+    Column("duplicate_of", String(20), nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+)
+
+# Idempotency ledger: one row per client submission so retries never double-charge
+scan_submissions_table = Table(
+    "scan_submissions",
+    metadata,
+    Column("id", String(160), primary_key=True),  # f"{user_id}:{submission_id}"
+    Column("user_id", String(36), nullable=False),
+    Column("status", String(20), nullable=False),  # pending | completed
+    Column("scan_id", String(36), nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("updated_at", DateTime, default=datetime.utcnow),
 )
 
 # Scan labels table for empirical calibration (Phase 2) and trust weighting (Phase 3)
@@ -238,6 +307,22 @@ calibration_curves_table = Table(
     Column("is_active", Boolean, default=False),
     Column("created_at", DateTime, default=datetime.utcnow),
     Column("updated_at", DateTime, default=datetime.utcnow),
+)
+
+# Validated calibration artifacts (target + compatibility versioned). status: shadow | active | retired
+calibration_artifacts_table = Table(
+    "calibration_artifacts",
+    metadata,
+    Column("id", String(40), primary_key=True),  # artifact_id
+    Column("status", String(20), nullable=False, default="shadow"),
+    Column("target", String(40), nullable=False),
+    Column("scope_key", String(60), nullable=False),  # "global" or "region:<key>"
+    Column("method", String(30), nullable=False),
+    Column("artifact", JSON, nullable=False),
+    Column("activation_checks", JSON, nullable=True),
+    Column("created_at", DateTime, default=datetime.utcnow),
+    Column("activated_at", DateTime, nullable=True),
+    Column("retired_at", DateTime, nullable=True),
 )
 
 # Phase 3: Calibration drift events table
@@ -426,6 +511,75 @@ def build_chat_completion_request(
     return request
 
 
+ANALYSIS_MOCK_MODEL = get_bool_env("ANALYSIS_MOCK_MODEL", False)
+# Optional hook (used by the offline evaluation runner) that receives per-call usage/latency.
+MODEL_CALL_OBSERVER: Optional[Callable[[Dict[str, Any]], None]] = None
+
+
+def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[str, Any]) -> str:
+    """DEV/TEST ONLY (ANALYSIS_MOCK_MODEL=true): deterministic stand-in for the vision model.
+    Put 'mock:mixed' or 'mock:notdeer' in scan notes to exercise rejection paths."""
+    notes = (context.get("notes") or "").lower()
+    if "mock:notdeer" in notes:
+        return json.dumps({"is_valid_deer": False, "detected_subject": "Elk", "message": "Mock: not a deer."})
+    image_ids = []
+    for i, part in enumerate(user_content):
+        if part.get("type") == "image_url":
+            prev = user_content[i - 1].get("text", "") if i > 0 else ""
+            image_ids.append(prev.split(" ")[1] if prev.startswith("Photo img_") else f"img_{len(image_ids) + 1}")
+    cues = ["chest_depth", "belly_sag", "backline", "leg_to_body_ratio", "face_length",
+            "neck_brisket", "body_mass", "chest_vs_hindquarters", "head_blockiness"]
+    response: Dict[str, Any] = {
+        "is_valid_deer": True,
+        "age_estimation_allowed": True,
+        "visible_age_cues": cues[:6],
+        "cue_checklist": {c: ("visible" if idx < 6 else "unclear") for idx, c in enumerate(cues)},
+        "deer_age": 3.5, "alternate_age": None, "why_not_primary": None,
+        "age_lower": 3.5, "age_upper": 3.5, "age_upper_open": False, "range_reasoning": None,
+        "buck_age_class": "3.5", "age_confidence": 72, "recommendation_confidence": 70, "confidence": 70,
+        "deer_type": "Whitetail", "deer_sex": "Buck", "antler_points": 8,
+        "antler_points_left": 4, "antler_points_right": 4, "body_condition": "Good",
+        "image_quality_bucket": "good", "posture_bucket": "broadside",
+        "foreshortening_risk": "low", "distance_risk": "low",
+        "quality_factors": {"body_visibility": "high", "head_visibility": "high", "lighting": "good",
+                            "occlusion": "low", "distance_estimate": "medium", "blur": "low"},
+        "age_evidence": [{"feature": "chest_depth", "observation": "Mock: chest moderately deep", "impact": "older"}],
+        "recommendation": "HARVEST",
+        "reasoning": "Mock analysis response (ANALYSIS_MOCK_MODEL).",
+    }
+    if "mock:range" in notes:
+        response.update(deer_age=3.5, age_lower=3.5, age_upper=4.5,
+                        range_reasoning="Mock: deep chest supports 3.5+, but backline/belly do not rule out 4.5")
+    elif "mock:cross" in notes:
+        response.update(deer_age=3.5, age_lower=2.5, age_upper=3.5, recommendation=None,
+                        range_reasoning="Mock: leg length still looks long; 2.5 cannot be ruled out")
+    elif "mock:open" in notes:
+        response.update(deer_age=5.5, buck_age_class="5.5", age_lower=5.5, age_upper=None, age_upper_open=True,
+                        range_reasoning="Mock: sagging belly/backline; 6.5+ remains plausible")
+    elif "mock:poor" in notes:
+        response.update(image_quality_bucket="poor", visible_age_cues=["body_mass"],
+                        cue_checklist={c: "unclear" for c in cues},
+                        quality_factors={"body_visibility": "low", "head_visibility": "low", "lighting": "poor",
+                                         "occlusion": "high", "distance_estimate": "far", "blur": "high"})
+    if len(image_ids) > 1:
+        mixed = "mock:mixed" in notes
+        # Deliberately report an overall confidence above every per-photo value so the
+        # no-photo-count-bonus guard is exercised.
+        response["age_confidence"] = 90
+        response["per_image_observations"] = [
+            {"image_id": iid, "usable": True, "view": "broadside", "visible_age_cues": cues[:4],
+             "observations": f"Mock cues for {iid}", "suggested_age": 3.5, "age_confidence": 70 - idx * 5}
+            for idx, iid in enumerate(image_ids)
+        ]
+        response["same_deer_assessment"] = {
+            "verdict": "different" if mixed else "same",
+            "reason": "Mock: antler configuration differs" if mixed else "Mock: consistent features",
+            "conflicting_image_ids": image_ids[-1:] if mixed else [],
+        }
+        response["contradictions"] = ["Mock: antler frame differs between photos"] if mixed else []
+    return json.dumps(response)
+
+
 def run_model_analysis_pass(
     *,
     model: str,
@@ -453,8 +607,16 @@ def run_model_analysis_pass(
             max_output_tokens=max_output_tokens,
             temperature=temperature,
         )
-    )
-    response_text = response.choices[0].message.content or ""
+        response_text = response.choices[0].message.content or ""
+        if MODEL_CALL_OBSERVER is not None:
+            usage = getattr(response, "usage", None)
+            MODEL_CALL_OBSERVER({
+                "model": model,
+                "mock": False,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "latency_s": round(time.perf_counter() - call_started, 3),
+            })
     try:
         parsed_analysis = parse_json_response(response_text)
     except (json.JSONDecodeError, ValueError):
@@ -504,7 +666,8 @@ def maybe_apply_selective_consensus(
         return initial_analysis
 
     merged_analysis["consensus"] = consensus_meta
-    return merged_analysis
+    # Re-derive age class, range, bucket and recommendation from the merged age so nothing contradicts.
+    return finalize_age_estimate(merged_analysis)
 
 
 OPENAI_MODEL_AB_TEST_ENABLED = get_bool_env('OPENAI_MODEL_AB_TEST_ENABLED', False)
@@ -638,8 +801,19 @@ class SubscriptionStatus(BaseModel):
 class CheckoutRequest(BaseModel):
     plan: str = "monthly"
 
-class DeerAnalysisRequest(BaseModel):
+class ScanImageInput(BaseModel):
     image_base64: str
+    image_id: Optional[str] = None          # Stable id; defaults to img_<position>
+    local_image_id: Optional[str] = None    # On-device copy id
+    captured_at: Optional[str] = None       # Client-reported capture time (EXIF if available)
+    crop_rect: Optional[Dict[str, float]] = None  # Normalized {x, y, width, height}; original retained
+
+class DeerAnalysisRequest(BaseModel):
+    # Legacy single-photo field (still supported). Use `images` for 1-3 photos.
+    image_base64: Optional[str] = None
+    images: Optional[List[ScanImageInput]] = None
+    # Client-generated id; retries with the same id never create a second scan or charge.
+    submission_id: Optional[str] = Field(None, max_length=100)
     local_image_id: str
     notes: Optional[str] = None
     # Optional state for region-specific calibration (two-letter code)
@@ -654,6 +828,14 @@ class DeerAnalysisResponse(BaseModel):
     deer_age: Optional[float] = None
     age_bucket: Optional[str] = None
     age_range: Optional[str] = None
+    age_lower: Optional[float] = None
+    age_upper: Optional[float] = None
+    age_upper_open: Optional[bool] = None
+    # plausible_uncalibrated | calibrated | legacy_class_bin (older scans: class bin, NOT a validated interval)
+    range_status: Optional[str] = None
+    range_reasoning: Optional[str] = None
+    range_coverage_confidence: Optional[int] = None  # only set from a validated age_range_coverage calibration
+    recommendation_status: Optional[str] = None  # age_based | uncertain_range_crosses_threshold
     buck_age_class: Optional[str] = None
     age_evidence: Optional[List[Dict[str, str]]] = None
     cue_checklist: Optional[Dict[str, str]] = None
@@ -678,6 +860,8 @@ class DeerAnalysisResponse(BaseModel):
     age_uncertain: Optional[bool] = None
     confidence_breakdown: Optional[Dict[str, int]] = None  # {"age": X, "recommendation": Y}
     calibration_version: Optional[str] = None
+    # Score audit trail (structured, versioned)
+    score_audit: Optional[Dict[str, Any]] = None
     # Region fields (feature-flagged in response, always persisted)
     region_key: Optional[str] = None
     calibration_strategy: Optional[str] = None
@@ -701,6 +885,9 @@ class DeerAnalysisResponse(BaseModel):
     season_phase_reason: Optional[str] = None
     # Cloud image storage (R2) - for cross-device image access
     image_url: Optional[str] = None
+    # Multi-photo scans
+    images: Optional[List[Dict[str, Any]]] = None
+    multi_image: Optional[Dict[str, Any]] = None
     # Favorites and Tags
     is_favorite: Optional[bool] = False
     tags: Optional[List[str]] = None
@@ -727,7 +914,11 @@ class ScanEditRequest(BaseModel):
     deer_type: Optional[str] = None
     antler_points_left: Optional[int] = None
     antler_points_right: Optional[int] = None
-    image_base64: Optional[str] = None  # Required if re-analyzing with LLM
+    image_base64: Optional[str] = None  # Legacy single-photo re-analysis
+    # Multi-photo re-analysis: client-supplied copies of the scan's photos (same ids/crops)
+    images: Optional[List[ScanImageInput]] = None
+    # Re-analyze using the photos stored server-side for this scan
+    reanalyze: Optional[bool] = None
     date_taken: Optional[str] = None    # ISO date YYYY-MM-DD
 
 
@@ -869,6 +1060,9 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_right INTEGER")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_bucket VARCHAR(50)")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_range VARCHAR(50)")
+        for ddl in ("age_lower DOUBLE PRECISION", "age_upper DOUBLE PRECISION", "age_upper_open BOOLEAN",
+                    "range_status VARCHAR(40)", "recommendation_status VARCHAR(50)"):
+            await database.execute(f"ALTER TABLE scans ADD COLUMN IF NOT EXISTS {ddl}")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS buck_age_class VARCHAR(10)")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_evidence JSON")
         
@@ -893,6 +1087,8 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_estimation_allowed BOOLEAN")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS retake_reason TEXT")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS visible_age_cues JSON")
+        # Score audit trail column
+        await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS score_audit JSON")
         
         # Create indexes for region calibration queries
         await database.execute("CREATE INDEX IF NOT EXISTS idx_scans_region_key ON scans(region_key)")
@@ -1451,6 +1647,101 @@ def derive_management_recommendation(
     return "HARVEST" if is_mature_harvest_age(deer_age) else "PASS"
 
 
+MAX_INFORMATIVE_AGE_RANGE_YEARS = float(os.environ.get("MAX_INFORMATIVE_AGE_RANGE_YEARS", "2.0"))
+OPEN_ENDED_AGE = 6.5  # body cues cannot separate ages beyond 6.5; ranges reaching it are open-ended ("6.5+")
+RANGE_TOO_WIDE_MESSAGE = (
+    "The photos can't narrow this deer's age to a useful range. "
+    "Take a clear full-body broadside view with the head, chest, belly and legs visible."
+)
+
+
+def format_age_range(lower: Optional[float], upper: Optional[float], upper_open: bool) -> Optional[str]:
+    if lower is None:
+        return None
+    if upper_open:
+        return f"{lower:.1f}+"
+    if upper is None or upper == lower:
+        return f"{lower:.1f}"
+    return f"{lower:.1f}-{upper:.1f}"
+
+
+def _clear_age_fields(n: Dict[str, Any]) -> None:
+    n.update(deer_age=None, age_bucket=None, age_range=None, buck_age_class=None, age_lower=None,
+             age_upper=None, age_upper_open=False, range_status=None, range_basis=None,
+             recommendation=None, recommendation_status=None)
+
+
+def finalize_age_estimate(n: Dict[str, Any]) -> Dict[str, Any]:
+    """Single place that makes age, class, range, bucket and recommendation agree.
+
+    Range = ages the visible evidence cannot rule out (model bounds, else the model's alternate age,
+    widened by any consensus disagreement). No fixed-width margin is ever added. A range spanning more
+    than MAX_INFORMATIVE_AGE_RANGE_YEARS is not a useful estimate, so the result abstains with a retake request.
+    Ranges are plausible and UNCALIBRATED unless a validated age_range_coverage artifact says otherwise.
+    """
+    age = normalize_estimated_age(n.get("deer_age"))
+    if n.get("age_estimation_allowed") is False or age is None:
+        _clear_age_fields(n)
+        if n.get("is_valid_deer", True) and n.get("age_estimation_allowed") is not False and age is None:
+            n["age_estimation_allowed"] = False
+            n["abstain_reason"] = n.get("abstain_reason") or "insufficient_evidence"
+            n["retake_reason"] = n.get("retake_reason") or build_age_quality_gate_reason([], None)
+        return n
+
+    lower = normalize_estimated_age(n.get("age_lower"))
+    upper = normalize_estimated_age(n.get("age_upper"))
+    upper_open = bool(n.get("age_upper_open"))
+    basis = "model_bounds"
+    if lower is None and upper is None and not upper_open:
+        alternate = normalize_estimated_age(n.get("alternate_age"))
+        if alternate is not None:
+            lower, upper, basis = min(age, alternate), max(age, alternate), "alternate_age"
+        else:
+            basis = "point_estimate"
+    lower = min(lower if lower is not None else age, age)
+    upper = None if upper_open else max(upper if upper is not None else age, age)
+
+    consensus_ages = [a for a in ((n.get("consensus") or {}).get("age_values") or []) if a is not None]
+    if consensus_ages:
+        lower = min(lower, min(consensus_ages))
+        if upper is not None:
+            upper = max(upper, max(consensus_ages))
+        basis += "+consensus_spread"
+    if upper is None or upper >= OPEN_ENDED_AGE:
+        upper_open = upper_open or (upper is not None and upper >= OPEN_ENDED_AGE)
+        if upper_open:
+            upper = None
+
+    span = (upper if upper is not None else max(OPEN_ENDED_AGE, lower)) - lower
+    if span > MAX_INFORMATIVE_AGE_RANGE_YEARS:
+        _clear_age_fields(n)
+        n["age_estimation_allowed"] = False
+        n["abstain_reason"] = "range_too_wide"
+        n["retake_reason"] = RANGE_TOO_WIDE_MESSAGE
+        n["reasoning"] = RANGE_TOO_WIDE_MESSAGE
+        n["raw_age_confidence"] = 0
+        n["raw_recommendation_confidence"] = 0
+        n["confidence"] = 0
+        return n
+
+    n["deer_age"] = age
+    n["age_lower"], n["age_upper"], n["age_upper_open"] = lower, upper, upper_open
+    n["age_range"] = format_age_range(lower, upper, upper_open)
+    n["age_bucket"] = derive_age_bucket(age)
+    n["buck_age_class"] = derive_buck_age_class(age, n.get("deer_sex")) if n.get("deer_sex") == "Buck" else None
+    n["range_status"] = "plausible_uncalibrated"
+    n["range_basis"] = basis
+    n["range_reasoning"] = str(n.get("range_reasoning") or n.get("why_not_primary") or "").strip()[:300] or None
+    crosses = lower < HARVEST_RECOMMENDATION_MIN_AGE and (upper_open or upper >= HARVEST_RECOMMENDATION_MIN_AGE)
+    if crosses:
+        n["recommendation"] = None
+        n["recommendation_status"] = "uncertain_range_crosses_threshold"
+    else:
+        n["recommendation"] = "HARVEST" if lower >= HARVEST_RECOMMENDATION_MIN_AGE else "PASS"
+        n["recommendation_status"] = "age_based"
+    return n
+
+
 def normalize_buck_age_class(value: Any) -> Optional[str]:
     if value is None or value == "":
         return None
@@ -1824,34 +2115,34 @@ def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
         normalized["visible_age_cues"] = visible_age_cues
 
     critical_visible_count = len([cue for cue in visible_age_cues if cue in CRITICAL_AGE_CUE_VALUES])
-    deer_age_present = normalized.get("deer_age") is not None
 
     severe_quality_issue_count = sum(
         1 for flag in (image_quality_poor, body_visibility_low, occlusion_high, blur_high) if flag
     )
     if severe_quality_issue_count >= 2:
         blockers.extend(soft_flags)
-    elif unsupported_profile and not deer_age_present and critical_visible_count == 0:
+    elif unsupported_profile and critical_visible_count == 0:
         blockers.append("profile_not_visible")
 
-    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES and not deer_age_present:
+    # Evidence rules apply whether or not the model supplied an age: a number from the model is not evidence.
+    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES:
         blockers.append("critical_cues_missing")
 
-    if not deer_age_present and len(visible_age_cues) < 1:
+    if len(visible_age_cues) < 1:
         blockers.append("insufficient_visible_age_cues")
 
-    if missing_required_checklist_keys and not deer_age_present and len(visible_age_cues) < 1:
+    if missing_required_checklist_keys and len(visible_age_cues) < 1:
         blockers.append("incomplete_cue_checklist")
 
     blockers = list(dict.fromkeys(blockers))
 
     if blockers:
         logger.info(
-            "Age gate blocked: blockers=%s soft_flags=%s deer_age_present=%s "
+            "Age gate blocked: blockers=%s soft_flags=%s deer_age=%s "
             "critical_visible_count=%s visible_age_cues=%s posture=%s quality=%s quality_factors=%s",
             blockers,
             soft_flags,
-            deer_age_present,
+            normalized.get("deer_age"),
             critical_visible_count,
             visible_age_cues,
             normalized.get("posture_bucket"),
@@ -2086,10 +2377,41 @@ def normalize_model_analysis(
     recommendation_confidence = clamp_confidence(normalized.get("recommendation_confidence"))
     legacy_confidence = clamp_confidence(normalized.get("confidence"))
 
+    # ── Build score audit trail ──
+    audit_steps: list = []
+    model_age_conf = age_confidence
+    model_rec_conf = recommendation_confidence
+    model_legacy_conf = legacy_confidence
+
+    audit_steps.append({
+        "step": "model_output",
+        "age_confidence": model_age_conf,
+        "recommendation_confidence": model_rec_conf,
+        "legacy_confidence": model_legacy_conf,
+    })
+
+    # Fill gaps from legacy field
     if age_confidence is None:
         age_confidence = legacy_confidence
+        if legacy_confidence is not None:
+            audit_steps.append({
+                "step": "fallback",
+                "reason": "age_confidence_missing_used_legacy",
+                "field": "age_confidence",
+                "before": None,
+                "after": legacy_confidence,
+            })
     if recommendation_confidence is None:
-        recommendation_confidence = legacy_confidence or age_confidence
+        fallback_val = legacy_confidence or age_confidence
+        recommendation_confidence = fallback_val
+        if fallback_val is not None:
+            audit_steps.append({
+                "step": "fallback",
+                "reason": "recommendation_confidence_missing_used_legacy_or_age",
+                "field": "recommendation_confidence",
+                "before": None,
+                "after": fallback_val,
+            })
 
     angle_risk = normalize_risk_level(
         normalized.get("foreshortening_risk") or normalized.get("camera_angle_risk")
@@ -2105,10 +2427,29 @@ def normalize_model_analysis(
     elif distance_risk == "medium":
         risk_penalty += 5
     if risk_penalty:
+        risk_adjustments = []
         if age_confidence is not None:
+            before_age = age_confidence
             age_confidence = max(0, age_confidence - risk_penalty)
+            risk_adjustments.append({
+                "field": "age_confidence",
+                "before": before_age,
+                "after": age_confidence,
+            })
         if recommendation_confidence is not None:
+            before_rec = recommendation_confidence
             recommendation_confidence = max(0, recommendation_confidence - risk_penalty)
+            risk_adjustments.append({
+                "field": "recommendation_confidence",
+                "before": before_rec,
+                "after": recommendation_confidence,
+            })
+        audit_steps.append({
+            "step": "risk_penalty",
+            "reason": f"angle_risk={angle_risk}, distance_risk={distance_risk}",
+            "penalty": risk_penalty,
+            "adjustments": risk_adjustments,
+        })
 
     normalized["raw_age_confidence"] = age_confidence
     normalized["raw_recommendation_confidence"] = recommendation_confidence
@@ -2130,30 +2471,32 @@ def normalize_model_analysis(
 
     normalized["deer_age"] = deer_age
     normalized["alternate_age"] = alternate_age
-    normalized["age_bucket"] = derive_age_bucket(deer_age)
-    normalized["age_range"] = derive_age_range(deer_age)
     normalized["buck_age_class"] = buck_age_class
-
-    normalized["recommendation"] = derive_management_recommendation(
-        normalized.get("recommendation"),
-        deer_age,
-        normalized.get("age_estimation_allowed"),
-    )
     normalized["why_not_primary"] = str(normalized.get("why_not_primary") or "").strip()[:220] or None
 
     # Penalize confidence if the model's alternate age meaningfully disagrees.
     if deer_age is not None and alternate_age is not None and abs(deer_age - alternate_age) > 0.5:
-        normalized["raw_age_confidence"] = max(0, int((normalized.get("raw_age_confidence") or 0) - 10))
-        normalized["raw_recommendation_confidence"] = max(
-            0,
-            int((normalized.get("raw_recommendation_confidence") or 0) - 8),
-        )
+        before_age_c = normalized.get("raw_age_confidence") or 0
+        before_rec_c = normalized.get("raw_recommendation_confidence") or 0
+        normalized["raw_age_confidence"] = max(0, int(before_age_c - 10))
+        normalized["raw_recommendation_confidence"] = max(0, int(before_rec_c - 8))
         normalized["confidence"] = normalized["raw_recommendation_confidence"] or normalized["raw_age_confidence"] or 0
+        audit_steps.append({
+            "step": "alternate_age_penalty",
+            "reason": f"deer_age={deer_age}, alternate_age={alternate_age}, diff={abs(deer_age - alternate_age):.1f}",
+            "adjustments": [
+                {"field": "age_confidence", "before": before_age_c, "after": normalized["raw_age_confidence"]},
+                {"field": "recommendation_confidence", "before": before_rec_c, "after": normalized["raw_recommendation_confidence"]},
+            ],
+        })
 
     normalized["reasoning"] = str(normalized.get("reasoning") or "").strip() or None
     normalized["confidence_reasoning"] = str(normalized.get("confidence_reasoning") or "").strip()[:500] or None
 
-    return apply_age_estimation_gate(normalized)
+    # Attach pre-calibration audit to normalized dict for downstream consumption
+    normalized["_pre_calibration_audit_steps"] = audit_steps
+
+    return finalize_age_estimate(apply_age_estimation_gate(normalized))
 
 
 def build_analysis_system_prompt() -> str:
@@ -2195,7 +2538,10 @@ If the image DOES contain a valid deer, return:
   "alternate_age": <number or null>,
   "why_not_primary": <string or null>,
   "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
-  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "age_lower": <number or null>,
+  "age_upper": <number or null>,
+  "age_upper_open": <true | false>,
+  "range_reasoning": <string or null>,
   "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
   "age_confidence": <0-100>,
   "recommendation_confidence": <0-100>,
@@ -2256,22 +2602,21 @@ Fawn identification (applies to all species and sexes):
 - For does, do not require antlers or buck-specific cues before giving an age estimate.
 - Rut-swollen necks, coat thickness, and perspective can mislead. Stay conservative.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. A visible body feature does not by itself require an age: give `deer_age` only when the visible cues actually support an estimate.
 - Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown is too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
-  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `deer_age`, `age_bucket`, `age_lower`, `age_upper`, and `buck_age_class` to null
   - set `recommendation` to null
   - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
   - provide `abstain_reason` from the enum
-  - provide a concise `retake_reason`
+  - provide a specific `retake_reason` naming the photo needed (for example: a clear full-body broadside view with legs and head visible)
 - When `age_estimation_allowed` is true, set `retake_reason` to null.
 - When `age_estimation_allowed` is true, set `abstain_reason` to null.
 - Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
 - If `alternate_age` is provided, `why_not_primary` is required.
-- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
-- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- Set `recommendation` to `HARVEST` only when the whole plausible range is 3.5 or older, `PASS` only when the whole range is younger than 3.5. If the range spans 3.5, set `recommendation` to null.
 - If deer_age is not null, use the half-year hunting convention and keep it to a single estimate such as 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, etc.
-- age_bucket and age_range must align with deer_age. If deer_age is null, set both to null.
+- age_bucket must align with deer_age. Plausible range: `age_lower` <= `deer_age` <= `age_upper`. Set `age_lower` = `age_upper` = `deer_age` when the visible evidence rules out neighboring ages. Widen the range only to neighboring ages the visible evidence cannot rule out, and explain in `range_reasoning` which cues keep them plausible. Never add a fixed-width margin. Use `age_upper_open: true` (and `age_upper: null`) when the deer may be 6.5 or older. If deer_age is null, set all range fields to null.
 - For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
 - For does, do not force an age when evidence is weak.
 - For bucks, antler count may refine the estimate but must never dominate it.
@@ -2314,7 +2659,10 @@ Return:
   "alternate_age": <number or null>,
   "why_not_primary": <string or null>,
   "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
-  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "age_lower": <number or null>,
+  "age_upper": <number or null>,
+  "age_upper_open": <true | false>,
+  "range_reasoning": <string or null>,
   "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
   "age_confidence": <0-100>,
   "recommendation_confidence": <0-100>,
@@ -2376,20 +2724,19 @@ Fawn identification (applies to all species and sexes):
 - If the corrected sex is Doe, all antler fields must be null.
 - For does, age from body profile only and do not require antlers or buck-specific cues before giving an age estimate.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. A visible body feature does not by itself require an age: give `deer_age` only when the visible cues actually support an estimate.
 - Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown remains too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
-  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `deer_age`, `age_bucket`, `age_lower`, `age_upper`, and `buck_age_class` to null
   - set `recommendation` to null
   - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
   - provide `abstain_reason` from the enum
-  - provide a concise `retake_reason`
+  - provide a specific `retake_reason` naming the photo needed (for example: a clear full-body broadside view with legs and head visible)
 - When `age_estimation_allowed` is true, set `retake_reason` to null.
 - When `age_estimation_allowed` is true, set `abstain_reason` to null.
 - Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
 - If `alternate_age` is provided, `why_not_primary` is required.
-- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
-- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- Set `recommendation` to `HARVEST` only when the whole plausible range is 3.5 or older, `PASS` only when the whole range is younger than 3.5. If the range spans 3.5, set `recommendation` to null.
 - Keep deer_age to the half-year hunting convention when not null.
 - For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
 - For does, use visible body cues when they are available; only abstain when the photo truly lacks enough anatomy to age reliably.
@@ -2398,7 +2745,7 @@ Fawn identification (applies to all species and sexes):
 - Set confidence equal to recommendation_confidence for backward compatibility.
 - `confidence_reasoning` must explain why confidence is at the given level, referencing specific visible cues, image quality issues, or perspective limitations."""
 
-def build_scan_response(scan: dict) -> DeerAnalysisResponse:
+def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = None) -> DeerAnalysisResponse:
     """
     Helper to build DeerAnalysisResponse with calibration and region fields.
     Handles both new scans (with calibration data) and legacy scans (without).
@@ -2411,9 +2758,12 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
     confidence_breakdown = None
     if scan.get("age_confidence") is not None or scan.get("recommendation_confidence") is not None:
         confidence_breakdown = {
-            "age": scan.get("age_confidence") or 0,
-            "recommendation": scan.get("recommendation_confidence") or scan.get("confidence") or 0
+            "age": scan.get("age_confidence") if scan.get("age_confidence") is not None else None,
+            "recommendation": scan.get("recommendation_confidence") if scan.get("recommendation_confidence") is not None else (scan.get("confidence") or 0)
         }
+    
+    # Score audit trail — return stored audit or None for legacy scans
+    score_audit = scan.get("score_audit")
     
     # Region fields (feature-flagged)
     region_key = scan.get("region_key") if config.CALIBRATION_SHOW_REGION else None
@@ -2447,6 +2797,13 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         deer_age=scan["deer_age"],
         age_bucket=scan.get("age_bucket"),
         age_range=scan.get("age_range"),
+        age_lower=scan.get("age_lower"),
+        age_upper=scan.get("age_upper"),
+        age_upper_open=scan.get("age_upper_open"),
+        range_status=scan.get("range_status") or ("legacy_class_bin" if scan.get("age_range") else None),
+        range_reasoning=(scan.get("raw_response") or {}).get("range_reasoning"),
+        range_coverage_confidence=(scan.get("raw_response") or {}).get("range_coverage_confidence"),
+        recommendation_status=scan.get("recommendation_status"),
         buck_age_class=scan.get("buck_age_class"),
         age_evidence=scan.get("age_evidence") or [],
         cue_checklist=raw_response.get("cue_checklist") if isinstance(raw_response.get("cue_checklist"), dict) else {},
@@ -2471,6 +2828,7 @@ def build_scan_response(scan: dict) -> DeerAnalysisResponse:
         age_uncertain=scan.get("age_uncertain"),
         confidence_breakdown=confidence_breakdown,
         calibration_version=scan.get("calibration_version"),
+        score_audit=score_audit,
         # Region fields (feature-flagged)
         region_key=region_key,
         calibration_strategy=calibration_strategy,
@@ -2833,7 +3191,12 @@ async def delete_account(user: dict = Depends(get_current_user)):
     user_email = user["email"]
     
     try:
-        # Delete all user's scans first
+        # Delete all user's scans first (including stored photos)
+        user_scan_rows = await database.fetch_all(
+            sqlalchemy.select(scans_table.c.id).where(scans_table.c.user_id == user_id)
+        )
+        await purge_scan_assets([r["id"] for r in user_scan_rows])
+        await database.execute(scan_submissions_table.delete().where(scan_submissions_table.c.user_id == user_id))
         delete_scans_query = scans_table.delete().where(scans_table.c.user_id == user_id)
         await database.execute(delete_scans_query)
         logger.info(f"Deleted all scans for user {user_id}")
@@ -3601,75 +3964,368 @@ async def sync_revenuecat_subscription(data: RevenueCatSyncRequest, user: dict =
 
 # ============ DEER ANALYSIS ============
 
+# ============ MULTI-PHOTO SCAN HELPERS ============
+
+SUBMISSION_STALE_AFTER = timedelta(minutes=5)
+MULTI_IMAGE_PROMPT_SUFFIX = "+multi-v1"
+IMAGE_ID_PATTERN = re.compile(r"^img_[1-9]$")
+
+
+def image_validation_http(exc: ImageValidationError) -> HTTPException:
+    return HTTPException(status_code=400, detail=exc.to_detail())
+
+
+def resolve_request_images(images: Optional[List[ScanImageInput]], image_base64: Optional[str], local_image_id: Optional[str]) -> List[ScanImageInput]:
+    if images:
+        return images
+    if image_base64:
+        return [ScanImageInput(image_base64=image_base64, local_image_id=local_image_id)]
+    raise ImageValidationError("NO_IMAGES", "Add at least one photo of the deer.")
+
+
+def prepare_request_images(
+    inputs: List[ScanImageInput],
+    stored_crops: Optional[Dict[str, Any]] = None,
+) -> List[PreparedImage]:
+    if len(inputs) > MAX_SCAN_IMAGES:
+        raise ImageValidationError("TOO_MANY_IMAGES", f"Use at most {MAX_SCAN_IMAGES} photos per scan.")
+    prepared: List[PreparedImage] = []
+    seen_ids = set()
+    for index, item in enumerate(inputs, start=1):
+        image_id = item.image_id or f"img_{index}"
+        if not IMAGE_ID_PATTERN.match(image_id) or image_id in seen_ids:
+            raise ImageValidationError("INVALID_IMAGE_ID", "Each photo needs a unique id like img_1.", image_id)
+        seen_ids.add(image_id)
+        crop_rect = item.crop_rect
+        if crop_rect is None and stored_crops:
+            crop_rect = stored_crops.get(image_id)
+        prepared.append(prepare_image(
+            image_bytes=decode_base64_image(item.image_base64),
+            position=index,
+            image_id=image_id,
+            captured_at=item.captured_at,
+            crop_rect=crop_rect,
+            local_image_id=item.local_image_id,
+        ))
+    return prepared
+
+
+def build_image_user_content(intro_text: str, evidence: List[PreparedImage]) -> List[Dict[str, Any]]:
+    if len(evidence) == 1:
+        return [
+            {"type": "text", "text": intro_text},
+            {"type": "image_url", "image_url": {"url": evidence[0].model_data_url, "detail": "high"}},
+        ]
+    return build_multi_image_user_content(
+        intro_text
+        + f"\n\n{len(evidence)} photos of the same deer from one encounter follow. "
+        "Assess each photo separately, then reconcile into one estimate.",
+        evidence,
+    )
+
+
+def scan_image_public_record(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "image_id": row.get("image_id"),
+        "position": row.get("position"),
+        "url": row.get("crop_url") or row.get("original_url"),
+        "original_url": row.get("original_url"),
+        "crop_url": row.get("crop_url"),
+        "crop_rect": row.get("crop_rect"),
+        "is_cropped": row.get("crop_rect") is not None,
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "captured_at": row.get("captured_at"),
+        "local_image_id": row.get("local_image_id"),
+        "duplicate_of": row.get("duplicate_of"),
+    }
+
+
+async def fetch_scan_image_rows(scan_id: str) -> List[Dict[str, Any]]:
+    rows = await database.fetch_all(
+        scan_images_table.select()
+        .where(scan_images_table.c.scan_id == scan_id)
+        .order_by(scan_images_table.c.position)
+    )
+    return [dict(r) for r in rows]
+
+
+async def fetch_scan_images(scan_id: str) -> List[Dict[str, Any]]:
+    return [scan_image_public_record(r) for r in await fetch_scan_image_rows(scan_id)]
+
+
+def upload_scan_photos(scan_id: str, user_id: str, images: List[PreparedImage]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Upload originals (+ crops) to R2. Returns DB rows and uploaded keys (for cleanup)."""
+    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+    rows: List[Dict[str, Any]] = []
+    uploaded: List[str] = []
+    now = datetime.utcnow()
+    for img in images:
+        original_key = crop_key = original_url = crop_url = None
+        if R2_ENABLED:
+            key = f"scans/{scan_id}/{img.image_id}_original.{ext_map.get(img.original_content_type, 'jpg')}"
+            original_url = put_scan_object(key, img.original_bytes, img.original_content_type)
+            if original_url:
+                original_key = key
+                uploaded.append(key)
+            if img.crop_jpeg is not None:
+                key = f"scans/{scan_id}/{img.image_id}_crop.jpg"
+                crop_url = put_scan_object(key, img.crop_jpeg, "image/jpeg")
+                if crop_url:
+                    crop_key = key
+                    uploaded.append(key)
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "scan_id": scan_id,
+            "user_id": user_id,
+            "image_id": img.image_id,
+            "position": img.position,
+            "local_image_id": img.local_image_id,
+            "original_key": original_key,
+            "original_url": original_url,
+            "crop_key": crop_key,
+            "crop_url": crop_url,
+            "crop_rect": img.crop_rect,
+            "width": img.width,
+            "height": img.height,
+            "captured_at": img.captured_at,
+            "content_type": img.original_content_type,
+            "sha256": img.sha256,
+            "dhash": img.dhash,
+            "duplicate_of": img.duplicate_of,
+            "created_at": now,
+        })
+    return rows, uploaded
+
+
+async def purge_scan_assets(scan_ids: List[str]) -> None:
+    """Delete every stored photo (legacy single + multi-photo) and ledger rows for scans."""
+    if not scan_ids:
+        return
+    rows = await database.fetch_all(
+        scan_images_table.select().where(scan_images_table.c.scan_id.in_(scan_ids))
+    )
+    if R2_ENABLED:
+        keys = [k for r in rows for k in (r["original_key"], r["crop_key"]) if k]
+        try:
+            delete_scan_objects(keys)
+        except Exception as e:
+            logger.warning(f"Failed to delete R2 photos: {e}")
+        for sid in scan_ids:
+            try:
+                delete_scan_image(sid)  # legacy scans/{id}.jpg
+            except Exception as e:
+                logger.warning(f"Failed to delete legacy R2 image for scan {sid}: {e}")
+    await database.execute(scan_images_table.delete().where(scan_images_table.c.scan_id.in_(scan_ids)))
+    await database.execute(scan_submissions_table.delete().where(scan_submissions_table.c.scan_id.in_(scan_ids)))
+
+
+def is_unique_violation(exc: Exception) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return "unique" in text or "duplicate key" in text
+
+
+async def claim_submission(user_id: str, submission_id: str) -> Optional[Dict[str, Any]]:
+    """Reserve a submission id. Returns the already-saved scan if this is a retry of a completed submission."""
+    key = f"{user_id}:{submission_id}"
+    now = datetime.utcnow()
+    try:
+        await database.execute(scan_submissions_table.insert().values(
+            id=key, user_id=user_id, status="pending", created_at=now, updated_at=now,
+        ))
+        return None
+    except Exception as exc:
+        if not is_unique_violation(exc):
+            raise
+    row = await database.fetch_one(scan_submissions_table.select().where(scan_submissions_table.c.id == key))
+    if row is None:
+        raise HTTPException(status_code=409, detail={"code": "SUBMISSION_IN_PROGRESS", "message": "This scan is already being processed. Please wait."})
+    if row["status"] == "completed" and row["scan_id"]:
+        scan = await database.fetch_one(scans_table.select().where(
+            (scans_table.c.id == row["scan_id"]) & (scans_table.c.user_id == user_id)
+        ))
+        if scan:
+            return dict(scan)
+    elif row["updated_at"] and row["updated_at"] > now - SUBMISSION_STALE_AFTER:
+        raise HTTPException(status_code=409, detail={"code": "SUBMISSION_IN_PROGRESS", "message": "This scan is already being processed. Please wait."})
+    # Stale pending claim, or completed but scan was deleted: take it over.
+    await database.execute(
+        scan_submissions_table.update().where(scan_submissions_table.c.id == key)
+        .values(status="pending", scan_id=None, updated_at=now)
+    )
+    return None
+
+
+async def release_submission(user_id: str, submission_id: str) -> None:
+    try:
+        await database.execute(scan_submissions_table.delete().where(
+            (scan_submissions_table.c.id == f"{user_id}:{submission_id}")
+            & (scan_submissions_table.c.status == "pending")
+        ))
+    except Exception:
+        logger.warning("Failed to release submission %s", submission_id, exc_info=True)
+
+
+async def charge_scan_credit(user: dict) -> bool:
+    """Atomically consume one scan credit. Returns False if none remain (free tier)."""
+    if user.get("subscription_tier") == "master_stag":
+        await database.execute(
+            users_table.update().where(users_table.c.id == user["id"])
+            .values(total_scans_used=users_table.c.total_scans_used + 1)
+        )
+        return True
+    row = await database.fetch_one(
+        users_table.update()
+        .where((users_table.c.id == user["id"]) & (users_table.c.scans_remaining > 0))
+        .values(
+            scans_remaining=users_table.c.scans_remaining - 1,
+            total_scans_used=users_table.c.total_scans_used + 1,
+        )
+        .returning(users_table.c.scans_remaining)
+    )
+    return row is not None
+
+
+def run_analysis_with_consensus(
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: List[Dict[str, Any]],
+    max_output_tokens: int,
+    prompt_version: str,
+    context: Dict[str, Any],
+    post_parse: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    def one_pass():
+        return run_model_analysis_pass(
+            model=model,
+            system_prompt=system_prompt,
+            user_content=user_content,
+            max_output_tokens=max_output_tokens,
+            prompt_version=prompt_version,
+            context=context,
+            post_parse=post_parse,
+        )
+
+    initial = one_pass()
+    if initial is None:
+        return None
+    return maybe_apply_selective_consensus(
+        initial_analysis=initial,
+        total_passes=SELECTIVE_CONSENSUS_TOTAL_PASSES,
+        pass_builder=one_pass,
+    )
+
+
+def apply_photo_set_guards(
+    analysis: Dict[str, Any],
+    all_images: List[PreparedImage],
+    evidence: List[PreparedImage],
+    duplicates: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Attach multi-photo metadata/guards; raise 422 on suspected mixed-deer submissions."""
+    if len(all_images) < 2:
+        return analysis
+    apply_multi_image_guards(analysis, evidence, duplicates, capture_span_hours(evidence))
+    mixed = mixed_deer_detail(analysis)
+    if mixed:
+        raise HTTPException(status_code=422, detail=mixed)
+    return analysis
+
+
+def build_analysis_request(context_text: str, evidence: List[PreparedImage]) -> Dict[str, Any]:
+    """Prompt + payload for a (re)analysis-free initial scan. Shared by /analyze-deer and the evaluation runner."""
+    is_multi = len(evidence) > 1
+    intro = (
+        ("Analyze these photos and return JSON only.\n\n" if is_multi else "Analyze this image and return JSON only.\n\n")
+        + f"{context_text}\n\n"
+        "Use region and season as supporting context only. "
+        "Visible body anatomy must dominate the age estimate."
+    )
+    return {
+        "system_prompt": build_analysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else ""),
+        "user_content": build_image_user_content(intro, evidence),
+        "max_output_tokens": 1400 + (400 * (len(evidence) - 1)),
+        "prompt_version": ANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else ""),
+    }
+
+
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
 async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_current_user)):
     logger.info(
-        "Starting analyze_deer | user_id=%s local_image_id=%s state=%s date_taken=%s",
+        "Starting analyze_deer | user_id=%s local_image_id=%s state=%s date_taken=%s photos=%s submission=%s",
         user.get("id"), data.local_image_id, data.state, data.date_taken,
+        len(data.images) if data.images else (1 if data.image_base64 else 0), data.submission_id,
     )
 
-    eligibility = await check_scan_eligibility(user)
-    if not eligibility["allowed"]:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "FREE_LIMIT_REACHED",
-                "message": eligibility["message"],
-                "scans_remaining": 0,
-                "upgrade_required": True
-            }
-        )
-    
+    # ── Step 0: Idempotency — a retry of a completed submission returns the saved scan, no new charge ──
+    submission_id = (data.submission_id or "").strip() or str(uuid.uuid4())
+    existing_scan = await claim_submission(user["id"], submission_id)
+    if existing_scan:
+        logger.info("Duplicate submission %s -> returning scan %s (no charge)", submission_id, existing_scan["id"])
+        return build_scan_response(existing_scan, images=await fetch_scan_images(existing_scan["id"]))
+
+    uploaded_keys: List[str] = []
     try:
-        # ── Step 1: Decode image ──
-        logger.info("Step 1: Decoding image data")
-        image_data = data.image_base64
-        if not image_data.startswith("data:"):
-            image_data = f"data:image/jpeg;base64,{image_data}"
+        # ── Step 1: Validate + prepare photos (type, size, count, orientation, crop, dedupe) ──
+        try:
+            all_images = prepare_request_images(
+                resolve_request_images(data.images, data.image_base64, data.local_image_id)
+            )
+        except ImageValidationError as exc:
+            raise image_validation_http(exc)
+        duplicates = mark_duplicates(all_images)
+        evidence = evidence_images(all_images)
+        is_multi = len(evidence) > 1
+        prompt_version = ANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else "")
+
+        eligibility = await check_scan_eligibility(user)
+        if not eligibility["allowed"]:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "FREE_LIMIT_REACHED",
+                    "message": eligibility["message"],
+                    "scans_remaining": 0,
+                    "upgrade_required": True
+                }
+            )
+
         scan_created_at = datetime.utcnow()
 
         # ── Step 2: Select model ──
-        logger.info("Step 2: Selecting analysis model")
         selected_model, model_variant = select_analysis_model(
             user_id=user["id"],
             local_image_id=data.local_image_id,
         )
         user_profile_state = user.get("state")
 
-        # ── Step 3: Extract raw image bytes for EXIF ──
-        logger.info("Step 3: Extracting raw image bytes for EXIF")
-        raw_image_bytes = None
-        try:
-            b64_part = image_data.split(",", 1)[-1] if "," in image_data else image_data
-            import base64 as b64_mod
-            raw_image_bytes = b64_mod.b64decode(b64_part)
-            logger.info("Image decoded successfully, size=%d bytes", len(raw_image_bytes) if raw_image_bytes else 0)
-        except Exception:
-            logger.warning("Base64 decode failed for EXIF extraction", exc_info=True)
-
-        # ── Step 4: Build scan context (season, region) ──
-        logger.info("Step 4: Building scan context")
+        # ── Step 3/4: Build scan context (season, region); EXIF from the first photo ──
+        date_taken = data.date_taken
+        if not date_taken:
+            capture_dates = sorted(img.captured_at for img in evidence if img.captured_at)
+            date_taken = capture_dates[0][:10] if capture_dates else None
         try:
             scan_context = build_scan_context(
                 scan_state=data.state,
                 user_profile_state=user_profile_state,
                 scan_datetime=scan_created_at,
                 notes=data.notes,
-                date_taken=data.date_taken,
-                image_bytes=raw_image_bytes,
+                date_taken=date_taken,
+                image_bytes=all_images[0].original_bytes,
             )
             context_text = format_scan_context_for_prompt(scan_context)
         except Exception:
             logger.exception(
                 "Scan context build failed | user_id=%s state=%s date_taken=%s",
-                user.get("id"), data.state, data.date_taken,
+                user.get("id"), data.state, date_taken,
             )
             raise
 
         logger.info(
-            "Using analysis model %s for user %s local_image_id %s (variant=%s) | season=%s date=%s",
-            selected_model, user["id"], data.local_image_id, model_variant,
-            scan_context.get("season_phase"), scan_context.get("date_taken"),
+            "Using analysis model %s for user %s (variant=%s) | evidence_photos=%d duplicates=%d season=%s",
+            selected_model, user["id"], model_variant, len(evidence), len(duplicates),
+            scan_context.get("season_phase"),
         )
 
         # ── Step 5: Call OpenAI model ──
@@ -3688,7 +4344,7 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         ]
 
         try:
-            initial_analysis = run_model_analysis_pass(
+            analysis = run_analysis_with_consensus(
                 model=selected_model,
                 system_prompt=build_analysis_system_prompt(),
                 user_content=user_content,
@@ -3697,21 +4353,14 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 context=scan_context,
             )
         except openai.OpenAIError as e:
-            logger.exception(
-                "OpenAI API error during analyze_deer | user_id=%s model=%s",
-                user.get("id"), selected_model,
-            )
+            logger.exception("OpenAI API error during analyze_deer | user_id=%s model=%s", user.get("id"), selected_model)
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "code": "OPENAI_FAILURE",
-                    "message": f"AI analysis failed: {str(e)}"
-                }
+                detail={"code": "OPENAI_FAILURE", "message": f"AI analysis failed: {str(e)}"}
             )
 
         # ── Step 6: Process response ──
-        logger.info("Step 6: Processing AI response")
-        if initial_analysis is None:
+        if analysis is None:
             analysis = {
                 "is_valid_deer": False,
                 "detected_subject": "Unknown",
@@ -3738,12 +4387,9 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                     analysis.get("consensus"),
                 )
 
-        # Check if this is a valid deer image
         if not analysis.get("is_valid_deer", False):
             detected = analysis.get("detected_subject", "Unknown")
             message = analysis.get("message", f"This image appears to contain {detected}, not a deer.")
-
-            # Return rejection without saving or using a scan
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -3754,39 +4400,40 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 }
             )
 
+        analysis = apply_photo_set_guards(analysis, all_images, evidence, duplicates)
+
         # ── Step 7: Calibrate confidence ──
-        logger.info("Step 7: Applying calibration")
         active_curves = await get_live_active_curves()
         calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
             analysis=analysis,
             state=data.state,
             user_profile_state=user_profile_state,
             active_curves=active_curves,
+            artifacts=await get_live_calibration_artifacts(),
+            preprocessing_version=preprocessing_version(),
         )
 
         scan_id = str(uuid.uuid4())
 
-        # ── Step 8: Upload to R2 ──
-        image_url = None
-        if R2_ENABLED:
-            try:
-                logger.info("Step 8: Uploading image to R2")
-                image_url = upload_scan_image(scan_id, image_data)
-                if image_url:
-                    logger.info(f"Image uploaded to R2 for scan {scan_id}")
-            except Exception as e:
-                logger.warning(f"Failed to upload image to R2: {e}")
+        # ── Step 8: Upload originals (+ crops) to R2 ──
+        image_rows, uploaded_keys = upload_scan_photos(scan_id, user["id"], all_images)
+        primary = image_rows[0]
+        image_url = primary["crop_url"] or primary["original_url"]
 
-        # ── Step 9: Save to database ──
-        logger.info("Step 9: Saving scan to database | scan_id=%s", scan_id)
-        try:
-            query = scans_table.insert().values(
+        # ── Step 9: Save scan + photos + charge one credit atomically ──
+        async with database.transaction():
+            await database.execute(scans_table.insert().values(
                 id=scan_id,
                 user_id=user["id"],
                 local_image_id=data.local_image_id,
                 deer_age=calibrated_analysis.get("deer_age"),
                 age_bucket=calibrated_analysis.get("age_bucket"),
                 age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
                 buck_age_class=calibrated_analysis.get("buck_age_class"),
                 age_evidence=calibrated_analysis.get("age_evidence"),
                 deer_type=calibrated_analysis.get("deer_type"),
@@ -3801,7 +4448,6 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 notes=data.notes,
                 raw_response=analysis,
                 created_at=scan_created_at,
-                # Calibration fields
                 raw_confidence=calibrated_analysis.get("raw_confidence"),
                 raw_age_confidence=calibrated_analysis.get("raw_age_confidence"),
                 raw_recommendation_confidence=calibrated_analysis.get("raw_recommendation_confidence"),
@@ -3809,15 +4455,14 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                 age_uncertain=calibrated_analysis.get("age_uncertain", False),
                 calibration_version=calibrated_analysis.get("calibration_version"),
-                # Region fields
+                score_audit=calibrated_analysis.get("score_audit"),
                 region_key=calibrated_analysis.get("region_key"),
                 region_source=calibrated_analysis.get("region_source"),
                 region_state=calibrated_analysis.get("region_state"),
                 calibration_strategy=calibrated_analysis.get("calibration_strategy"),
                 calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason"),
                 season_bucket=scan_context.get("season_bucket"),
-                analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
-                # Seasonal context fields
+                analysis_prompt_version=prompt_version,
                 date_taken=scan_context.get("date_taken"),
                 date_source=scan_context.get("date_source"),
                 season_phase=scan_context.get("season_phase"),
@@ -3828,24 +4473,30 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
                 quality_factors=calibrated_analysis.get("quality_factors"),
                 posture_bucket=calibrated_analysis.get("posture_bucket"),
-                # Cloud image storage (R2)
                 image_url=image_url,
+            ))
+            for row in image_rows:
+                await database.execute(scan_images_table.insert().values(**row))
+            if not await charge_scan_credit(user):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "FREE_LIMIT_REACHED",
+                        "message": "You've used all your free scans. Upgrade to Master Stag for unlimited scans.",
+                        "scans_remaining": 0,
+                        "upgrade_required": True,
+                    },
+                )
+            await database.execute(
+                scan_submissions_table.update()
+                .where(scan_submissions_table.c.id == f"{user['id']}:{submission_id}")
+                .values(status="completed", scan_id=scan_id, updated_at=datetime.utcnow())
             )
-            await database.execute(query)
-            logger.info("Scan saved to database successfully | scan_id=%s", scan_id)
-        except Exception:
-            logger.exception(
-                "Database insert failed | scan_id=%s user_id=%s",
-                scan_id, user.get("id"),
-            )
-            raise
-
-        await use_scan(user)
+        uploaded_keys = []  # Committed; nothing to clean up
+        logger.info("Scan saved | scan_id=%s photos=%d", scan_id, len(image_rows))
 
         # ── Step 10: Build response ──
-        logger.info("Step 10: Building response | scan_id=%s", scan_id)
         config = RegionCalibrationConfig
-
         return DeerAnalysisResponse(
             id=scan_id,
             user_id=user["id"],
@@ -3853,6 +4504,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             deer_age=calibrated_analysis.get("deer_age"),
             age_bucket=calibrated_analysis.get("age_bucket"),
             age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
             buck_age_class=calibrated_analysis.get("buck_age_class"),
             age_evidence=calibrated_analysis.get("age_evidence") or [],
             cue_checklist=calibrated_analysis.get("cue_checklist") or {},
@@ -3873,21 +4529,20 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             reasoning=calibrated_analysis.get("reasoning"),
             notes=data.notes,
             created_at=scan_created_at,
-            # Calibration fields
             age_uncertain=calibrated_analysis.get("age_uncertain"),
             confidence_breakdown={
                 "age": calibrated_analysis.get("age_confidence", 0),
                 "recommendation": calibrated_analysis.get("recommendation_confidence", 0)
             },
             calibration_version=calibrated_analysis.get("calibration_version"),
-            # Region fields (feature-flagged)
+            score_audit=calibrated_analysis.get("score_audit"),
             region_key=calibrated_analysis.get("region_key") if config.CALIBRATION_SHOW_REGION else None,
             calibration_strategy=calibrated_analysis.get("calibration_strategy") if config.CALIBRATION_SHOW_STRATEGY else None,
             calibration_fallback_reason=calibrated_analysis.get("calibration_fallback_reason") if config.CALIBRATION_SHOW_STRATEGY else None,
             image_quality_bucket=calibrated_analysis.get("image_quality_bucket"),
             quality_factors=calibrated_analysis.get("quality_factors") or {},
             posture_bucket=calibrated_analysis.get("posture_bucket"),
-            analysis_prompt_version=ANALYSIS_PROMPT_VERSION,
+            analysis_prompt_version=prompt_version,
             analysis_model=selected_model,
             age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
             retake_reason=calibrated_analysis.get("retake_reason"),
@@ -3896,33 +4551,25 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             confidence_reasoning=calibrated_analysis.get("confidence_reasoning"),
             # Cloud image storage (R2)
             image_url=image_url,
-            # Seasonal context
             date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
             season_phase=scan_context.get("season_phase"),
             date_source=scan_context.get("date_source"),
             season_phase_confidence=scan_context.get("season_confidence"),
             season_phase_reason=scan_context.get("season_reason"),
         )
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions as-is (eligibility, not-a-deer, etc.)
         raise
     except openai.OpenAIError as e:
         logger.exception("OpenAI error during analyze_deer | user_id=%s", user.get("id"))
         raise HTTPException(
             status_code=500,
-            detail={
-                "code": "OPENAI_FAILURE",
-                "message": f"AI analysis failed: {str(e)}"
-            }
+            detail={"code": "OPENAI_FAILURE", "message": f"AI analysis failed: {str(e)}"}
         )
-    except Exception as e:
+    except Exception:
         logger.exception(
-            "Unhandled analyze_deer failure | user_id=%s local_image_id=%s state=%s date_taken=%s",
-            user.get("id"),
-            getattr(data, "local_image_id", None),
-            getattr(data, "state", None),
-            getattr(data, "date_taken", None),
+            "Unhandled analyze_deer failure | user_id=%s local_image_id=%s",
+            user.get("id"), getattr(data, "local_image_id", None),
         )
         raise HTTPException(
             status_code=500,
@@ -3931,6 +4578,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 "message": "Server failed while analyzing the image. Please try again."
             }
         )
+    finally:
+        # Any path that did not commit: remove uploaded photos and free the submission id for retry.
+        if uploaded_keys:
+            delete_scan_objects(uploaded_keys)
+        await release_submission(user["id"], submission_id)
 
 # ============ SCANS ROUTES ============
 
@@ -3971,7 +4623,7 @@ async def get_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    return build_scan_response(dict(scan))
+    return build_scan_response(dict(scan), images=await fetch_scan_images(scan_id))
 
 @api_router.put("/scans/{scan_id}", response_model=DeerAnalysisResponse)
 async def update_scan(scan_id: str, data: ScanUpdate, user: dict = Depends(get_current_user)):
@@ -4948,15 +5600,53 @@ async def edit_scan_with_reanalysis(
         right = data.antler_points_right or 0
         total_points = left + right
     
-    # If image is provided, re-analyze with LLM
-    if data.image_base64:
+    # If photos are provided (or stored photos requested), re-analyze with LLM.
+    # Re-analysis never charges a scan credit and always uses every photo of the scan.
+    if data.image_base64 or data.images or data.reanalyze:
+        stored_rows = await fetch_scan_image_rows(scan_id)
         try:
-            logger.info(f"Re-analyzing scan {scan_id} with user corrections")
+            if data.images:
+                stored_crops = {r["image_id"]: r["crop_rect"] for r in stored_rows}
+                all_images = prepare_request_images(data.images, stored_crops=stored_crops)
+            elif data.reanalyze and stored_rows:
+                inputs = []
+                for r in stored_rows:
+                    raw = get_scan_object(r["original_key"]) if r.get("original_key") else None
+                    if raw is None:
+                        raise HTTPException(status_code=409, detail={
+                            "code": "STORED_IMAGES_UNAVAILABLE",
+                            "message": "Stored photos for this scan could not be loaded. Re-analysis needs the photos from this device.",
+                        })
+                    inputs.append(ScanImageInput(
+                        image_base64=base64.b64encode(raw).decode("ascii"),
+                        image_id=r["image_id"],
+                        local_image_id=r.get("local_image_id"),
+                        captured_at=r.get("captured_at"),
+                        crop_rect=r.get("crop_rect"),
+                    ))
+                all_images = prepare_request_images(inputs)
+            elif data.image_base64:
+                stored_crops = {r["image_id"]: r["crop_rect"] for r in stored_rows}
+                all_images = prepare_request_images([ScanImageInput(image_base64=data.image_base64)], stored_crops=stored_crops)
+            else:
+                raise HTTPException(status_code=409, detail={
+                    "code": "STORED_IMAGES_UNAVAILABLE",
+                    "message": "No stored photos found for this scan.",
+                })
+        except ImageValidationError as exc:
+            raise image_validation_http(exc)
+        if stored_rows and len(all_images) != len(stored_rows):
+            raise HTTPException(status_code=400, detail={
+                "code": "REANALYSIS_PHOTO_MISMATCH",
+                "message": f"This scan has {len(stored_rows)} photo(s); re-analysis must include all of them.",
+            })
+        duplicates = mark_duplicates(all_images)
+        evidence = evidence_images(all_images)
+        is_multi = len(evidence) > 1
+        reanalysis_prompt_version = REANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else "")
+        try:
+            logger.info(f"Re-analyzing scan {scan_id} with user corrections ({len(evidence)} evidence photo(s))")
             selected_model, model_variant = resolve_reanalysis_model(dict(scan), user["id"])
-            
-            image_data = data.image_base64
-            if not image_data.startswith("data:"):
-                image_data = f"data:image/jpeg;base64,{image_data}"
 
             existing_region_state = scan.get("region_state")
             user_profile_state = user.get("state")
@@ -5051,9 +5741,9 @@ Provide your complete REVISED analysis in JSON format."""
                 {"type": "image_url", "image_url": {"url": image_data, "detail": "high"}},
             ]
 
-            initial_analysis = run_model_analysis_pass(
+            analysis = run_analysis_with_consensus(
                 model=selected_model,
-                system_prompt=build_reanalysis_system_prompt(),
+                system_prompt=build_reanalysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else ""),
                 user_content=user_content,
                 max_output_tokens=2000,
                 prompt_version=REANALYSIS_PROMPT_VERSION,
@@ -5086,6 +5776,7 @@ Provide your complete REVISED analysis in JSON format."""
                     )
 
             if analysis:
+                analysis = apply_photo_set_guards(analysis, all_images, evidence, duplicates)
                 # Apply region-aware confidence calibration to re-analysis
                 active_curves = await get_live_active_curves()
                 calibration_result, calibrated_analysis = calibrate_from_dict_with_region(
@@ -5093,6 +5784,8 @@ Provide your complete REVISED analysis in JSON format."""
                     state=existing_region_state,  # Preserve original region
                     user_profile_state=user_profile_state,
                     active_curves=active_curves,
+                    artifacts=await get_live_calibration_artifacts(),
+                    preprocessing_version=preprocessing_version(),
                 )
 
                 # Update the scan with new calibrated analysis
@@ -5102,6 +5795,11 @@ Provide your complete REVISED analysis in JSON format."""
                     deer_age=calibrated_analysis.get("deer_age"),
                     age_bucket=calibrated_analysis.get("age_bucket"),
                     age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
                     buck_age_class=calibrated_analysis.get("buck_age_class"),
                     age_evidence=calibrated_analysis.get("age_evidence"),
                     deer_type=calibrated_analysis.get("deer_type"),
@@ -5121,6 +5819,7 @@ Provide your complete REVISED analysis in JSON format."""
                     recommendation_confidence=calibrated_analysis.get("recommendation_confidence"),
                     age_uncertain=calibrated_analysis.get("age_uncertain", False),
                     calibration_version=calibrated_analysis.get("calibration_version"),
+                    score_audit=calibrated_analysis.get("score_audit"),
                     region_key=calibrated_analysis.get("region_key"),
                     region_source=calibrated_analysis.get("region_source"),
                     region_state=calibrated_analysis.get("region_state"),
@@ -5130,7 +5829,7 @@ Provide your complete REVISED analysis in JSON format."""
                     date_taken=reanalysis_context.get("date_taken"),
                     season_phase=reanalysis_context.get("season_phase"),
                     date_source=reanalysis_context.get("date_source"),
-                    analysis_prompt_version=REANALYSIS_PROMPT_VERSION,
+                    analysis_prompt_version=reanalysis_prompt_version,
                     analysis_model=selected_model,
                     age_estimation_allowed=calibrated_analysis.get("age_estimation_allowed"),
                     retake_reason=calibrated_analysis.get("retake_reason"),
@@ -5140,6 +5839,8 @@ Provide your complete REVISED analysis in JSON format."""
                     posture_bucket=calibrated_analysis.get("posture_bucket"),
                 )
                 await database.execute(update_query)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Re-analysis failed: {e}")
             # Fall through to simple update
@@ -5190,7 +5891,7 @@ Provide your complete REVISED analysis in JSON format."""
     query = scans_table.select().where(scans_table.c.id == scan_id)
     updated_scan = await database.fetch_one(query)
     
-    return build_scan_response(dict(updated_scan))
+    return build_scan_response(dict(updated_scan), images=await fetch_scan_images(scan_id))
 
 @api_router.delete("/scans/{scan_id}")
 async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
@@ -5202,13 +5903,8 @@ async def delete_scan(scan_id: str, user: dict = Depends(get_current_user)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
     
-    # Delete image from R2 cloud storage
-    if R2_ENABLED:
-        try:
-            delete_scan_image(scan_id)
-        except Exception as e:
-            logger.warning(f"Failed to delete R2 image for scan {scan_id}: {e}")
-            # Continue with DB deletion even if R2 fails
+    # Delete every photo (R2 + scan_images rows) and ledger rows
+    await purge_scan_assets([scan_id])
     
     query = scans_table.delete().where(scans_table.c.id == scan_id)
     await database.execute(query)
@@ -5240,13 +5936,7 @@ async def delete_scans_by_local_image_ids(
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No matching scans found"}
     
-    # Delete images from R2 cloud storage
-    if R2_ENABLED:
-        for scan in scans_to_delete:
-            try:
-                delete_scan_image(scan["id"])
-            except Exception as e:
-                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    await purge_scan_assets([scan["id"] for scan in scans_to_delete])
     
     # Delete all matching scans
     delete_query = scans_table.delete().where(
@@ -5273,13 +5963,7 @@ async def delete_all_scans(user: dict = Depends(get_current_user)):
     if not scans_to_delete:
         return {"deleted_count": 0, "message": "No scans to delete"}
     
-    # Delete images from R2 cloud storage
-    if R2_ENABLED:
-        for scan in scans_to_delete:
-            try:
-                delete_scan_image(scan["id"])
-            except Exception as e:
-                logger.warning(f"Failed to delete R2 image for scan {scan['id']}: {e}")
+    await purge_scan_assets([scan["id"] for scan in scans_to_delete])
     
     # Delete all scans for this user
     delete_query = scans_table.delete().where(scans_table.c.user_id == user["id"])
@@ -5589,41 +6273,182 @@ async def build_calibration_curves(data: BuildCurvesRequest, _admin_ok: bool = D
 
 @api_router.post("/admin/calibration/activate-curve")
 async def activate_calibration_curve(data: ActivateCurveRequest, _admin_ok: bool = Depends(verify_admin_secret)):
-    """
-    Activate a calibration curve.
-    
-    This makes the curve available for use in the calibration fallback chain.
-    
-    Safety features:
-    - Only mature curves can be activated
-    - Optionally deactivates other curves of the same type/region
-    """
-    # Check feature flag
-    if not CalibrationJobConfig.CALIBRATION_CURVES_ENABLED:
-        raise HTTPException(
-            status_code=400,
-            detail="Empirical calibration curves are not enabled. Set CALIBRATION_CURVES_ENABLED=true to enable."
-        )
-    
-    try:
-        result = await activate_curve(
-            database=database,
-            calibration_curves_table=calibration_curves_table,
-            curve_id=data.curve_id,
-            deactivate_others=data.deactivate_others
-        )
-        
-        if not result["success"]:
-            raise HTTPException(status_code=400, detail=result.get("error", "Activation failed"))
+    """Legacy Phase 2 curves have no prediction target and no model/prompt/preprocessing compatibility,
+    so they can no longer be activated. Use /admin/calibration/artifacts (validated, versioned)."""
+    raise HTTPException(status_code=409, detail={
+        "code": "LEGACY_CURVE_UNVERSIONED",
+        "message": "Legacy curves cannot be activated: no target or compatibility metadata. Upload a validated calibration artifact instead.",
+    })
 
-        await get_live_active_curves(force_refresh=True)
-        
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error activating curve: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
+# ============ VALIDATED CALIBRATION ARTIFACTS (shadow / active / retired) ============
+
+live_artifact_cache: List[Dict[str, Any]] = []
+live_artifact_cache_loaded_at: Optional[datetime] = None
+
+
+async def get_live_calibration_artifacts(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Active + shadow artifacts (cached). Active ones drive scores; shadow ones are only recorded."""
+    global live_artifact_cache, live_artifact_cache_loaded_at
+    now = datetime.utcnow()
+    if (not force_refresh and live_artifact_cache_loaded_at is not None
+            and (now - live_artifact_cache_loaded_at).total_seconds() < LIVE_CALIBRATION_CURVE_CACHE_TTL_SECONDS):
+        return live_artifact_cache
+    try:
+        rows = await database.fetch_all(
+            calibration_artifacts_table.select().where(calibration_artifacts_table.c.status.in_(["active", "shadow"]))
+        )
+        loaded = []
+        for r in rows:
+            art = dict(r["artifact"])
+            if validate_artifact(art):  # malformed artifacts are never applied
+                continue
+            art["_status"] = r["status"]
+            loaded.append(art)
+        loaded.sort(key=lambda a: 0 if a["_status"] == "active" else 1)
+        live_artifact_cache, live_artifact_cache_loaded_at = loaded, now
+    except Exception:
+        logger.warning("Failed to load calibration artifacts; using heuristic fallback", exc_info=True)
+        live_artifact_cache, live_artifact_cache_loaded_at = [], now
+    return live_artifact_cache
+
+
+def production_runtime() -> Dict[str, Any]:
+    return {"model": OPENAI_ANALYSIS_MODEL, "prompt_version": ANALYSIS_PROMPT_VERSION,
+            "preprocessing_version": preprocessing_version()}
+
+
+async def _artifact_activation_checks(art: Dict[str, Any]) -> Dict[str, Any]:
+    active = await database.fetch_all(
+        calibration_artifacts_table.select().where(calibration_artifacts_table.c.status == "active")
+    )
+    return calibration_activation.activation_checks(
+        art, runtime=production_runtime(),
+        active_targets=[r["target"] for r in active if r["scope_key"] != calibration_activation.scope_key(art)],
+        global_min=RegionCalibrationConfig.GLOBAL_CURVE_MIN_SAMPLES,
+        region_min=RegionCalibrationConfig.REGION_CURVE_MIN_SAMPLES,
+    )
+
+
+class ArtifactUpload(BaseModel):
+    artifact: Dict[str, Any]
+
+
+@api_router.post("/admin/calibration/artifacts")
+async def upload_calibration_artifact(data: ArtifactUpload, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Register an artifact in SHADOW mode (recorded on live scans, never displayed)."""
+    art = data.artifact
+    errors = validate_artifact(art)
+    if errors:
+        raise HTTPException(status_code=400, detail={"code": "INVALID_ARTIFACT", "errors": errors})
+    existing = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == art["artifact_id"]))
+    if existing:
+        raise HTTPException(status_code=409, detail={"code": "ARTIFACT_EXISTS", "status": existing["status"]})
+    checks = await _artifact_activation_checks(art)
+    await database.execute(calibration_artifacts_table.insert().values(
+        id=art["artifact_id"], status="shadow", target=art["target"], scope_key=calibration_activation.scope_key(art),
+        method=art["method"], artifact=art, activation_checks=checks, created_at=datetime.utcnow(),
+    ))
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"artifact_id": art["artifact_id"], "status": "shadow", "activation_checks": checks}
+
+
+@api_router.get("/admin/calibration/artifacts")
+async def list_calibration_artifacts(_admin_ok: bool = Depends(verify_admin_secret)):
+    rows = await database.fetch_all(calibration_artifacts_table.select().order_by(calibration_artifacts_table.c.created_at.desc()))
+    return [{k: r[k] for k in ("id", "status", "target", "scope_key", "method", "activation_checks",
+                               "created_at", "activated_at", "retired_at")} for r in rows]
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/activate")
+async def activate_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    row = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == artifact_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    art = dict(row["artifact"])
+    checks = await _artifact_activation_checks(art)
+    await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                           .values(activation_checks=checks))
+    if not checks["passed"]:
+        raise HTTPException(status_code=409, detail={"code": "ACTIVATION_BLOCKED",
+                                                     "failed": [c for c in checks["checks"] if not c["passed"]]})
+    now = datetime.utcnow()
+    async with database.transaction():
+        await database.execute(calibration_artifacts_table.update().where(
+            (calibration_artifacts_table.c.status == "active") & (calibration_artifacts_table.c.scope_key == row["scope_key"])
+        ).values(status="retired", retired_at=now))
+        await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                               .values(status="active", activated_at=now, retired_at=None))
+    await get_live_calibration_artifacts(force_refresh=True)
+    logger.info("Activated calibration artifact %s (%s, %s)", artifact_id, row["target"], row["scope_key"])
+    return {"artifact_id": artifact_id, "status": "active", "activation_checks": checks}
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/rollback")
+async def rollback_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Retire an active artifact and restore the previously active one for that scope (or the heuristic)."""
+    row = await database.fetch_one(calibration_artifacts_table.select().where(calibration_artifacts_table.c.id == artifact_id))
+    if not row or row["status"] != "active":
+        raise HTTPException(status_code=409, detail="Only an active artifact can be rolled back")
+    previous = await database.fetch_one(
+        calibration_artifacts_table.select().where(
+            (calibration_artifacts_table.c.scope_key == row["scope_key"]) & (calibration_artifacts_table.c.status == "retired")
+            & (calibration_artifacts_table.c.activated_at.isnot(None)) & (calibration_artifacts_table.c.id != artifact_id)
+        ).order_by(calibration_artifacts_table.c.activated_at.desc())
+    )
+    now = datetime.utcnow()
+    restored = None
+    async with database.transaction():
+        await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                               .values(status="retired", retired_at=now))
+        if previous and calibration_activation.activation_checks(
+            dict(previous["artifact"]), runtime=production_runtime(), active_targets=[],
+            global_min=RegionCalibrationConfig.GLOBAL_CURVE_MIN_SAMPLES, region_min=RegionCalibrationConfig.REGION_CURVE_MIN_SAMPLES,
+        )["passed"]:
+            await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == previous["id"])
+                                   .values(status="active", activated_at=now, retired_at=None))
+            restored = previous["id"]
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"retired": artifact_id, "restored": restored, "fallback": None if restored else "heuristic"}
+
+
+@api_router.post("/admin/calibration/artifacts/{artifact_id}/retire")
+async def retire_calibration_artifact(artifact_id: str, _admin_ok: bool = Depends(verify_admin_secret)):
+    await database.execute(calibration_artifacts_table.update().where(calibration_artifacts_table.c.id == artifact_id)
+                           .values(status="retired", retired_at=datetime.utcnow()))
+    await get_live_calibration_artifacts(force_refresh=True)
+    return {"artifact_id": artifact_id, "status": "retired"}
+
+
+@api_router.get("/admin/calibration/artifacts/{artifact_id}/monitor")
+async def monitor_calibration_artifact(artifact_id: str, days: int = 14, _admin_ok: bool = Depends(verify_admin_secret)):
+    """Shadow/active monitoring from recent scans' score_audit (no labels needed; reliability needs the benchmark)."""
+    rows = await database.fetch_all(
+        sqlalchemy.select(scans_table.c.score_audit).where(scans_table.c.created_at >= datetime.utcnow() - timedelta(days=days))
+        .order_by(scans_table.c.created_at.desc()).limit(5000)
+    )
+    n = applied = 0
+    fallbacks: Dict[str, int] = {}
+    diffs = []
+    for r in rows:
+        audit = r["score_audit"] or {}
+        shown = (audit.get("displayed_score") or {})
+        entries = [e for e in (audit.get("shadow_calibration") or []) if e.get("artifact_id") == artifact_id]
+        if shown.get("method_version") == artifact_id:
+            n += 1; applied += 1
+            continue
+        for e in entries:
+            n += 1
+            if e.get("value") is None:
+                fallbacks[e.get("fallback_reason") or "unknown"] = fallbacks.get(e.get("fallback_reason") or "unknown", 0) + 1
+            else:
+                applied += 1
+                if shown.get("value") is not None:
+                    diffs.append(e["value"] - shown["value"])
+    return {"artifact_id": artifact_id, "days": days, "scans_seen": n, "applied": applied, "fallbacks": fallbacks,
+            "mean_shadow_minus_displayed": round(sum(diffs) / len(diffs), 2) if diffs else None,
+            "note": "Distribution monitoring only. Reliability must be judged on labelled benchmark data."}
+
 
 @api_router.post("/admin/calibration/deactivate-curve/{curve_id}")
 async def deactivate_calibration_curve(curve_id: str, _admin_ok: bool = Depends(verify_admin_secret)):

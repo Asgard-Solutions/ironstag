@@ -6,12 +6,16 @@ import {
   StyleSheet,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
+import type { AgeDescription } from '../utils/ageEstimate';
 
 interface ScanSummaryCardProps {
   imageUri: string | null;
   recommendation: string | null;
   deerAge: number | null;
+  /** Plausible range + its meaning (from utils/ageEstimate.describeAge) */
+  ageRange?: AgeDescription | null;
   confidence: number | null;
+  confidenceBreakdown?: { age: number | null; recommendation: number | null } | null;
   deerType: string | null;
   deerSex: string | null;
   antlerPoints: number | null;
@@ -21,23 +25,14 @@ interface ScanSummaryCardProps {
 }
 
 // ============ CONFIDENCE HELPERS ============
-const UNCERTAIN_AGE_CONFIDENCE_CAP = 60;
 
 function isAgeUncertain(age: number | null | undefined): boolean {
   return age === null || age === undefined || age === 0;
 }
 
-function getCalibratedConfidence(rawConfidence: number | null, age: number | null): number {
-  const confidence = rawConfidence || 0;
-  if (isAgeUncertain(age)) {
-    return Math.min(confidence, UNCERTAIN_AGE_CONFIDENCE_CAP);
-  }
-  return confidence;
-}
-
 function getAgeDisplayText(age: number | null): string {
   if (isAgeUncertain(age)) {
-    return 'Uncertain';
+    return 'Unable to estimate age';
   }
   return `${age} years`;
 }
@@ -175,7 +170,9 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
       imageUri,
       recommendation,
       deerAge,
+      ageRange,
       confidence: rawConfidence,
+      confidenceBreakdown,
       deerType,
       deerSex,
       antlerPoints,
@@ -184,9 +181,11 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
     },
     ref
   ) {
-    const displayConfidence = getCalibratedConfidence(rawConfidence, deerAge);
+    const ageConfidence = confidenceBreakdown?.age ?? null;
+    const recommendationConfidence = confidenceBreakdown?.recommendation ?? rawConfidence ?? 0;
+    const ageIsUncertain = isAgeUncertain(deerAge);
     const ageText = getAgeDisplayText(deerAge);
-    const confLabel = getConfidenceLabel(displayConfidence);
+    const confLabel = getConfidenceLabel(recommendationConfidence);
     const isHarvest = recommendation === 'HARVEST';
 
     const recommendationSubtext = isHarvest
@@ -216,7 +215,7 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
                 { color: isHarvest ? colors.harvest : colors.pass },
               ]}
             >
-              {recommendation || 'UNKNOWN'}
+              {recommendation || (ageRange?.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
             </Text>
           </View>
 
@@ -225,14 +224,30 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
             <View style={shareStyles.statItem}>
               <Text style={shareStyles.statLabel}>Estimated Age</Text>
               <Text style={shareStyles.statValue}>{ageText}</Text>
+              {ageRange?.range ? (
+                <Text style={shareStyles.statLabel}>
+                  Range {ageRange.range} ({ageRange.calibrated ? 'validated' : 'uncalibrated'})
+                </Text>
+              ) : null}
             </View>
             <View style={shareStyles.statDivider} />
             <View style={shareStyles.statItem}>
-              <Text style={shareStyles.statLabel}>Confidence</Text>
+              <Text style={shareStyles.statLabel}>Rec. Certainty</Text>
               <Text style={[shareStyles.statValue, { color: confLabel.color }]}>
-                {displayConfidence}%
+                {recommendationConfidence}%
               </Text>
             </View>
+            {!ageIsUncertain && ageConfidence !== null && (
+              <>
+                <View style={shareStyles.statDivider} />
+                <View style={shareStyles.statItem}>
+                  <Text style={shareStyles.statLabel}>Age Certainty</Text>
+                  <Text style={[shareStyles.statValue, { color: getConfidenceLabel(ageConfidence).color }]}>
+                    {ageConfidence}%
+                  </Text>
+                </View>
+              </>
+            )}
             {antlerPoints !== null && (
               <>
                 <View style={shareStyles.statDivider} />

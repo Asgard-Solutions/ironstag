@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
 import type { BcScoreEntryInput } from './bcScoring';
+import type { ScanRequestImage } from './scanPhotos';
 
 // Use EXPO_PUBLIC_API_BASE_URL for native builds, fallback to EXPO_PUBLIC_BACKEND_URL for Expo Go
 const API_URL = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -88,8 +89,16 @@ export const authAPI = {
 
 // Scan API
 export const scanAPI = {
-  analyzeDeer: (data: { image_base64: string; local_image_id: string; notes?: string; state?: string; date_taken?: string }) =>
-    api.post('/analyze-deer', data),
+  analyzeDeer: (data: {
+    image_base64?: string;
+    images?: ScanRequestImage[];
+    submission_id?: string;
+    local_image_id: string;
+    notes?: string;
+    state?: string;
+    date_taken?: string;
+  }) =>
+    api.post('/analyze-deer', data, { timeout: 120000 }),
 
   getScans: (params?: { deer_type?: string; deer_sex?: string; recommendation?: string; limit?: number; skip?: number }) =>
     api.get('/scans', { params }),
@@ -110,8 +119,10 @@ export const scanAPI = {
     antler_points_left?: number;
     antler_points_right?: number;
     image_base64?: string;
+    images?: ScanRequestImage[];
+    reanalyze?: boolean;
     date_taken?: string;
-  }) => api.post(`/scans/${id}/edit`, data),
+  }) => api.post(`/scans/${id}/edit`, data, { timeout: 120000 }),
 
   deleteScan: (id: string) => api.delete(`/scans/${id}`),
 
