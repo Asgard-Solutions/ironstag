@@ -316,6 +316,7 @@ class RegionCalibrationOutput:
     age_confidence_target: str = "heuristic_reliability_score"
     age_confidence_method: str = "heuristic"
     shadow: Optional[List[Dict[str, Any]]] = None
+    range_coverage: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================
@@ -673,6 +674,7 @@ def calibrate_with_region(
     age_target = HEURISTIC_TARGET
     age_method = f"heuristic_{config.HEURISTIC_VERSION}"
     shadow_results: List[Dict[str, Any]] = []
+    range_coverage: Optional[Dict[str, Any]] = None
 
     # Validated, versioned artifacts (active ones drive the score; shadow ones are only recorded)
     runtime = runtime or {}
@@ -688,6 +690,10 @@ def calibrate_with_region(
                 entry.update(value=round(value * 100) if value is not None else None, fallback_reason=reason)
             if art.get("_status") == "shadow":
                 shadow_results.append(entry)
+            elif art.get("target") == "age_range_coverage":
+                # Range coverage is a different meaning: it never replaces the exact-age score.
+                if entry["value"] is not None and range_coverage is None:
+                    range_coverage = {"value": entry["value"], "artifact_id": art["artifact_id"]}
             elif age_confidence is None and entry["value"] is not None:
                 age_confidence = entry["value"] / 100.0
                 calibration_strategy = CalibrationStrategy.ARTIFACT
@@ -783,6 +789,7 @@ def calibrate_with_region(
         age_confidence_target=age_target,
         age_confidence_method=age_method,
         shadow=shadow_results or None,
+        range_coverage=range_coverage,
     )
 
 
@@ -934,6 +941,10 @@ def calibrate_from_dict_with_region(
         "region_mapping_version": RegionCalibrationConfig.REGION_MAPPING_VERSION,
     }
     updated_analysis["age_confidence_target"] = calibration_result.age_confidence_target
+    if calibration_result.range_coverage and updated_analysis.get("age_range"):
+        updated_analysis["range_coverage_confidence"] = calibration_result.range_coverage["value"]
+        updated_analysis["range_status"] = "calibrated"
+        displayed_score["range_coverage"] = calibration_result.range_coverage
     updated_analysis["score_audit"] = {
         "version": "1.1",
         "displayed_score": displayed_score,

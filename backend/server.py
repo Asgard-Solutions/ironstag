@@ -161,6 +161,11 @@ scans_table = Table(
     Column("deer_age", Float),
     Column("age_bucket", String(50), nullable=True),
     Column("age_range", String(50), nullable=True),
+    Column("age_lower", Float, nullable=True),
+    Column("age_upper", Float, nullable=True),
+    Column("age_upper_open", Boolean, nullable=True),
+    Column("range_status", String(40), nullable=True),  # plausible_uncalibrated | calibrated | (null = legacy)
+    Column("recommendation_status", String(50), nullable=True),
     Column("buck_age_class", String(10), nullable=True),
     Column("age_evidence", JSON, nullable=True),
     Column("deer_type", String(100)),
@@ -530,6 +535,7 @@ def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[
         "visible_age_cues": cues[:6],
         "cue_checklist": {c: ("visible" if idx < 6 else "unclear") for idx, c in enumerate(cues)},
         "deer_age": 3.5, "alternate_age": None, "why_not_primary": None,
+        "age_lower": 3.5, "age_upper": 3.5, "age_upper_open": False, "range_reasoning": None,
         "buck_age_class": "3.5", "age_confidence": 72, "recommendation_confidence": 70, "confidence": 70,
         "deer_type": "Whitetail", "deer_sex": "Buck", "antler_points": 8,
         "antler_points_left": 4, "antler_points_right": 4, "body_condition": "Good",
@@ -541,6 +547,20 @@ def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[
         "recommendation": "HARVEST",
         "reasoning": "Mock analysis response (ANALYSIS_MOCK_MODEL).",
     }
+    if "mock:range" in notes:
+        response.update(deer_age=3.5, age_lower=3.5, age_upper=4.5,
+                        range_reasoning="Mock: deep chest supports 3.5+, but backline/belly do not rule out 4.5")
+    elif "mock:cross" in notes:
+        response.update(deer_age=3.5, age_lower=2.5, age_upper=3.5, recommendation=None,
+                        range_reasoning="Mock: leg length still looks long; 2.5 cannot be ruled out")
+    elif "mock:open" in notes:
+        response.update(deer_age=5.5, buck_age_class="5.5", age_lower=5.5, age_upper=None, age_upper_open=True,
+                        range_reasoning="Mock: sagging belly/backline; 6.5+ remains plausible")
+    elif "mock:poor" in notes:
+        response.update(image_quality_bucket="poor", visible_age_cues=["body_mass"],
+                        cue_checklist={c: "unclear" for c in cues},
+                        quality_factors={"body_visibility": "low", "head_visibility": "low", "lighting": "poor",
+                                         "occlusion": "high", "distance_estimate": "far", "blur": "high"})
     if len(image_ids) > 1:
         mixed = "mock:mixed" in notes
         # Deliberately report an overall confidence above every per-photo value so the
@@ -652,7 +672,8 @@ def maybe_apply_selective_consensus(
         return initial_analysis
 
     merged_analysis["consensus"] = consensus_meta
-    return merged_analysis
+    # Re-derive age class, range, bucket and recommendation from the merged age so nothing contradicts.
+    return finalize_age_estimate(merged_analysis)
 
 
 OPENAI_MODEL_AB_TEST_ENABLED = get_bool_env('OPENAI_MODEL_AB_TEST_ENABLED', False)
@@ -813,6 +834,14 @@ class DeerAnalysisResponse(BaseModel):
     deer_age: Optional[float] = None
     age_bucket: Optional[str] = None
     age_range: Optional[str] = None
+    age_lower: Optional[float] = None
+    age_upper: Optional[float] = None
+    age_upper_open: Optional[bool] = None
+    # plausible_uncalibrated | calibrated | legacy_class_bin (older scans: class bin, NOT a validated interval)
+    range_status: Optional[str] = None
+    range_reasoning: Optional[str] = None
+    range_coverage_confidence: Optional[int] = None  # only set from a validated age_range_coverage calibration
+    recommendation_status: Optional[str] = None  # age_based | uncertain_range_crosses_threshold
     buck_age_class: Optional[str] = None
     age_evidence: Optional[List[Dict[str, str]]] = None
     cue_checklist: Optional[Dict[str, str]] = None
@@ -1035,6 +1064,9 @@ async def startup():
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS antler_points_right INTEGER")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_bucket VARCHAR(50)")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_range VARCHAR(50)")
+        for ddl in ("age_lower DOUBLE PRECISION", "age_upper DOUBLE PRECISION", "age_upper_open BOOLEAN",
+                    "range_status VARCHAR(40)", "recommendation_status VARCHAR(50)"):
+            await database.execute(f"ALTER TABLE scans ADD COLUMN IF NOT EXISTS {ddl}")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS buck_age_class VARCHAR(10)")
         await database.execute("ALTER TABLE scans ADD COLUMN IF NOT EXISTS age_evidence JSON")
         
@@ -1319,8 +1351,8 @@ def check_auth_rate_limit(request: Request):
     rate_limiter.record_attempt(key)
 
 
-ANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist"
-REANALYSIS_PROMPT_VERSION = "age-v5-structured-checklist-reanalysis"
+ANALYSIS_PROMPT_VERSION = "age-v6-ranges"
+REANALYSIS_PROMPT_VERSION = "age-v6-ranges-reanalysis"
 
 REGION_PROMPT_HINTS = {
     "midwest": "Large-bodied deer are common. Use body maturity more than antler spread.",
@@ -1584,6 +1616,101 @@ def derive_management_recommendation(
     if age_estimation_allowed is False or deer_age is None:
         return None
     return "HARVEST" if is_mature_harvest_age(deer_age) else "PASS"
+
+
+MAX_INFORMATIVE_AGE_RANGE_YEARS = float(os.environ.get("MAX_INFORMATIVE_AGE_RANGE_YEARS", "2.0"))
+OPEN_ENDED_AGE = 6.5  # body cues cannot separate ages beyond 6.5; ranges reaching it are open-ended ("6.5+")
+RANGE_TOO_WIDE_MESSAGE = (
+    "The photos can't narrow this deer's age to a useful range. "
+    "Take a clear full-body broadside view with the head, chest, belly and legs visible."
+)
+
+
+def format_age_range(lower: Optional[float], upper: Optional[float], upper_open: bool) -> Optional[str]:
+    if lower is None:
+        return None
+    if upper_open:
+        return f"{lower:.1f}+"
+    if upper is None or upper == lower:
+        return f"{lower:.1f}"
+    return f"{lower:.1f}-{upper:.1f}"
+
+
+def _clear_age_fields(n: Dict[str, Any]) -> None:
+    n.update(deer_age=None, age_bucket=None, age_range=None, buck_age_class=None, age_lower=None,
+             age_upper=None, age_upper_open=False, range_status=None, range_basis=None,
+             recommendation=None, recommendation_status=None)
+
+
+def finalize_age_estimate(n: Dict[str, Any]) -> Dict[str, Any]:
+    """Single place that makes age, class, range, bucket and recommendation agree.
+
+    Range = ages the visible evidence cannot rule out (model bounds, else the model's alternate age,
+    widened by any consensus disagreement). No fixed-width margin is ever added. A range spanning more
+    than MAX_INFORMATIVE_AGE_RANGE_YEARS is not a useful estimate, so the result abstains with a retake request.
+    Ranges are plausible and UNCALIBRATED unless a validated age_range_coverage artifact says otherwise.
+    """
+    age = normalize_estimated_age(n.get("deer_age"))
+    if n.get("age_estimation_allowed") is False or age is None:
+        _clear_age_fields(n)
+        if n.get("is_valid_deer", True) and n.get("age_estimation_allowed") is not False and age is None:
+            n["age_estimation_allowed"] = False
+            n["abstain_reason"] = n.get("abstain_reason") or "insufficient_evidence"
+            n["retake_reason"] = n.get("retake_reason") or build_age_quality_gate_reason([], None)
+        return n
+
+    lower = normalize_estimated_age(n.get("age_lower"))
+    upper = normalize_estimated_age(n.get("age_upper"))
+    upper_open = bool(n.get("age_upper_open"))
+    basis = "model_bounds"
+    if lower is None and upper is None and not upper_open:
+        alternate = normalize_estimated_age(n.get("alternate_age"))
+        if alternate is not None:
+            lower, upper, basis = min(age, alternate), max(age, alternate), "alternate_age"
+        else:
+            basis = "point_estimate"
+    lower = min(lower if lower is not None else age, age)
+    upper = None if upper_open else max(upper if upper is not None else age, age)
+
+    consensus_ages = [a for a in ((n.get("consensus") or {}).get("age_values") or []) if a is not None]
+    if consensus_ages:
+        lower = min(lower, min(consensus_ages))
+        if upper is not None:
+            upper = max(upper, max(consensus_ages))
+        basis += "+consensus_spread"
+    if upper is None or upper >= OPEN_ENDED_AGE:
+        upper_open = upper_open or (upper is not None and upper >= OPEN_ENDED_AGE)
+        if upper_open:
+            upper = None
+
+    span = (upper if upper is not None else max(OPEN_ENDED_AGE, lower)) - lower
+    if span > MAX_INFORMATIVE_AGE_RANGE_YEARS:
+        _clear_age_fields(n)
+        n["age_estimation_allowed"] = False
+        n["abstain_reason"] = "range_too_wide"
+        n["retake_reason"] = RANGE_TOO_WIDE_MESSAGE
+        n["reasoning"] = RANGE_TOO_WIDE_MESSAGE
+        n["raw_age_confidence"] = 0
+        n["raw_recommendation_confidence"] = 0
+        n["confidence"] = 0
+        return n
+
+    n["deer_age"] = age
+    n["age_lower"], n["age_upper"], n["age_upper_open"] = lower, upper, upper_open
+    n["age_range"] = format_age_range(lower, upper, upper_open)
+    n["age_bucket"] = derive_age_bucket(age)
+    n["buck_age_class"] = derive_buck_age_class(age, n.get("deer_sex")) if n.get("deer_sex") == "Buck" else None
+    n["range_status"] = "plausible_uncalibrated"
+    n["range_basis"] = basis
+    n["range_reasoning"] = str(n.get("range_reasoning") or n.get("why_not_primary") or "").strip()[:300] or None
+    crosses = lower < HARVEST_RECOMMENDATION_MIN_AGE and (upper_open or upper >= HARVEST_RECOMMENDATION_MIN_AGE)
+    if crosses:
+        n["recommendation"] = None
+        n["recommendation_status"] = "uncertain_range_crosses_threshold"
+    else:
+        n["recommendation"] = "HARVEST" if lower >= HARVEST_RECOMMENDATION_MIN_AGE else "PASS"
+        n["recommendation_status"] = "age_based"
+    return n
 
 
 def normalize_buck_age_class(value: Any) -> Optional[str]:
@@ -1959,34 +2086,34 @@ def apply_age_estimation_gate(normalized: Dict[str, Any]) -> Dict[str, Any]:
         normalized["visible_age_cues"] = visible_age_cues
 
     critical_visible_count = len([cue for cue in visible_age_cues if cue in CRITICAL_AGE_CUE_VALUES])
-    deer_age_present = normalized.get("deer_age") is not None
 
     severe_quality_issue_count = sum(
         1 for flag in (image_quality_poor, body_visibility_low, occlusion_high, blur_high) if flag
     )
     if severe_quality_issue_count >= 2:
         blockers.extend(soft_flags)
-    elif unsupported_profile and not deer_age_present and critical_visible_count == 0:
+    elif unsupported_profile and critical_visible_count == 0:
         blockers.append("profile_not_visible")
 
-    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES and not deer_age_present:
+    # Evidence rules apply whether or not the model supplied an age: a number from the model is not evidence.
+    if critical_visible_count < MIN_VISIBLE_CRITICAL_AGE_CUES:
         blockers.append("critical_cues_missing")
 
-    if not deer_age_present and len(visible_age_cues) < 1:
+    if len(visible_age_cues) < 1:
         blockers.append("insufficient_visible_age_cues")
 
-    if missing_required_checklist_keys and not deer_age_present and len(visible_age_cues) < 1:
+    if missing_required_checklist_keys and len(visible_age_cues) < 1:
         blockers.append("incomplete_cue_checklist")
 
     blockers = list(dict.fromkeys(blockers))
 
     if blockers:
         logger.info(
-            "Age gate blocked: blockers=%s soft_flags=%s deer_age_present=%s "
+            "Age gate blocked: blockers=%s soft_flags=%s deer_age=%s "
             "critical_visible_count=%s visible_age_cues=%s posture=%s quality=%s quality_factors=%s",
             blockers,
             soft_flags,
-            deer_age_present,
+            normalized.get("deer_age"),
             critical_visible_count,
             visible_age_cues,
             normalized.get("posture_bucket"),
@@ -2315,15 +2442,7 @@ def normalize_model_analysis(
 
     normalized["deer_age"] = deer_age
     normalized["alternate_age"] = alternate_age
-    normalized["age_bucket"] = derive_age_bucket(deer_age)
-    normalized["age_range"] = derive_age_range(deer_age)
     normalized["buck_age_class"] = buck_age_class
-
-    normalized["recommendation"] = derive_management_recommendation(
-        normalized.get("recommendation"),
-        deer_age,
-        normalized.get("age_estimation_allowed"),
-    )
     normalized["why_not_primary"] = str(normalized.get("why_not_primary") or "").strip()[:220] or None
 
     # Penalize confidence if the model's alternate age meaningfully disagrees.
@@ -2347,7 +2466,7 @@ def normalize_model_analysis(
     # Attach pre-calibration audit to normalized dict for downstream consumption
     normalized["_pre_calibration_audit_steps"] = audit_steps
 
-    return apply_age_estimation_gate(normalized)
+    return finalize_age_estimate(apply_age_estimation_gate(normalized))
 
 
 def build_analysis_system_prompt() -> str:
@@ -2389,7 +2508,10 @@ If the image DOES contain a valid deer, return:
   "alternate_age": <number or null>,
   "why_not_primary": <string or null>,
   "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
-  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "age_lower": <number or null>,
+  "age_upper": <number or null>,
+  "age_upper_open": <true | false>,
+  "range_reasoning": <string or null>,
   "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
   "age_confidence": <0-100>,
   "recommendation_confidence": <0-100>,
@@ -2436,22 +2558,21 @@ Critical rules:
 - For does, do not require antlers or buck-specific cues before giving an age estimate.
 - Rut-swollen necks, coat thickness, and perspective can mislead. Stay conservative.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. A visible body feature does not by itself require an age: give `deer_age` only when the visible cues actually support an estimate.
 - Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown is too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
-  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `deer_age`, `age_bucket`, `age_lower`, `age_upper`, and `buck_age_class` to null
   - set `recommendation` to null
   - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
   - provide `abstain_reason` from the enum
-  - provide a concise `retake_reason`
+  - provide a specific `retake_reason` naming the photo needed (for example: a clear full-body broadside view with legs and head visible)
 - When `age_estimation_allowed` is true, set `retake_reason` to null.
 - When `age_estimation_allowed` is true, set `abstain_reason` to null.
 - Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
 - If `alternate_age` is provided, `why_not_primary` is required.
-- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
-- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- Set `recommendation` to `HARVEST` only when the whole plausible range is 3.5 or older, `PASS` only when the whole range is younger than 3.5. If the range spans 3.5, set `recommendation` to null.
 - If deer_age is not null, use the half-year hunting convention and keep it to a single estimate such as 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, etc.
-- age_bucket and age_range must align with deer_age. If deer_age is null, set both to null.
+- age_bucket must align with deer_age. Plausible range: `age_lower` <= `deer_age` <= `age_upper`. Set `age_lower` = `age_upper` = `deer_age` when the visible evidence rules out neighboring ages. Widen the range only to neighboring ages the visible evidence cannot rule out, and explain in `range_reasoning` which cues keep them plausible. Never add a fixed-width margin. Use `age_upper_open: true` (and `age_upper: null`) when the deer may be 6.5 or older. If deer_age is null, set all range fields to null.
 - For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
 - For does, do not force an age when evidence is weak.
 - For bucks, antler count may refine the estimate but must never dominate it.
@@ -2493,7 +2614,10 @@ Return:
   "alternate_age": <number or null>,
   "why_not_primary": <string or null>,
   "age_bucket": <"fawn" | "yearling" | "young_adult" | "mature" | "older" | null>,
-  "age_range": <"0.5" | "1.5" | "2.5-3.5" | "4.5-5.5" | "6.5+" | null>,
+  "age_lower": <number or null>,
+  "age_upper": <number or null>,
+  "age_upper_open": <true | false>,
+  "range_reasoning": <string or null>,
   "buck_age_class": <"1.5" | "2.5" | "3.5" | "4.5" | "5.5" | "6.5+" | null>,
   "age_confidence": <0-100>,
   "recommendation_confidence": <0-100>,
@@ -2541,20 +2665,19 @@ Critical rules:
 - If the corrected sex is Doe, all antler fields must be null.
 - For does, age from body profile only and do not require antlers or buck-specific cues before giving an age estimate.
 - `visible_age_cues` must only list cues that are clearly visible in the image.
-- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. Use the best estimate when at least some body-aging evidence is visible.
+- Do not force `age_estimation_allowed` to false for a single weak photo factor alone. A visible body feature does not by itself require an age: give `deer_age` only when the visible cues actually support an estimate.
 - Set `age_estimation_allowed` to false when multiple severe visibility issues stack together, or when the anatomy shown remains too limited to support any defensible age call.
 - When `age_estimation_allowed` is false:
-  - set `deer_age`, `age_bucket`, `age_range`, and `buck_age_class` to null
+  - set `deer_age`, `age_bucket`, `age_lower`, `age_upper`, and `buck_age_class` to null
   - set `recommendation` to null
   - set `age_confidence`, `recommendation_confidence`, and `confidence` to 0
   - provide `abstain_reason` from the enum
-  - provide a concise `retake_reason`
+  - provide a specific `retake_reason` naming the photo needed (for example: a clear full-body broadside view with legs and head visible)
 - When `age_estimation_allowed` is true, set `retake_reason` to null.
 - When `age_estimation_allowed` is true, set `abstain_reason` to null.
 - Provide both `deer_age` (primary) and `alternate_age` for borderline cases. If not borderline, set `alternate_age` to null.
 - If `alternate_age` is provided, `why_not_primary` is required.
-- When `age_estimation_allowed` is true and `deer_age` is not null, `recommendation` must be `HARVEST` or `PASS`, never null.
-- If recommendation is otherwise uncertain, use this app baseline: `HARVEST` for deer_age >= 3.5 and `PASS` for deer_age < 3.5.
+- Set `recommendation` to `HARVEST` only when the whole plausible range is 3.5 or older, `PASS` only when the whole range is younger than 3.5. If the range spans 3.5, set `recommendation` to null.
 - Keep deer_age to the half-year hunting convention when not null.
 - For bucks, `buck_age_class` must align with `deer_age`, `age_bucket`, and `age_range`. For does or unknown sex, set `buck_age_class` to null.
 - For does, use visible body cues when they are available; only abstain when the photo truly lacks enough anatomy to age reliably.
@@ -2614,6 +2737,13 @@ def build_scan_response(scan: dict, images: Optional[List[Dict[str, Any]]] = Non
         deer_age=scan["deer_age"],
         age_bucket=scan.get("age_bucket"),
         age_range=scan.get("age_range"),
+        age_lower=scan.get("age_lower"),
+        age_upper=scan.get("age_upper"),
+        age_upper_open=scan.get("age_upper_open"),
+        range_status=scan.get("range_status") or ("legacy_class_bin" if scan.get("age_range") else None),
+        range_reasoning=(scan.get("raw_response") or {}).get("range_reasoning"),
+        range_coverage_confidence=(scan.get("raw_response") or {}).get("range_coverage_confidence"),
+        recommendation_status=scan.get("recommendation_status"),
         buck_age_class=scan.get("buck_age_class"),
         age_evidence=scan.get("age_evidence") or [],
         cue_checklist=raw_response.get("cue_checklist") if isinstance(raw_response.get("cue_checklist"), dict) else {},
@@ -4210,6 +4340,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
                 deer_age=calibrated_analysis.get("deer_age"),
                 age_bucket=calibrated_analysis.get("age_bucket"),
                 age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
                 buck_age_class=calibrated_analysis.get("buck_age_class"),
                 age_evidence=calibrated_analysis.get("age_evidence"),
                 deer_type=calibrated_analysis.get("deer_type"),
@@ -4280,6 +4415,11 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             deer_age=calibrated_analysis.get("deer_age"),
             age_bucket=calibrated_analysis.get("age_bucket"),
             age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
             buck_age_class=calibrated_analysis.get("buck_age_class"),
             age_evidence=calibrated_analysis.get("age_evidence") or [],
             cue_checklist=calibrated_analysis.get("cue_checklist") or {},
@@ -4320,6 +4460,8 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
             visible_age_cues=calibrated_analysis.get("visible_age_cues") or [],
             consensus=calibrated_analysis.get("consensus"),
             multi_image=analysis.get("multi_image"),
+            range_reasoning=calibrated_analysis.get("range_reasoning"),
+            range_coverage_confidence=calibrated_analysis.get("range_coverage_confidence"),
             images=[scan_image_public_record(r) for r in image_rows],
             image_url=image_url,
             date_taken=str(scan_context["date_taken"]) if scan_context.get("date_taken") else None,
@@ -5541,6 +5683,11 @@ Provide your complete REVISED analysis in JSON format."""
                     deer_age=calibrated_analysis.get("deer_age"),
                     age_bucket=calibrated_analysis.get("age_bucket"),
                     age_range=calibrated_analysis.get("age_range"),
+                age_lower=calibrated_analysis.get("age_lower"),
+                age_upper=calibrated_analysis.get("age_upper"),
+                age_upper_open=calibrated_analysis.get("age_upper_open"),
+                range_status=calibrated_analysis.get("range_status"),
+                recommendation_status=calibrated_analysis.get("recommendation_status"),
                     buck_age_class=calibrated_analysis.get("buck_age_class"),
                     age_evidence=calibrated_analysis.get("age_evidence"),
                     deer_type=calibrated_analysis.get("deer_type"),

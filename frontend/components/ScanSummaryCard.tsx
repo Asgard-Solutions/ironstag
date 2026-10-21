@@ -6,11 +6,14 @@ import {
   StyleSheet,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
+import type { AgeDescription } from '../utils/ageEstimate';
 
 interface ScanSummaryCardProps {
   imageUri: string | null;
   recommendation: string | null;
   deerAge: number | null;
+  /** Plausible range + its meaning (from utils/ageEstimate.describeAge) */
+  ageRange?: AgeDescription | null;
   confidence: number | null;
   confidenceBreakdown?: { age: number | null; recommendation: number | null } | null;
   deerType: string | null;
@@ -167,6 +170,7 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
       imageUri,
       recommendation,
       deerAge,
+      ageRange,
       confidence: rawConfidence,
       confidenceBreakdown,
       deerType,
@@ -211,7 +215,7 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
                 { color: isHarvest ? colors.harvest : colors.pass },
               ]}
             >
-              {recommendation || 'UNKNOWN'}
+              {recommendation || (ageRange?.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
             </Text>
           </View>
 
@@ -220,6 +224,11 @@ export const ScanSummaryCard = forwardRef<View, ScanSummaryCardProps>(
             <View style={shareStyles.statItem}>
               <Text style={shareStyles.statLabel}>Estimated Age</Text>
               <Text style={shareStyles.statValue}>{ageText}</Text>
+              {ageRange?.range ? (
+                <Text style={shareStyles.statLabel}>
+                  Range {ageRange.range} ({ageRange.calibrated ? 'validated' : 'uncalibrated'})
+                </Text>
+              ) : null}
             </View>
             <View style={shareStyles.statDivider} />
             <View style={shareStyles.statItem}>

@@ -143,10 +143,14 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "value": round(sum(r["range_covers"] for r in ranged) / len(ranged), 4) if ranged else None,
             "ci95": wilson(sum(r["range_covers"] for r in ranged), len(ranged)),
             "n": len(ranged),
+            "n_point_estimates": sum(1 for r in ranged if r["range_width"] == 0),
+            "n_ranges": sum(1 for r in ranged if r["range_width"] is None or r["range_width"] > 0),
+            "status": "uncalibrated_plausible_ranges_unless_artifact_validated",
             "mean_width_years": _mean(r["range_width"] for r in ranged if r["range_width"] is not None),
             "open_ended_6_5_plus": sum(1 for r in ranged if r["range_width"] is None),
         },
         "inconclusive": n < MIN_SUBGROUP_N,
+        "n_recommendation_uncertain_range": sum(1 for r in rows if r.get("recommendation_status") == "uncertain_range_crosses_threshold"),
     }
 
 

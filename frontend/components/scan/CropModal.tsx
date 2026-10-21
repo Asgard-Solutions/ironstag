@@ -105,7 +105,9 @@ export function CropModal({ photo, onCancel, onApply }: Props) {
         <View style={styles.stage} onLayout={onLayout}>
           {photo && display.width > 0 && (
             <View style={{ width: display.width, height: display.height }}>
-              <Image source={{ uri: photo.uri }} style={{ width: display.width, height: display.height }} pointerEvents="none" />
+              <View pointerEvents="none">
+                <Image source={{ uri: photo.uri }} style={{ width: display.width, height: display.height }} />
+              </View>
               {/* Dim outside the crop */}
               <View style={[styles.dim, { left: 0, top: 0, right: 0, height: frame.top }]} />
               <View style={[styles.dim, { left: 0, top: frame.top + frame.height, right: 0, bottom: 0 }]} />

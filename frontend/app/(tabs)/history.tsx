@@ -27,8 +27,9 @@ import { format, differenceInDays } from 'date-fns';
 
 // ============ CONFIDENCE CALIBRATION CONSTANTS ============
 const HARVEST_RECOMMENDATION_MIN_AGE = 3.5;
+import { AgeFields, describeAge } from '../../utils/ageEstimate';
 
-interface Scan {
+interface Scan extends AgeFields {
   id: string;
   local_image_id: string;
   deer_age: number | null;
@@ -98,6 +99,9 @@ function getDisplayRecommendation(scan: Scan): 'HARVEST' | 'PASS' | null {
   const deerAge = scan.deer_age;
   if (recommendation === 'HARVEST' || recommendation === 'PASS') {
     return recommendation;
+  }
+  if (scan.recommendation_status === 'uncertain_range_crosses_threshold') {
+    return null;
   }
   if (deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
@@ -341,7 +345,7 @@ export default function HistoryScreen() {
     const displayConfidence = getRecommendationConfidence(item);
     const ageDisplayText = getAgeDisplayText(item.deer_age);
     const displayRecommendation = getDisplayRecommendation(item);
-    
+    const ageInfo = describeAge(item);
     // Check if scan is eligible for feedback (>7 days old and not labeled)
     const daysSinceScan = differenceInDays(new Date(), new Date(item.created_at));
     const isEligibleForFeedback = daysSinceScan >= 7 && !labeledScanIds.has(item.id);
@@ -379,12 +383,12 @@ export default function HistoryScreen() {
                   styles.statusText,
                   displayRecommendation === 'HARVEST' ? styles.harvestStatus : styles.passStatus
                 ]}>
-                  {displayRecommendation || 'UNKNOWN'}
+                  {displayRecommendation || (ageInfo.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
                 </Text>
               </View>
               <View style={styles.ageRow}>
                 <Text style={[styles.ageText, ageIsUncertain && styles.ageTextUncertain]}>
-                  Age: {ageDisplayText}
+                  Age: {ageInfo.range ? `${ageDisplayText} (range ${ageInfo.range.replace(' yrs', '')})` : ageDisplayText}
                 </Text>
                 {ageIsUncertain && (
                   <AlertCircle size={12} color={colors.textMuted} style={styles.uncertainIcon} />

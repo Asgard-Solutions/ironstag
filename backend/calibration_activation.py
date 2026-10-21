@@ -48,7 +48,9 @@ def activation_checks(art: Dict[str, Any], *, runtime: Dict[str, Any], active_ta
     add("brier_not_worse_than_heuristic",
         cand.get("brier") is not None and heur.get("brier") is not None and cand["brier"] <= heur["brier"],
         {"candidate": cand.get("brier"), "heuristic": heur.get("brier")})
-    others = sorted(set(active_targets) - {art["target"]})
+    # Range coverage is displayed separately, so it may coexist with one exact-age/within-one-year target.
+    same_slot = lambda t: (t == "age_range_coverage") == (art["target"] == "age_range_coverage")
+    others = sorted({t for t in active_targets if same_slot(t)} - {art["target"]})
     add("single_target_for_displayed_score", not others, {"other_active_targets": others})
     return {"passed": all(c["passed"] for c in checks), "checks": checks}
 

@@ -51,3 +51,12 @@ Expo (React Native) + FastAPI + Postgres (Neon) deer-aging app. Users photograph
 - Opt-in candidates: heuristic v3 (de-duplicated penalties, no antler penalty) and region mapping v2 (TX → unknown). Production defaults unchanged
 - `python -m evaluation calibrate` fits on the calibration split and evaluates on the test split; tests in tests/test_confidence_calibration.py
 - Activation blocked until: real tier A/B data (≥500 calibration cases, ≥100 test cases), valid OpenAI key, run budget
+
+## Done – Honest age ranges & abstention (prompt age-v6-ranges)
+- Model returns age_lower/age_upper/age_upper_open/range_reasoning; `finalize_age_estimate` (server.py) is the single place that makes age, class, bucket, range and recommendation agree (also run after consensus; disagreement between passes widens the range)
+- Range basis: model bounds > alternate age > point estimate; no fixed margin; ranges reaching 6.5 become open-ended "X+"; ranges wider than MAX_INFORMATIVE_AGE_RANGE_YEARS (2.0) abstain with a retake request
+- A range crossing 3.5 → recommendation null + recommendation_status=uncertain_range_crosses_threshold (UI shows UNCERTAIN)
+- Gate no longer relaxes evidence rules because the model supplied an age
+- New scan columns: age_lower, age_upper, age_upper_open, range_status, recommendation_status; legacy rows → range_status=legacy_class_bin (labelled "not a validated range")
+- Range % shown only from an active validated age_range_coverage artifact (never replaces the exact-age score); otherwise labelled "plausible · uncalibrated"
+- UI: scan result, history, share card/text use utils/ageEstimate.ts; mock notes mock:range / mock:cross / mock:open / mock:poor

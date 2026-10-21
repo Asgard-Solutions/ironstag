@@ -43,6 +43,7 @@ import { Button } from '../../components/Button';
 import { LabelFeedbackModal } from '../../components/LabelFeedbackModal';
 import { ScanResultSkeleton } from '../../components/Skeleton';
 import { TagsEditor } from '../../components/TagsEditor';
+import { AgeFields, describeAge, UNCERTAIN_RECOMMENDATION_TEXT } from '../../utils/ageEstimate';
 import {
   MultiPhotoEvidence,
   MultiImageSummary,
@@ -140,8 +141,9 @@ const BC_SCORE_TYPE_REFERENCE_DETAILS: Partial<
   },
 };
 
-interface ScanResult {
+interface ScanResult extends AgeFields {
   id: string;
+  range_reasoning?: string | null;
   local_image_id: string;
   images?: ScanImageRecord[];
   multi_image?: MultiImageSummary | null;
@@ -239,6 +241,10 @@ function getDisplayRecommendation(scan: ScanResult): 'HARVEST' | 'PASS' | null {
   const deerAge = scan.deer_age;
   if (recommendation === 'HARVEST' || recommendation === 'PASS') {
     return recommendation;
+  }
+  // Range spans the harvest threshold: never force a call from the midpoint
+  if (scan.recommendation_status === 'uncertain_range_crosses_threshold') {
+    return null;
   }
   if (scan.age_estimation_allowed === false || deerAge === null || deerAge === undefined || deerAge === 0) {
     return null;
@@ -903,12 +909,14 @@ export default function ScanResultScreen() {
       const shareAgeConf = getAgeConfidence(scan);
       const shareRecConf = getRecommendationConfidence(scan);
       const ageText = getAgeDisplayText(scan.deer_age);
+      const shareAge = describeAge(scan);
 
       const shareText = [
         `Iron Stag Result`,
         ``,
-        `RECOMMENDATION: ${scan.recommendation || 'UNKNOWN'}`,
+        `RECOMMENDATION: ${scan.recommendation || (shareAge.recommendationUncertain ? 'UNCERTAIN (age range spans 3.5 yrs)' : 'UNKNOWN')}`,
         `Estimated Age: ${ageText}`,
+        shareAge.range ? `Plausible Range: ${shareAge.range} (${shareAge.calibrated ? 'validated' : 'uncalibrated'})` : null,
         shareAgeConf !== null ? `Age Certainty: ${shareAgeConf}%` : null,
         `Recommendation Certainty: ${shareRecConf}%`,
         scan.deer_type ? `Type: ${scan.deer_type}` : null,
@@ -967,6 +975,7 @@ export default function ScanResultScreen() {
   const ageDisplayText = getAgeDisplayText(scan.deer_age);
   const ageEstimateBlocked = scan.age_estimation_allowed === false;
   const displayRecommendation = getDisplayRecommendation(scan);
+  const ageInfo = describeAge(scan);
   const confLabel = getConfidenceLabel(recommendationConfidence);
   const { summary: reasoningSummary, cues: reasoningCues } = parseReasoning(scan.reasoning);
   const visibleAgeCueText = scan.visible_age_cues && scan.visible_age_cues.length > 0
@@ -1136,6 +1145,7 @@ export default function ScanResultScreen() {
         >
           <Text style={styles.heroLabel}>RECOMMENDATION</Text>
           <Text
+            testID="hero-recommendation"
             style={[
               styles.heroValue,
               recommendationVariant === 'harvest'
@@ -1145,14 +1155,16 @@ export default function ScanResultScreen() {
                   : styles.unknownText,
             ]}
           >
-            {displayRecommendation || 'UNKNOWN'}
+            {displayRecommendation || (ageInfo.recommendationUncertain ? 'UNCERTAIN' : 'UNKNOWN')}
           </Text>
           <Text style={styles.heroSubtext}>
             {recommendationVariant === 'harvest'
               ? 'Based on maturity and visible body indicators'
               : recommendationVariant === 'pass'
                 ? 'Based on age estimate and development indicators'
-                : 'Unable to determine a clear recommendation'}
+                : ageInfo.recommendationUncertain
+                  ? UNCERTAIN_RECOMMENDATION_TEXT
+                  : 'Unable to determine a clear recommendation'}
           </Text>
         </View>
 
@@ -1162,13 +1174,22 @@ export default function ScanResultScreen() {
             {scan.deer_type || 'Unknown Deer'} • {scan.deer_sex || 'Unknown'}
           </Text>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summarySubtitle, ageIsUncertain && styles.summarySubtitleUncertain]}>
-              {ageEstimateBlocked ? 'Best estimate unavailable' : `Est. Age: ${ageDisplayText}`}
+            <Text style={[styles.summarySubtitle, ageIsUncertain && styles.summarySubtitleUncertain]} testID="age-best">
+              {ageEstimateBlocked ? 'No age estimate from these photos' : `Best estimate: ${ageDisplayText}`}
             </Text>
             {ageIsUncertain && (
               <AlertCircle size={14} color={colors.textMuted} style={styles.uncertainIconSmall} />
             )}
           </View>
+          {ageInfo.range && (
+            <View testID="age-range">
+              <Text style={styles.summarySubtitle}>Plausible range: {ageInfo.range}</Text>
+              <Text style={styles.confDisclaimer}>{ageInfo.rangeLabel}</Text>
+              {scan.range_reasoning ? (
+                <Text style={styles.confDisclaimer}>Why: {scan.range_reasoning}</Text>
+              ) : null}
+            </View>
+          )}
           </Card>
 
           {/* Confidence — Two separate values */}
@@ -1549,6 +1570,7 @@ export default function ScanResultScreen() {
             imageUri={imageUri}
             recommendation={scan.recommendation}
             deerAge={scan.deer_age}
+            ageRange={describeAge(scan)}
             confidence={scan.confidence}
             confidenceBreakdown={scan.confidence_breakdown}
             deerType={scan.deer_type}
