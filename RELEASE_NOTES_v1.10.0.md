@@ -22,7 +22,10 @@ October 2026
 
 ### Tag Filters
 - **Filter history by tag** – Open the filters in History and tap a tag to see only the scans with that tag
+- **Tap a tag to filter** – Tap any tag on a scan card in History to see only the scans with that tag
 - **Works with other filters** – Combine tags with sex, recommendation, favorites, and search
+- **Your spelling is kept** – Tags are saved exactly as you type them, so "Big 8" stays "Big 8"
+- **No duplicate tags** – Adding "big 8" when "Big 8" is already there is ignored
 
 ### Multi-Photo Scans
 - **Up to 3 photos per scan** – Add several photos of the same deer to one scan for a better estimate
@@ -46,6 +49,7 @@ October 2026
 ## 🎯 Accuracy & Transparency
 
 ### Clearer Confidence
+- **"Why this confidence?"** – Scan results now include a short explanation from the AI of why it gave that confidence score, such as photo quality or which body features it could see
 - **Two confidence scores** – Confidence in the exact age is now separate from confidence in the age range, so you know how much to trust each
 - **No more fixed deductions** – Confidence no longer drops by set amounts. We built a new system that will base scores on real results from deer of known age
 - **Safe rollout** – New confidence settings are tested quietly in the background against current scores before they go live. Your scores stay the same in this release
@@ -106,7 +110,7 @@ This release is about honest answers: more photos, clear ranges, and a straight 
 ---
 
 ## Version History
-- **v1.10.0** (October 2026) - Your own harvest age, tag filters, multi-photo scans, honest age ranges, clearer confidence
+- **v1.10.0** (October 2026) - Your own harvest age, tag filters, confidence explanations, multi-photo scans, honest age ranges, clearer confidence
 - **v1.8.0** (July 2026) - Species-specific AI aging, security hardening, Android 16 support
 - **v1.6.1** (April 15, 2026) - Bug fixes and security improvements
 - **v1.6.0** (April 15, 2026) - Boone & Crockett Scoring, Learn Section, Enhanced UI
