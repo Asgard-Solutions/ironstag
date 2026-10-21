@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,26 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AlertCircle, Sparkles, Check, ArrowRight } from 'lucide-react-native';
+import { AlertCircle, Sparkles, Check, ArrowRight, Target } from 'lucide-react-native';
 import { Card } from '../../components/Card';
 import { colors, spacing, borderRadius } from '../../constants/theme';
+import { useAuthStore } from '../../stores/authStore';
+import { authAPI } from '../../utils/api';
+import { DEFAULT_HARVEST_AGE, HARVEST_AGE_OPTIONS } from '../../utils/ageEstimate';
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
+  const { user, updateUser } = useAuthStore();
+  const [harvestAge, setHarvestAge] = useState<number>(user?.harvest_age_threshold ?? DEFAULT_HARVEST_AGE);
 
   const handleContinue = () => {
+    if (harvestAge !== (user?.harvest_age_threshold ?? DEFAULT_HARVEST_AGE)) {
+      updateUser({ harvest_age_threshold: harvestAge });
+      // Non-blocking: hunters can always change this later in Profile
+      authAPI.updateProfile({ harvest_age_threshold: harvestAge }).catch((error) =>
+        console.error('Failed to save harvest age:', error)
+      );
+    }
     router.push('/(auth)/privacy');
   };
 
@@ -49,6 +61,34 @@ export default function OnboardingScreen() {
           <Text style={styles.noticeText}>
             This app provides AI-generated estimations for informational purposes only. It does NOT provide professional advice. You are solely responsible for all hunting decisions.
           </Text>
+        </Card>
+
+        {/* Harvest Age */}
+        <Card style={styles.harvestCard}>
+          <View style={styles.noticeHeader}>
+            <Target size={20} color={colors.primary} />
+            <Text style={styles.harvestTitle}>Your Harvest Age</Text>
+          </View>
+          <Text style={styles.harvestText}>
+            Deer this age or older are marked HARVEST. You can change this anytime in Profile.
+          </Text>
+          <View style={styles.harvestChips}>
+            {HARVEST_AGE_OPTIONS.map((age) => {
+              const selected = harvestAge === age;
+              return (
+                <TouchableOpacity
+                  key={age}
+                  testID={`onboarding-harvest-age-${age.toFixed(1)}`}
+                  style={[styles.harvestChip, selected && styles.harvestChipSelected]}
+                  onPress={() => setHarvestAge(age)}
+                >
+                  <Text style={[styles.harvestChipText, selected && styles.harvestChipTextSelected]}>
+                    {age === 6.5 ? '6.5+' : age.toFixed(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </Card>
 
         {/* Example Estimation */}
@@ -176,6 +216,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#7D5A3C',
     lineHeight: 22,
+  },
+  harvestCard: {
+    backgroundColor: colors.backgroundCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.xl,
+  },
+  harvestTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  harvestText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  harvestChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  harvestChip: {
+    minWidth: 56,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  harvestChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  harvestChipText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  harvestChipTextSelected: {
+    color: colors.background,
   },
   exampleSection: {
     marginBottom: spacing.lg,

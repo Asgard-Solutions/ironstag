@@ -1,0 +1,41 @@
+{
+  "summary": "Verified iteration_3 feature set on viewport 390x844 against preview backend. (1) TAG FILTER: Seeded 3 scans on multiphoto.test@ironstag.dev via POST /api/scans/{id}/tags. In the process, discovered and FIXED a CRITICAL pre-existing backend bug in POST /api/scans/{scan_id}/tags that was double-serialising the tags value and leaving JSON column holding a Python string literal, causing GET /api/scans to return 500 for any user with tagged scans. Fixed server.py (removed json.dumps on values=; added defensive json.loads in build_scan_response). After fix, verified via browser: History -> Filter opens the panel, 'Tags:' row renders chips 'All', 'big 8', 'creek stand' (all 10/10 unique testIDs present: tag-filter-all, 'tag-filter-big 8', 'tag-filter-creek stand'). Row count checks: before=7 scans; after tap 'big 8'=2 scans (the two tagged scans); tap 'big 8' again=7 (clear); tap 'creek stand'=1; 'Clear All Filters' resets to 7; combining 'big 8' + Rec=PASS = 0 rows -> 'No Matching Scans' empty state (both big-8 scans are HARVEST/UNKNOWN, so 0 is correct). (2) ONBOARDING HARVEST AGE: created a brand new user via /signup. App auto-navigated to /onboarding showing the 'Your Harvest Age' Card with Target icon and all 10 chips rendered with testIDs onboarding-harvest-age-2.0 ... onboarding-harvest-age-6.5. Default 3.5 pre-highlighted. Last chip labelled '6.5+' (others labelled '2.0'...'6.0'). Selected 4.5 -> Continue -> navigated to /privacy. Verified via /api/auth/me that the new user has harvest_age_threshold=4.5. Repeated with a second new user without changing selection -> Continue still navigates to /privacy and /api/auth/me shows harvest_age_threshold=3.5 (default preserved). (3) VERSION: /app/frontend/app.json valid JSON with version='1.10.0', ios.buildNumber='112', android.versionCode=112. (4) RELEASE NOTES: /app/RELEASE_NOTES_v1.10.0.md exists with 'Your Own Harvest Age' and 'Tag Filters' sections. EXPO_PUBLIC_API_BASE_URL was pointed at preview URL during testing and reverted to https://ironstag-production.up.railway.app at the end. Multiphoto user's harvest_age_threshold left at 3.5. Testing-created tags (big 8, creek stand) left on 3 multiphoto scans (optional cleanup per request).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/scans/{scan_id}/tags & GET /api/scans", "issue": "FIXED during this testing round. Pre-existing bug: tag endpoint called values(tags=json.dumps(unique_tags)) on a SQLAlchemy JSON column, double-encoding the value so Postgres stored a JSON string literal ('[\"big 8\"]'). This caused DeerAnalysisResponse Pydantic validation to raise 'tags: Input should be a valid list' and return 500 for all subsequent GET /api/scans calls for users with any tagged scan. Fix applied: use values(tags=unique_tags) and defensive json.loads() in build_scan_response(). Any already-corrupted rows will auto-repair the next time tags are rewritten.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/scans/{scan_id}/tags", "issue": "Backend lowercases user-provided tags (tag.strip().lower()). So 'Big 8' becomes 'big 8' at rest and the UI chip label / testID is 'big 8' (lowercase), not 'Big 8' as the task description assumed. Consider preserving original casing while matching case-insensitively, since the frontend filter already compares case-insensitively."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Text/View child", "issue": "Console warning on every History render: 'Unexpected text node: . A text node cannot be a child of a <View>.' Non-fatal but should be hunted down. Most likely a stray whitespace or template literal in /app/frontend/app/(tabs)/history.tsx (one of the dateSeasonRow / tagsRow fragments) rendering a bare ' ' between <View> children."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_harvest_age_api.py (from iteration_2, still valid)"
+  ],
+  "action_items": [
+    "RE-REVIEW the backend tag-serialisation fix I applied in /app/backend/server.py (POST /api/scans/{scan_id}/tags and build_scan_response). Then run the same fix on the production (Railway) backend before shipping 1.10.0 - otherwise anyone who taps 'Save' on tags today will corrupt their scan list and get 500 on all history fetches.",
+    "Decide whether backend should keep lowercasing tags or preserve display casing. Current behavior means the Tag Filter chips render lowercase ('big 8') even though the user typed 'Big 8'.",
+    "Track down the 'Unexpected text node' warning in history.tsx (likely a stray ' ' in dateSeasonRow or tagsRow)."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py line ~4839 (pre-fix): mixing json.dumps() with a SQLAlchemy JSON column is always a double-encoding bug. Prefer passing native Python objects to .values() for JSON columns.",
+    "/app/frontend/app/(tabs)/history.tsx: filter button (TouchableOpacity wrapping lucide Filter icon) has no testID - had to click by XY coords to open the filter panel. Add testID='history-filter-toggle' and testIDs on the sex/rec filter chips for parity with the tag chips."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (CRITICAL fix: POST /api/scans/{scan_id}/tags now stores list directly; build_scan_response defensively json.loads any legacy string value)",
+    "/app/frontend/.env (temporarily switched EXPO_PUBLIC_API_BASE_URL to preview URL during testing, reverted to https://ironstag-production.up.railway.app at the end)"
+  ],
+  "success_rate": {"backend": "100% after fix (login, tags POST, GET /scans, /auth/me all 200)", "frontend": "100% (tag filter chips, filter/clear/combine, onboarding 10 chips, 4.5 persistence, default-3.5 persistence, release notes, app.json version 1.10.0/112 - all verified)"},
+  "seed_data_creation": "On multiphoto.test@ironstag.dev added tags via POST /api/scans/{id}/tags: scan a07ffa15 -> ['big 8']; 766f61f9 -> ['big 8']; aa43f770 -> ['creek stand']. Two fresh signup users created on the preview backend for onboarding verification (onboard.ui.1792590426@ironstag.dev harvest=4.5; onboard.default.1792590463@ironstag.dev harvest=3.5).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The feature set itself works end-to-end. The CRITICAL finding is a pre-existing backend serialization bug in POST /api/scans/{scan_id}/tags that I patched in /app/backend/server.py (preview). Main agent must mirror the same fix to production (Railway) before 1.10.0 ships. The signup form on /signup has 6 inputs in order: First Name, Last Name, Email, Username, Password, Confirm Password. The History filter button has no testID - open the panel with page.mouse.click(355, 85) at 390x844 viewport, or add testID='history-filter-toggle'. Tag chip testIDs are lowercased ('tag-filter-big 8', 'tag-filter-creek stand') because the backend lowercases tags on save. The 'Unexpected text node' React Native warning is logged on every History render but did not block any functionality.",
+  "rca_of_issue": "ROOT CAUSE (critical backend bug): /app/backend/server.py line ~4836 was doing `values(tags=json.dumps(unique_tags))` on a Column(JSON) column. SQLAlchemy's JSON type serialises its Python value with json.dumps on write, so passing a pre-serialised string stored '\"[\\\"big 8\\\"]\"' (a JSON-encoded string, not a JSON array). On read, the driver returned the inner string, which failed Pydantic's `tags: List[str]` validation, raising 500 on all GET /api/scans for any affected user. REPRODUCTION: 1) POST /api/scans/{id}/tags with any body on preview, 2) GET /api/scans -> 500 ValidationError. MITIGATION APPLIED: changed to `values(tags=unique_tags)` and added `tags=(json.loads(scan['tags']) if isinstance(scan.get('tags'), str) else (scan.get('tags') or []))` in build_scan_response() so any already-corrupted DB rows deserialise cleanly on read."
+}

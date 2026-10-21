@@ -182,6 +182,7 @@ export default function HistoryScreen() {
   const [filters, setFilters] = useState({
     deer_sex: '',
     recommendation: '',
+    tag: '',
   });
   
   // Track which scans have labels (for feedback badge)
@@ -268,6 +269,13 @@ export default function HistoryScreen() {
     }
   };
 
+  // Unique tags across all scans (case-insensitive), sorted for the tag filter row
+  const allTags = Array.from(
+    new Map(
+      scans.flatMap((scan) => scan.tags || []).map((tag) => [tag.trim().toLowerCase(), tag.trim()] as [string, string])
+    ).values()
+  ).filter(Boolean).sort((a, b) => a.localeCompare(b));
+
   const filteredScans = scans.filter((scan) => {
     const displayRecommendation = getDisplayRecommendation(scan);
 
@@ -283,6 +291,11 @@ export default function HistoryScreen() {
     
     // Apply recommendation filter
     if (filters.recommendation && displayRecommendation !== filters.recommendation) {
+      return false;
+    }
+
+    // Apply tag filter
+    if (filters.tag && !(scan.tags || []).some((tag) => tag.trim().toLowerCase() === filters.tag.toLowerCase())) {
       return false;
     }
     
@@ -331,12 +344,12 @@ export default function HistoryScreen() {
   });
 
   const clearFilters = () => {
-    setFilters({ deer_sex: '', recommendation: '' });
+    setFilters({ deer_sex: '', recommendation: '', tag: '' });
     setSearchQuery('');
     setShowFavoritesOnly(false);
   };
 
-  const hasActiveFilters = filters.deer_sex || filters.recommendation || searchQuery || showFavoritesOnly;
+  const hasActiveFilters = filters.deer_sex || filters.recommendation || filters.tag || searchQuery || showFavoritesOnly;
 
   const renderScanCard = ({ item }: { item: Scan }) => {
     // Calculate calibrated confidence and check age uncertainty
@@ -404,7 +417,7 @@ export default function HistoryScreen() {
                     ? format(new Date(item.date_taken + 'T12:00:00'), 'MMM d, yyyy')
                     : 'No date set'}
                 </Text>
-                {getSeasonLabel(item.season_phase) && (
+                {!!getSeasonLabel(item.season_phase) && (
                   <>
                     <View style={styles.dateDot} />
                     <Leaf size={11} color={colors.primary} />
@@ -579,6 +592,7 @@ export default function HistoryScreen() {
               />
             </TouchableOpacity>
             <TouchableOpacity
+              testID="history-filter-toggle"
               style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
               onPress={() => setShowFilters(!showFilters)}
             >
@@ -633,6 +647,32 @@ export default function HistoryScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+              {allTags.length > 0 && (
+                <View style={styles.filterRow}>
+                  <Text style={styles.filterLabel}>Tags:</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.tagFilterScroll}
+                  >
+                    {['', ...allTags].map((tag) => {
+                      const active = filters.tag.toLowerCase() === tag.toLowerCase();
+                      return (
+                        <TouchableOpacity
+                          key={tag || 'all'}
+                          testID={`tag-filter-${tag || 'all'}`}
+                          style={[styles.filterChip, active && styles.filterChipActive]}
+                          onPress={() => setFilters({ ...filters, tag: active ? '' : tag })}
+                        >
+                          <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                            {tag || 'All'}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
               {hasActiveFilters && (
                 <TouchableOpacity style={styles.clearFilters} onPress={clearFilters}>
                   <Text style={styles.clearFiltersText}>Clear All Filters</Text>
@@ -850,6 +890,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  tagFilterScroll: {
+    gap: spacing.sm,
+    paddingRight: spacing.md,
   },
   filterLabel: {
     color: colors.textSecondary,

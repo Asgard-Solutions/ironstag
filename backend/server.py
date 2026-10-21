@@ -2891,7 +2891,7 @@ def build_scan_response(
         image_url=scan.get("image_url"),
         # Favorites and Tags
         is_favorite=scan.get("is_favorite") or False,
-        tags=scan.get("tags") or [],
+        tags=(json.loads(scan["tags"]) if isinstance(scan.get("tags"), str) else (scan.get("tags") or [])),
         harvest_confirmed=bool(scan.get("harvest_confirmed")) if scan.get("harvest_confirmed") is not None else False,
         harvested_at=scan.get("harvested_at"),
         boone_crockett_score=normalized_bc_score,
@@ -4833,10 +4833,9 @@ async def update_tags(
     unique_tags = list(dict.fromkeys(clean_tags))  # Remove duplicates, preserve order
     
     # Update tags
-    import json
     update_query = scans_table.update().where(
         scans_table.c.id == scan_id
-    ).values(tags=json.dumps(unique_tags))
+    ).values(tags=unique_tags)
     await database.execute(update_query)
     
     # Return updated scan
