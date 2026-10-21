@@ -1,0 +1,1 @@
+{"name": "revised_prompt_example", "model": null, "prompt": {"label": "revised-example-v1", "system_prompt_append_file": "revised_prompt_example.txt"}, "multi_photo": false, "use_crops": false, "calibration": "heuristic", "pricing_usd_per_1m_tokens": {"input": null, "output": null}}

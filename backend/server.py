@@ -17,6 +17,7 @@ import httpx
 import base64
 import json
 import re
+import time
 import random
 import string
 import msal
@@ -487,6 +488,8 @@ def build_chat_completion_request(
 
 
 ANALYSIS_MOCK_MODEL = get_bool_env("ANALYSIS_MOCK_MODEL", False)
+# Optional hook (used by the offline evaluation runner) that receives per-call usage/latency.
+MODEL_CALL_OBSERVER: Optional[Callable[[Dict[str, Any]], None]] = None
 
 
 def build_mock_model_response(user_content: List[Dict[str, Any]], context: Dict[str, Any]) -> str:
@@ -550,7 +553,10 @@ def run_model_analysis_pass(
 ) -> Optional[Dict[str, Any]]:
     if ANALYSIS_MOCK_MODEL:
         response_text = build_mock_model_response(user_content, context)
+        if MODEL_CALL_OBSERVER is not None:
+            MODEL_CALL_OBSERVER({"model": model, "mock": True, "prompt_tokens": 0, "completion_tokens": 0, "latency_s": 0.0})
     else:
+        call_started = time.perf_counter()
         response = openai_client.chat.completions.create(
             **build_chat_completion_request(
                 model=model,
@@ -569,6 +575,15 @@ def run_model_analysis_pass(
             )
         )
         response_text = response.choices[0].message.content or ""
+        if MODEL_CALL_OBSERVER is not None:
+            usage = getattr(response, "usage", None)
+            MODEL_CALL_OBSERVER({
+                "model": model,
+                "mock": False,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "latency_s": round(time.perf_counter() - call_started, 3),
+            })
     try:
         parsed_analysis = parse_json_response(response_text)
     except (json.JSONDecodeError, ValueError):
@@ -4010,6 +4025,23 @@ def apply_photo_set_guards(
     return analysis
 
 
+def build_analysis_request(context_text: str, evidence: List[PreparedImage]) -> Dict[str, Any]:
+    """Prompt + payload for a (re)analysis-free initial scan. Shared by /analyze-deer and the evaluation runner."""
+    is_multi = len(evidence) > 1
+    intro = (
+        ("Analyze these photos and return JSON only.\n\n" if is_multi else "Analyze this image and return JSON only.\n\n")
+        + f"{context_text}\n\n"
+        "Use region and season as supporting context only. "
+        "Visible body anatomy must dominate the age estimate."
+    )
+    return {
+        "system_prompt": build_analysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else ""),
+        "user_content": build_image_user_content(intro, evidence),
+        "max_output_tokens": 1400 + (400 * (len(evidence) - 1)),
+        "prompt_version": ANALYSIS_PROMPT_VERSION + (MULTI_IMAGE_PROMPT_SUFFIX if is_multi else ""),
+    }
+
+
 @api_router.post("/analyze-deer", response_model=DeerAnalysisResponse)
 async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_current_user)):
     logger.info(
@@ -4089,22 +4121,14 @@ async def analyze_deer(data: DeerAnalysisRequest, user: dict = Depends(get_curre
         )
 
         # ── Step 5: One model request containing every evidence photo ──
-        intro = (
-            ("Analyze these photos and return JSON only.\n\n" if is_multi else "Analyze this image and return JSON only.\n\n")
-            + f"{context_text}\n\n"
-            "Use region and season as supporting context only. "
-            "Visible body anatomy must dominate the age estimate."
-        )
-        user_content = build_image_user_content(intro, evidence)
-        system_prompt = build_analysis_system_prompt() + (build_multi_image_system_addendum() if is_multi else "")
-        max_tokens = 1400 + (400 * (len(evidence) - 1))
+        request_parts = build_analysis_request(context_text, evidence)
 
         try:
             analysis = run_analysis_with_consensus(
                 model=selected_model,
-                system_prompt=system_prompt,
-                user_content=user_content,
-                max_output_tokens=max_tokens,
+                system_prompt=request_parts["system_prompt"],
+                user_content=request_parts["user_content"],
+                max_output_tokens=request_parts["max_output_tokens"],
                 prompt_version=prompt_version,
                 context=scan_context,
             )

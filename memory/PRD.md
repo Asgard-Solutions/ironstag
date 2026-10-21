@@ -33,3 +33,12 @@ Expo (React Native) + FastAPI + Postgres (Neon) deer-aging app. Users photograph
 - P1 Tags filtering UI in History
 - P2 scalability (caching, indexes); Phase 2 calibration (trigger: "Let's inspect label distributions")
 - P3 admin dashboard, backfill old scans to R2
+
+## Done – Known-age evaluation benchmark (`backend/evaluation/`)
+- Dataset format (JSONL, one encounter per line) + template; label tiers A documented / B lab / C expert / D hunter guess (only A/B with uncertainty ≤0.5 are ground truth by default)
+- Validation: required fields, label flags, deer-level deterministic splits (dev/calibration/test), deer-in-multiple-splits + cross-deer duplicate images = errors
+- Runner reuses production pipeline (`server.build_analysis_request`, consensus, multi-photo guards, region calibration) offline: no DB/credits/R2; records model, prompt, settings, preprocessing, calibration version, outputs, latency, tokens, cost
+- Budget gate for paid runs (--budget-usd/--max-calls + pricing), sealed test split (--allow-test-split, access logged), mock runs banner "NOT ACCURACY EVIDENCE"
+- Metrics: exact class, within 1 yr, MAE, coverage/abstention/failures, range coverage, calibration vs declared target, breakdowns with CIs, n<30 inconclusive, paired comparisons (same cases, bootstrap CI, McNemar)
+- CLI: `python -m evaluation validate|splits|plan|run|report|export-labels`; tests in tests/test_evaluation_benchmark.py (synthetic only)
+- Missing: real tier A/B known-age photo data, run budget, valid OpenAI key
