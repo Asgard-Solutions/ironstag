@@ -145,7 +145,50 @@ def merge_consensus_analyses(
         for analysis in allowed_analyses
     ]
     age_values = [value for value in age_values if value is not None]
+
+    # Collect alternate_age values to use as supporting evidence
+    alternate_age_values = [
+        _normalize_float(analysis.get("alternate_age"))
+        for analysis in allowed_analyses
+    ]
+    alternate_age_values = [value for value in alternate_age_values if value is not None]
+
+    # Compute initial consensus from primary ages
     consensus_age = _round_to_half_year(sorted(age_values)[len(age_values) // 2]) if age_values else None
+
+    # Leverage alternate ages: if alternate ages cluster around a different value than
+    # primary ages, and the spread is large, use alternate ages as tie-breakers.
+    # Specifically: build a combined vote pool where each pass contributes its primary age
+    # and, if its alternate_age is closer to the primary consensus than its own primary age,
+    # that alternate also gets a weighted vote.
+    if consensus_age is not None and len(age_values) >= 2 and alternate_age_values:
+        # Count how many alternate_ages support the consensus (within 0.5 year)
+        alternate_support_count = sum(
+            1 for alt in alternate_age_values
+            if abs(alt - consensus_age) <= 0.5
+        )
+        # Count how many primary ages disagree with consensus (more than 0.5 year away)
+        primary_disagree_count = sum(
+            1 for age in age_values
+            if abs(age - consensus_age) > 0.5
+        )
+
+        # If alternates support the consensus more than primaries disagree, boost confidence.
+        # Build an augmented age pool: primary ages + alternate ages that agree with consensus.
+        if alternate_support_count > 0 and primary_disagree_count > 0:
+            augmented_ages = list(age_values)
+            for analysis in allowed_analyses:
+                alt = _normalize_float(analysis.get("alternate_age"))
+                primary = _normalize_float(analysis.get("deer_age"))
+                if alt is not None and primary is not None:
+                    # Include alternate if it's closer to consensus than the primary
+                    if abs(alt - consensus_age) < abs(primary - consensus_age):
+                        augmented_ages.append(alt)
+            # Recompute consensus from augmented pool
+            augmented_ages_sorted = sorted(augmented_ages)
+            consensus_age = _round_to_half_year(
+                augmented_ages_sorted[len(augmented_ages_sorted) // 2]
+            )
 
     representative = valid_analyses[0]
     if consensus_age is not None:
@@ -276,6 +319,18 @@ def merge_consensus_analyses(
     if allowed_votes:
         penalty += int(round((1.0 - allowed_agreement) * disagreement_penalty))
 
+    # Alternate-age consensus bonus: reduce penalty when alternate ages from
+    # disagreeing passes actually support the final consensus age.
+    if consensus_age is not None and alternate_age_values and penalty > 0:
+        supporting_alternates = sum(
+            1 for alt in alternate_age_values
+            if abs(alt - consensus_age) <= 0.5
+        )
+        if supporting_alternates > 0:
+            # Each supporting alternate reduces penalty by up to 4 points
+            alt_bonus = min(penalty, supporting_alternates * 4)
+            penalty = max(0, penalty - alt_bonus)
+
     adjusted_age_confidence = (
         max(0, min(100, base_age_confidence - penalty))
         if base_age_confidence is not None
@@ -313,6 +368,7 @@ def merge_consensus_analyses(
         "passes_used": len(valid_analyses),
         "invalid_passes": len(analyses) - len(valid_analyses),
         "age_values": age_values,
+        "alternate_age_values": alternate_age_values,
         "age_spread": age_spread,
         "age_range": build_consensus_age_range(age_values),
         "recommendation_votes": recommendation_counts,
