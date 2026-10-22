@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Request
 from dotenv import load_dotenv
+from urllib.parse import urlparse, parse_qs
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
@@ -121,7 +122,11 @@ if os.getenv("RAILWAY_ENVIRONMENT") is None:
 
 # PostgreSQL connection (Neon DB)
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
-database = Database(DATABASE_URL)
+
+# `databases` ignores libpq's `sslmode` query param, so asyncpg would connect without TLS
+# (Neon rejects that: "connection is insecure"). Forward it as asyncpg's `ssl` option.
+_DB_SSLMODE = parse_qs(urlparse(DATABASE_URL).query).get("sslmode", [None])[0]
+database = Database(DATABASE_URL, **({"ssl": _DB_SSLMODE} if _DB_SSLMODE and _DB_SSLMODE != "disable" else {}))
 metadata = MetaData()
 
 # Define tables
